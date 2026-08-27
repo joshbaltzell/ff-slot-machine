@@ -341,6 +341,73 @@ const mkEngine = (model) =>
      "records: null is the same run as no records at all");
 }
 
+/* ---- 6. the strings the page shows ---- */
+{
+  const {
+    AVAIL_HINT, statusCode, badgeCode, statusRank, statusCell, statusBadge,
+    availabilityLines, horizonLine, seasonNote,
+  } = await import("../panel/availability.js");
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  ok(statusCode("QUESTIONABLE") === "Q" && statusCode("INJURY_RESERVE") === "IR"
+     && statusCode("SUSPENSION") === "SUS" && statusCode("ACTIVE") === "",
+     "status codes fit a table cell");
+  ok(badgeCode("OUT") === "O" && badgeCode("DOUBTFUL") === "D" && badgeCode("ACTIVE") === "",
+     "badge codes fit beside a name");
+
+  const AV = {
+    statusOf: new Map([
+      [1, { status: "QUESTIONABLE", practice: "LP", note: "Hamstring", now: 0.70 }],
+      [2, { status: "OUT", practice: null, note: null, now: 0 }],
+      [3, { status: "INJURY_RESERVE", practice: null, note: null, now: 0 }],
+      [4, { status: "SUSPENSION", practice: null, note: null, now: 0 }],
+    ]),
+    summary: { out: 1, questionable: 1, shelved: 2, uncertain: 1, matched: 900, total: 4 },
+    horizon: { currentWeek: 9, played: 8, remaining: 10, complete: false, from: 9, to: 18 },
+    feed: "sleeper",
+  };
+
+  ok(statusRank(AV, 9) === 0 && statusRank(AV, 1) === 1 && statusRank(AV, 2) === 3
+     && statusRank(AV, 3) === 4, "the sort rank orders by how bad the news is");
+  ok(statusRank(null, 1) === 0, "no availability context ranks everybody available");
+
+  const cell = statusCell(AV, 1, esc);
+  ok(cell.includes("Q") && cell.includes("LP"), "a Questionable cell shows the practice report");
+  ok(cell.includes("Hamstring"), "and the body part, in the tooltip");
+  ok(statusCell(AV, 9, esc) === "", "an available player gets an empty cell");
+  ok(statusCell(null, 1, esc) === "", "and so does everybody with no context");
+  ok(statusCell(AV, 4, esc).includes("SUS") && /assum/i.test(statusCell(AV, 4, esc)),
+     "a suspension says its length is assumed");
+  ok(!/</.test(statusCell({ statusOf: new Map([[5, { status: "OUT", practice: "<b>x</b>",
+       note: "<img>", now: 0 }]]) }, 5, esc).replace(/<\/?span[^>]*>/g, "")),
+     "feed text is escaped");
+
+  ok(statusBadge(AV, 2, esc).includes("O"), "an OUT player is badged in a package");
+  ok(statusBadge(AV, 9, esc) === "", "an available one is not");
+
+  const lines = availabilityLines(AV.summary);
+  ok(lines.length >= 1 && lines[0].includes("1 out") && lines[0].includes("1 questionable")
+     && lines[0].includes("2 on IR"), `the log line names the counts (${lines[0]})`);
+  ok(availabilityLines({ out: 0, questionable: 0, shelved: 0, uncertain: 0, matched: 0, total: 0 })
+       .length === 1, "a clean league still gets one line saying so");
+
+  const hl = horizonLine(AV.horizon);
+  ok(hl.includes("9") && hl.includes("18") && hl.includes("8"),
+     `the horizon line names the window and what is behind it (${hl})`);
+  ok(horizonLine({ currentWeek: 1, played: 0, remaining: 18, complete: false, from: 1, to: 18 })
+       .includes("whole season"), "week one says the whole season");
+  ok(horizonLine({ complete: true, played: 0, remaining: 18, from: 1, to: 18, currentWeek: 99 })
+       .toLowerCase().includes("complete"), "a finished season says so");
+
+  ok(/injur/i.test(seasonNote(AV)) && /Questionable/.test(seasonNote(AV)),
+     "the season note says what is and is not frozen");
+  ok(!/no waivers, injuries or trades/.test(seasonNote(AV)),
+     "and no longer claims injuries are ignored");
+  ok(seasonNote(null).length > 0, "the note works with no context");
+  ok(AVAIL_HINT.status.length > 40, "the column has a real hint");
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("AVAILABILITY OK");
