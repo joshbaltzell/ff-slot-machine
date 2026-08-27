@@ -38,7 +38,8 @@ function gauss(rand) {
  * @param schedule Map week -> [[teamNameA, teamNameB], ...]; empty falls back to all-play
  * @param settings league settings (playoff shape)
  */
-export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 25 } = {}) {
+export function projectSeason(eng, schedule, settings,
+    { sims = 20000, sigma = 25, divisionSeeding = false, divisionOf = null } = {}) {
   // Prefer measured volatility. The sum of independent normals is normal with the
   // summed variance, so one draw per team-week is exact - no need to draw each
   // player separately - while still letting roster composition set the spread.
@@ -54,11 +55,27 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
   const idx = new Map(teams.map((t, i) => [t, i]));
   const weeks = eng.weeks;
   const reg = settings.regularSeasonWeeks.filter((w) => weeks.includes(w));
-  const po = settings.playoffWeeks.filter((w) => weeks.includes(w));
-  const roundLen = Math.max(1, settings.playoffRoundLength ?? 1);
+  // Round-by-round weeks come from the league settings, so a two-week final or a
+  // round of a different length than its neighbours is handled without special
+  // casing. Reseeding is likewise a league setting, not an assumption.
+  const roundWeeks = (settings.playoffRoundWeeks ?? [])
+    .map((ws) => ws.filter((w) => weeks.includes(w)))
+    .filter((ws) => ws.length);
+  const reseed = settings.playoffReseed !== false;
   const nPlayoff = Math.min(settings.playoffTeams ?? 6, T);
   const bracket = 2 ** Math.ceil(Math.log2(Math.max(nPlayoff, 2)));
   const byes = bracket - nPlayoff;
+
+  // team name -> division id, inverted to division -> member indices
+  const divisions = new Map();
+  if (divisionOf) {
+    teams.forEach((t, i) => {
+      const d = divisionOf.get(t);
+      if (d == null) return;
+      if (!divisions.has(d)) divisions.set(d, []);
+      divisions.get(d).push(i);
+    });
+  }
 
   const mu = teams.map((t) => {
     const b = eng.baseline.get(t);
@@ -96,9 +113,23 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
       }
     }
 
-    // Seed on record, then points scored - the near-universal ESPN tiebreak.
-    const order = [...Array(T).keys()].sort((a, b) =>
-      wins[b] - wins[a] || pf[b] - pf[a]);
+    // Seed on record, then points scored - the near-universal ESPN tiebreak. Where
+    // a league seeds division winners first, they take the top slots regardless of
+    // overall record, which is exactly where the first-round byes are.
+    let order = [...Array(T).keys()].sort((a, b) => wins[b] - wins[a] || pf[b] - pf[a]);
+    if (divisionSeeding && divisions.size > 1) {
+      const champs = [];
+      for (const members of divisions.values()) {
+        let best = null;
+        for (const i of members)
+          if (best === null || wins[i] > wins[best] || (wins[i] === wins[best] && pf[i] > pf[best]))
+            best = i;
+        if (best !== null) champs.push(best);
+      }
+      champs.sort((a, b) => wins[b] - wins[a] || pf[b] - pf[a]);
+      const rest = order.filter((i) => !champs.includes(i));
+      order = [...champs, ...rest];
+    }
     for (let k = 0; k < T; k++) {
       const i = order[k];
       acc[i].wins += wins[i]; acc[i].pf += pf[i]; acc[i].seed += k + 1;
@@ -106,14 +137,12 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
       if (k < byes) acc[i].bye++;
     }
 
-    if (po.length) {
-      // Round scores are summed across the round's weeks, so two-week rounds work.
+    if (roundWeeks.length) {
+      // A round's score sums every week it spans, so two-week rounds work.
       const roundScore = (i, r) => {
         let tot = 0;
-        for (let k = 0; k < roundLen; k++) {
-          const w = po[r * roundLen + k];
-          if (w != null) tot += mu[i].get(w) + gauss(rand) * sigFor(i, w);
-        }
+        for (const w of roundWeeks[Math.min(r, roundWeeks.length - 1)])
+          tot += mu[i].get(w) + gauss(rand) * sigFor(i, w);
         return tot;
       };
       let alive = order.slice(0, nPlayoff);            // in seed order
@@ -126,7 +155,8 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
           const hi = playing[i], lo = playing[playing.length - 1 - i];
           next.push(roundScore(hi, round) >= roundScore(lo, round) ? hi : lo);
         }
-        alive = [...seatIn, ...next].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        alive = [...seatIn, ...next];
+        if (reseed) alive.sort((a, b) => order.indexOf(a) - order.indexOf(b));
         round++;
       }
       while (alive.length > 1) {
@@ -135,7 +165,8 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
           const hi = alive[i], lo = alive[alive.length - 1 - i];
           next.push(roundScore(hi, round) >= roundScore(lo, round) ? hi : lo);
         }
-        alive = next.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        alive = next;
+        if (reseed) alive.sort((a, b) => order.indexOf(a) - order.indexOf(b));
         round++;
         if (alive.length === 2) for (const i of alive) acc[i].final++;
       }

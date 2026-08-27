@@ -375,7 +375,11 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const SIMS = 20000, SIGMA = 25;
   const hasSched = schedule.size > 0;
   const measured = eng.volatility?.measured ?? 0;
-  const proj = projectSeason(eng, schedule, model.settings, { sims: SIMS, sigma: SIGMA });
+  const divCount = model.settings.divisionCount ?? 0;
+  const divisionOf = new Map([...model.teams.values()].map(t => [t.name, t.divisionId]));
+  const divSeed = divCount > 1 && (window.__divSeed ?? false);
+  const proj = projectSeason(eng, schedule, model.settings,
+    { sims: SIMS, sigma: SIGMA, divisionSeeding: divSeed, divisionOf });
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   const season = proj.map((r, i) => `<tr${r.team === myTeam ? ' class="mine"' : ""}>
       <td class="rank">${i + 1}</td>
@@ -473,7 +477,17 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
              season's results for ${measured} players, not assumed, so a roster of
              steady players is correctly less swingy than a boom-or-bust one.`
           : "Too little prior-season history, so weekly spread falls back to an assumed ±25 points."}</p>
-      <div class="panel"><div class="scroll"><table>
+      <div class="panel">
+        ${divCount > 1 ? `<div class="bar">
+          <div class="fld"><label>Seeding</label><div class="chips" id="divseed">
+            <button data-v="0" aria-pressed="${!divSeed}">By record</button>
+            <button data-v="1" aria-pressed="${divSeed}">Division winners first</button>
+          </div></div>
+          <span class="readout" style="color:var(--faint)">Your league has
+            ${divCount} divisions. ESPN does not report which rule it uses, so pick
+            the one your league actually applies &mdash; it moves the bye odds.</span>
+        </div>` : ""}
+        <div class="scroll"><table>
         <thead><tr><th>#</th><th>Team</th>${th("Record", "record", "num")}
           ${th("Points for", "pf", "num")}${th("Playoffs", "podds", "num")}
           ${th("First-round bye", "byeodds", "num")}${th("Title", "title", "num")}
@@ -521,6 +535,12 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     };
   });
   initTooltips(app);
+  document.querySelectorAll("#divseed button").forEach((b) => {
+    b.onclick = () => {
+      window.__divSeed = b.dataset.v === "1";
+      render(eng, model, trades, myTeam, schedule);
+    };
+  });
   $("#who").onchange = (e) => {
     window.__view = e.target.value;
     if (e.target.value !== "__all__") chrome.storage.local.set({ myTeam: e.target.value });

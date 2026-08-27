@@ -112,13 +112,24 @@ export function identifyTeam(model, { swid, teamId }) {
   return { team: null, how: null };
 }
 
-/** Everything the engine needs, read rather than assumed. */
+/**
+ * Everything the engine needs, read rather than assumed.
+ *
+ * ESPN's schedule settings are richer than they first appear, and guessing at them
+ * produces wrong playoff odds rather than obviously broken ones:
+ *  - `matchupPeriods` maps a matchup to the scoring weeks it spans, so a two-week
+ *    final is `{"16": [16, 17]}`. Deriving weeks arithmetically instead gets those
+ *    leagues wrong.
+ *  - `playoffMatchupPeriodLength` can be 0 when lengths vary by round, in which case
+ *    `playoffMatchupPeriodLengthByRound` is the real answer.
+ *  - `playoffReseed` decides whether the bracket re-sorts between rounds.
+ *  - a league with no divisions still reports one, named "League Standings".
+ */
 export function readSettings(raw) {
   const s = raw.settings ?? {};
   const roster = s.rosterSettings ?? {};
   const sched = s.scheduleSettings ?? {};
-  // Split starting seats from bench/IR. Everything downstream treats
-  // lineupSlotCounts as the starting lineup, so it must not contain either.
+
   const counts = {};
   let bench = 0, ir = 0;
   for (const [id, n] of Object.entries(roster.lineupSlotCounts ?? {})) {
@@ -129,12 +140,44 @@ export function readSettings(raw) {
     else counts[slot] = n;
   }
   const starters = Object.values(counts).reduce((a, b) => a + b, 0);
-  const regWeeks = sched.matchupPeriodCount ?? 14;
-  const roundLen = sched.playoffMatchupPeriodLength ?? 1;
+
+  const regCount = sched.matchupPeriodCount ?? 14;
+  const periods = sched.matchupPeriods ?? {};
+  const weeksOf = (period) => {
+    const w = periods[String(period)];
+    return Array.isArray(w) && w.length ? w.map(Number) : [Number(period)];
+  };
+
+  const regularSeasonWeeks = [];
+  for (let m = 1; m <= regCount; m++) regularSeasonWeeks.push(...weeksOf(m));
+
   const playoffTeams = sched.playoffTeamCount ?? 6;
-  const rounds = Math.max(1, Math.ceil(Math.log2(Math.max(playoffTeams, 2))));
-  const playoffWeeks = [];
-  for (let i = 0; i < rounds * roundLen; i++) playoffWeeks.push(regWeeks + 1 + i);
+  const bracket = 2 ** Math.ceil(Math.log2(Math.max(playoffTeams, 2)));
+  const rounds = Math.max(1, Math.log2(bracket));
+  const byRound = sched.playoffMatchupPeriodLengthByRound ?? null;
+  const flat = sched.playoffMatchupPeriodLength || 0;
+
+  // Weeks belonging to each playoff round, in order.
+  // One matchup period per round. When `matchupPeriods` is present it already
+  // expands a multi-week round (a two-week final is {"16": [16, 17]}), so the
+  // round length must not be applied a second time.
+  const playoffRoundWeeks = [];
+  let period = regCount + 1;
+  for (let r = 1; r <= rounds; r++) {
+    const mapped = periods[String(period)];
+    if (Array.isArray(mapped) && mapped.length) {
+      playoffRoundWeeks.push(mapped.map(Number));
+      period++;
+    } else {
+      const len = byRound?.[String(r)] ?? (flat || 1);
+      const weeks = [];
+      for (let k = 0; k < len; k++) weeks.push(period++);
+      playoffRoundWeeks.push(weeks);
+    }
+  }
+  const playoffWeeks = [...new Set(playoffRoundWeeks.flat())];
+
+  const divisions = (sched.divisions ?? []).filter((d) => (d?.size ?? 0) > 0);
   return {
     name: s.name ?? "League",
     lineupSlotCounts: counts,
@@ -143,12 +186,15 @@ export function readSettings(raw) {
     irSlots: ir,
     rosterSize: starters + bench,
     positionLimits: roster.positionLimits ?? null,
-    regularSeasonWeeks: Array.from({ length: regWeeks }, (_, i) => i + 1),
+    regularSeasonWeeks,
     playoffWeeks,
+    playoffRoundWeeks,
     playoffTeams,
-    playoffRoundLength: roundLen,
     playoffRounds: rounds,
-    divisions: (s.scheduleSettings?.divisions ?? []).length,
+    playoffReseed: sched.playoffReseed !== false,
+    seedingTiebreak: sched.playoffSeedingRule ?? "TOTAL_POINTS_SCORED",
+    divisions,
+    divisionCount: divisions.length > 1 ? divisions.length : 0,
   };
 }
 
@@ -276,8 +322,12 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
       `view=mRoster&view=mTeam&scoringPeriodId=${wk}`);
     for (const t of blob.teams ?? []) {
       const name = t.name || `${t.location ?? ""} ${t.nickname ?? ""}`.trim() || `Team ${t.id}`;
-      const rec = teams.get(t.id) ?? { id: t.id, name, roster: new Set(), owners: t.owners ?? [] };
+      const rec = teams.get(t.id) ?? {
+        id: t.id, name, roster: new Set(), owners: t.owners ?? [],
+        divisionId: t.divisionId ?? 0,
+      };
       rec.name = name;
+      rec.divisionId = t.divisionId ?? rec.divisionId ?? 0;
       teams.set(t.id, rec);
       for (const e of t.roster?.entries ?? []) {
         const p = e.playerPoolEntry.player;
