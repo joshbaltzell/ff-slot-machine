@@ -15,6 +15,8 @@
  *    a forecast of what will happen.
  */
 
+import { FALLBACK_SIGMA } from "./winprob.js";
+
 /** Deterministic PRNG, so the same data always yields the same projection. */
 function mulberry32(seed) {
   return function () {
@@ -39,7 +41,7 @@ function gauss(rand) {
  * @param settings league settings (playoff shape)
  */
 export function projectSeason(eng, schedule, settings,
-    { sims = 20000, sigma = 25, divisionSeeding = false, divisionOf = null,
+    { sims = 20000, sigma = FALLBACK_SIGMA, divisionSeeding = false, divisionOf = null,
       override = null, batches = 1 } = {}) {
   // Prefer measured volatility. The sum of independent normals is normal with the
   // summed variance, so one draw per team-week is exact - no need to draw each

@@ -380,7 +380,7 @@ export class Engine {
       }
       if (n % 25 === 24) { onProgress(n + 1, trades.length); await yieldToBrowser(); }
     }
-    onProgress(trades.length, trades.length);
+    if (trades.length) onProgress(trades.length, trades.length);
   }
 
   /** Roster indices belonging to no team - i.e. the free agents. */

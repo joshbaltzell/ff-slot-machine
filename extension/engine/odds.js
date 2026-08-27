@@ -25,6 +25,13 @@ function postWorld(eng, trade) {
 function deltas(base, post, team) {
   const b = base.find((r) => r.team === team), p = post.find((r) => r.team === team);
   const d = (k) => p[k] - b[k];
+  // A single-batch run has no batch spread to measure, so report zero error rather
+  // than throwing: the caller still gets its deltas, just without a dash rule.
+  if (!p.batches || !b.batches)
+    return {
+      title: d("titlePct"), bye: d("byePct"), playoff: d("playoffPct"), wins: d("wins"),
+      se: { title: 0, bye: 0, playoff: 0 },
+    };
   const se = (k) => {
     const ds = p.batches.map((x, i) => x[k] - b.batches[i][k]);
     const m = ds.reduce((a, c) => a + c, 0) / ds.length;
@@ -35,6 +42,13 @@ function deltas(base, post, team) {
     title: d("titlePct"), bye: d("byePct"), playoff: d("playoffPct"), wins: d("wins"),
     se: { title: se("titlePct"), bye: se("byePct"), playoff: se("playoffPct") },
   };
+}
+
+/** The delta when it clears twice its own Monte Carlo error, else null. */
+export function significant(odds, key) {
+  if (!odds || !Number.isFinite(odds[key])) return null;
+  const se = odds.se?.[key] ?? 0;
+  return Math.abs(odds[key]) >= 2 * se ? odds[key] : null;
 }
 
 const simOpts = ({ sims = 5000, batches = 10, divisionSeeding = false, divisionOf = null } = {}) =>
@@ -62,6 +76,6 @@ export async function attachOdds(eng, schedule, settings, trades, team, opts, on
     t.odds = deltas(base, post, team);
     if (n % 5 === 4) { onProgress(n + 1, trades.length); await yieldToBrowser(); }
   }
-  onProgress(trades.length, trades.length);
+  if (trades.length) onProgress(trades.length, trades.length);
   return { ms: Date.now() - t0 };
 }

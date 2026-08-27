@@ -23,7 +23,7 @@ import { Engine, dedupe } from "../engine/search.js";
 import { projectSeason } from "../engine/season.js";
 import { shrinkProjections, CALIBRATION_K } from "../engine/calibrate.js";
 import { Phi, phi, winProb, leverage } from "../engine/winprob.js";
-import { tradeOdds, attachOdds } from "../engine/odds.js";
+import { tradeOdds, attachOdds, significant } from "../engine/odds.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -270,6 +270,15 @@ ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
      "nobody else gains from another team's boost");
   ok(Math.abs(c.reduce((s, r) => s + r.titlePct, 0) - 1) < 1e-9, "still one champion per season");
 
+  // A sigma override must reach the draw, not just the mean: same mu, tighter spread.
+  const sig = new Float64Array(NW).fill(10);
+  const c2 = projectSeason(eng, new Map(), model.settings,
+    { ...opts, override: new Map([[t0, { mu: eng.baseline.get(t0), sigma: sig }]]) });
+  ok(row(c2, t0).wins !== row(a, t0).wins || row(c2, t0).titlePct !== row(a, t0).titlePct,
+     "a non-null sigma override changes the draw for that team");
+  ok(Math.abs(c2.reduce((s, r) => s + r.titlePct, 0) - 1) < 1e-9,
+     "sigma override: still one champion per season");
+
   const d = projectSeason(eng, new Map(), model.settings, { ...opts, batches: 10 });
   ok(d.every((r) => r.batches?.length === 10), "ten batches per team");
   for (const r of d) {
@@ -309,6 +318,10 @@ ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
   ok(list.every((t) => t.odds && "title" in t.odds && "se" in t.odds), "attachOdds sets t.odds on every trade");
   ok(list[0].odds.title === 0, "attachOdds agrees with tradeOdds on the null trade");
   ok(calls >= 1 && ms >= 0, "reports progress and elapsed time");
+  ok(significant({ title: 0.01, se: { title: 0.004 } }, "title") === 0.01, "significant: clears 2·SE");
+  ok(significant({ title: 0.01, se: { title: 0.006 } }, "title") === null, "significant: inside 2·SE is null");
+  ok(significant(undefined, "title") === null, "significant: missing odds is null");
+
   console.log(`  per-trade odds: ${(ms / list.length).toFixed(0)} ms per trade at 2000 sims`);
 }
 

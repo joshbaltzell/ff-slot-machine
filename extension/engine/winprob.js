@@ -11,7 +11,7 @@
  * the season simulation already uses, so they agree with it up to Monte Carlo error.
  */
 
-/** Used when no volatility has been measured; matches season.js's default. */
+/** Used when no volatility has been measured; season.js imports it as its default. */
 export const FALLBACK_SIGMA = 25;
 
 /** Standard normal CDF. Abramowitz & Stegun 7.1.26; absolute error < 7.5e-8. */
