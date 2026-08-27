@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fantasy Trade Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="panel.css">
+<style>
+  .boot{max-width:640px;margin:14vh auto;padding:0 24px;text-align:center}
+  .boot h1{font-family:var(--serif,serif);font-size:44px;margin:0 0 8px}
+  .boot p{color:var(--dim);font-size:14px;margin:0 0 22px}
+  .steps{text-align:left;background:var(--panel);border:1px solid var(--line);
+    border-radius:3px;padding:16px 18px;font-family:var(--mono);font-size:12px;
+    color:var(--dim);max-height:220px;overflow:auto}
+  .steps div{padding:2px 0}
+  .steps .ok{color:var(--accent)}
+  .steps .err{color:var(--danger)}
+  .bar2{height:3px;background:var(--sunken);border-radius:2px;overflow:hidden;margin:18px 0}
+  .bar2 i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+  .btn{font:inherit;font-size:13px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;background:var(--accent);color:#08120d;border:0;
+    border-radius:3px;padding:11px 20px;cursor:pointer}
+  .btn.ghost2{background:none;color:var(--dim);border:1px solid var(--line-hi)}
+  input.lg{font:inherit;font-family:var(--mono);font-size:14px;padding:9px 12px;
+    border:1px solid var(--line-hi);background:var(--panel);color:var(--ink);
+    border-radius:3px;width:180px;text-align:center}
+</style>
+
+<div id="boot" class="boot">
+  <h1>Trade <em style="font-style:italic;color:var(--accent)">Finder</em></h1>
+  <p id="bootmsg">Reading your league from ESPN…</p>
+  <div class="bar2"><i id="bootbar"></i></div>
+  <div class="steps" id="steps"></div>
+  <div id="bootact" style="margin-top:20px"></div>
+</div>
+
+<div id="app" hidden></div>
+
+<script type="module" src="panel.js"></script>

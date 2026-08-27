@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Fantasy Trade Finder",
+  "version": "0.1.0",
+  "description": "Finds ESPN fantasy trades that raise both teams' projected starting-lineup points.",
+  "permissions": ["storage", "cookies", "tabs"],
+  "host_permissions": [
+    "https://lm-api-reads.fantasy.espn.com/*",
+    "https://fantasy.espn.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Open Trade Finder" }
+}
