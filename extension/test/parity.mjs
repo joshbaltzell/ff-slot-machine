@@ -21,6 +21,7 @@ import { fileURLToPath } from "url";
 import { buildSlots, seatMask, bestLineup } from "../engine/lineup.js";
 import { Engine, dedupe } from "../engine/search.js";
 import { projectSeason } from "../engine/season.js";
+import { shrinkProjections, CALIBRATION_K } from "../engine/calibrate.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -155,6 +156,39 @@ ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
   ok(allFree.filter((t) => !kept.has(keyOf(t))).every((t) => t.sides.some((s) =>
        !capped.legal(capped.swap(capped.roster.get(s.team), s.sent, s.received)))),
      "every removed trade was illegal for some side");
+}
+
+/* ---- 5. shrinkage: pull projections toward the positional mean ---- */
+{
+  const clone = () => new Map([...model.players].map(([id, p]) => [id, { ...p, proj: { ...p.proj } }]));
+  const flat = (m) => [...m.values()].map((p) => F.weeks.map((w) => p.proj[w]));
+
+  const same = clone();
+  shrinkProjections(same, F.weeks, { RB: 1, WR: 1, TE: 1, QB: 1, TQB: 1 });
+  ok(JSON.stringify(flat(same)) === JSON.stringify(flat(model.players)), "k = 1 is the identity");
+
+  const half = clone();
+  const r = shrinkProjections(half, F.weeks, { RB: 0.5 });
+  ok(r.changed > 0, "reports how many players changed");
+  const rbs = [...model.players.values()].filter((p) => p.pos === "RB");
+  for (const w of F.weeks.slice(0, 3)) {
+    const live = rbs.filter((p) => p.proj[w] > 0);
+    const mean = live.reduce((a, p) => a + p.proj[w], 0) / live.length;
+    for (const p of live) {
+      const before = p.proj[w] - mean, after = half.get(p.id).proj[w] - mean;
+      ok(Math.abs(after - before / 2) < 0.011, `RB deviation halved wk${w} p${p.id}`);
+    }
+    // order within the position is preserved
+    const orderA = live.map((p) => p.id).sort((a, b) => model.players.get(b).proj[w] - model.players.get(a).proj[w]);
+    const orderB = live.map((p) => p.id).sort((a, b) => half.get(b).proj[w] - half.get(a).proj[w]);
+    ok(orderA.join() === orderB.join(), `RB order preserved wk${w}`);
+    ok(rbs.filter((p) => !(p.proj[w] > 0)).every((p) => half.get(p.id).proj[w] === p.proj[w]),
+       `bye zeros untouched wk${w}`);
+  }
+  const wr = [...model.players.values()].find((p) => p.pos === "WR");
+  ok(half.get(wr.id).proj[F.weeks[0]] === wr.proj[F.weeks[0]], "positions absent from k are untouched");
+  ok(CALIBRATION_K.QB === 0.67 && CALIBRATION_K.RB === 0.79 && CALIBRATION_K.WR === 0.85 && CALIBRATION_K.TE === 0.72,
+     "literature slopes are the defaults");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
