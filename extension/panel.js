@@ -1084,10 +1084,11 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     };
   });
   app.querySelectorAll("#divseed button").forEach((b) => {
-    b.onclick = () => {
-      window.__divSeed = b.dataset.v === "1";
-      chrome.storage.local.set({ "ffsm.divSeed": window.__divSeed });
-      rerender();
+    b.onclick = async () => {
+      const on = b.dataset.v === "1";
+      if (on === (window.__divSeed === true)) return;
+      await chrome.storage.local.set({ "ffsm.divSeed": on });
+      location.reload();      // odds are computed at load; a rebuild is the honest path
     };
   });
   app.querySelectorAll("#calib button").forEach((b) => {
