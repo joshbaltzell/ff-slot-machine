@@ -12,6 +12,10 @@ import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 import { attachOdds, significant } from "./engine/odds.js";
 import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
+import { restrictToRemaining, buildAvailability } from "./engine/availability.js";
+import { loadSleeperPlayers } from "./engine/sources/sleeper.js";
+import { AVAIL_HINT, statusRank, statusCell, statusBadge, seasonNote,
+         availabilityLines, horizonLine } from "./panel/availability.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -22,6 +26,7 @@ const PHASES = [
   ["settings", "League settings"],
   ["rosters",  "Rosters and projections"],
   ["agents",   "Free-agent pool"],
+  ["injuries", "Injury reports"],
   ["schedule", "Schedule"],
   ["vol",      "Player volatility"],
   ["s1",       "1-for-1 trades"],
@@ -251,6 +256,13 @@ async function start(ref) {
     });
     Steps.set("rosters", "done", `${model.players.size} players`);
 
+    // Weeks already played cannot be changed by a trade, and averaging them into a
+    // trade's value scores games nobody can affect. Everything downstream reads
+    // model.weeks, so trimming it here is the whole fix. Must happen before the
+    // settings are read below, and before anything builds the engine.
+    const horizon = restrictToRemaining(model);
+    say(horizonLine(horizon), horizon.complete ? "err" : "ok");
+
     const s = model.settings;
     say(`${s.name}: ${model.teams.size} teams, ${s.starters} starters, `
       + `${s.rosterSize}-player rosters`, "ok");
@@ -274,6 +286,29 @@ async function start(ref) {
       Steps.set("agents", "warn", "unavailable");
     }
 
+    // Injury reports. ESPN's own injuryStatus rides along with every player record
+    // we already fetched; Sleeper adds the practice report, which is the only public
+    // signal separating a Questionable who practised in full from one who did not
+    // practise at all. Sleeper is CORS-open and keyless, cached for a day by
+    // engine/sources/cache.js, and entirely optional: a dead feed costs the practice
+    // detail and nothing else.
+    let sleeperByEspn = null;
+    Steps.set("injuries", "run");
+    try {
+      const sl = await loadSleeperPlayers();
+      sleeperByEspn = sl.byEspn;
+      say(`  injury reports for ${sl.byEspn.size} players`
+        + `${sl.fromCache ? " (cached)" : ""}${sl.stale ? ", stale" : ""}`, "ok");
+      Steps.set("injuries", "done", `${sl.byEspn.size}`);
+    } catch (e) {
+      say(`  practice reports unavailable (${e.message}) - using ESPN status only`, "err");
+      Steps.set("injuries", "warn", "ESPN only");
+    }
+    const av = buildAvailability(model, sleeperByEspn, model.weeks, s.currentWeek);
+    for (const line of availabilityLines(av.summary)) say(line, "ok");
+    window.__avail = { statusOf: av.statusOf, summary: av.summary, horizon,
+                       feed: sleeperByEspn ? "sleeper" : "espn" };
+
     const { slots, starters } = buildSlots(s.lineupSlotCounts);
     const masks = new Map();
     for (const [id, p] of model.players) masks.set(id, seatMask(p.eligibleSlots, slots));
@@ -295,6 +330,24 @@ async function start(ref) {
 
     say("building engine…");
     const eng = new Engine(model, { starters }, masks);
+    // Only when somebody's availability is actually in doubt: an engine with an
+    // all-ones table takes a slower path through weekly() for no benefit, and
+    // 2-for-2 calls it millions of times.
+    if (av.avail.size) {
+      eng.setAvailability(av.avail);
+      say(`availability applied to ${av.avail.size} players`, "ok");
+    }
+    // The standings so far. Every simulated season starts from them rather than 0-0.
+    const records = new Map([...model.teams.values()]
+      .filter((t) => t.record).map((t) => [t.name, t.record]));
+    // All or nothing. projectSeason takes games played from whichever team has
+    // played most, so a map missing one team would seed that team 0-and-N and
+    // quietly move everybody's seeding. Projecting from 0-0 and saying so is the
+    // honest failure.
+    window.__records = records.size === model.teams.size ? records : null;
+    if (window.__records) say(`standings seeded from ${records.size} team records`, "ok");
+    else if (records.size) say(`ESPN reported records for only ${records.size} of `
+      + `${model.teams.size} teams - projecting from 0-0`, "err");
     say(`baseline built for ${eng.teams.length} teams`, "ok");
 
     const swid = await mySwid();
@@ -374,7 +427,7 @@ async function start(ref) {
     const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
     const divSeedSaved = (await chrome.storage.local.get("ffsm.divSeed"))["ffsm.divSeed"] ?? false;
     window.__divSeed = divSeedSaved;
-    const oddsOpts = { batches: 10, divisionOf,
+    const oddsOpts = { batches: 10, divisionOf, records: window.__records,
       divisionSeeding: divSeedSaved && (model.settings.divisionCount ?? 0) > 1 };
     const { ms } = await attachOdds(eng, schedule, model.settings, mine, myTeam,
       { ...oddsOpts, sims: ODDS_SIMS }, (n, tot) => progress(n / tot));
