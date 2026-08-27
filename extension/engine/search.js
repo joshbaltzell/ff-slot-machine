@@ -38,6 +38,8 @@ export class Engine {
       for (let w = 0; w < this.NW; w++) this.proj[i * this.NW + w] = p.proj[this.weeks[w]] ?? 0;
     }
 
+    this._posOf = new Map();
+    for (const [id, p] of model.players) this._posOf.set(this.index.get(id), p.pos);
     this.teams = [...model.teams.values()].map(t => t.name);
     this.roster = new Map();
     for (const t of model.teams.values()) {
@@ -188,6 +190,41 @@ export class Engine {
       onProgress(n + 1, triples.length, out.length);
     });
     return out.sort((a, b) => b.total - a.total);
+  }
+
+  /**
+   * Attach measured per-player volatility. Sigma for a team-week is the root of the
+   * summed variance of that week's STARTERS, so a roster of steady players is less
+   * swingy than a boom-or-bust one - which a single league-wide constant cannot say.
+   */
+  setVolatility(vol) {
+    this.sigmaOf = new Float64Array(this.n);
+    for (let i = 0; i < this.n; i++) {
+      const id = this.ids[i];
+      const pos = this._posOf?.get(i);
+      this.sigmaOf[i] = vol.bySigma.get(id)
+        ?? vol.byPos.get(pos)
+        ?? vol.global;
+    }
+    this._teamSigma = null;
+    this.volatility = vol;
+  }
+
+  /** (n_weeks,) sigma for a team, from the players it would actually start. */
+  teamSigma(team) {
+    if (!this.sigmaOf) return null;
+    this._teamSigma ??= new Map();
+    if (this._teamSigma.has(team)) return this._teamSigma.get(team);
+    const ids = this.roster.get(team);
+    const mask = this.starterMask(ids);
+    const out = new Float64Array(this.NW);
+    for (let w = 0; w < this.NW; w++) {
+      let v = 0;
+      for (const [i, m] of mask) if (m[w]) v += this.sigmaOf[i] ** 2;
+      out[w] = Math.sqrt(v);
+    }
+    this._teamSigma.set(team, out);
+    return out;
   }
 
   /** Roster indices belonging to no team - i.e. the free agents. */

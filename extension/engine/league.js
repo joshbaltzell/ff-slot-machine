@@ -153,6 +153,53 @@ export function readSettings(raw) {
 }
 
 /**
+ * Per-player weekly volatility, measured from last season rather than assumed.
+ *
+ * ESPN returns the prior season's ACTUAL weekly scores (statSourceId 0) in the same
+ * response as its projections (statSourceId 1), so the residual between them is a
+ * real, league-scored measurement of how far a player lands from his projection.
+ * No external data source is needed, and none would be better: this one is already
+ * scored under the league's own rules.
+ *
+ * Returns {bySigma: Map(playerId -> sigma), byPos: Map(pos -> sigma), global}.
+ * Players without enough history fall back to their position, then to the global.
+ */
+export function measureVolatility(players, priorSeason, minWeeks = 6) {
+  const bySigma = new Map();
+  const posSamples = new Map();
+  const all = [];
+
+  for (const p of players) {
+    const act = new Map(), prj = new Map();
+    for (const st of p.rawStats ?? []) {
+      if (st.statSplitTypeId !== 1 || st.seasonId !== priorSeason) continue;
+      if (st.statSourceId === 0) act.set(st.scoringPeriodId, st.appliedTotal);
+      else if (st.statSourceId === 1) prj.set(st.scoringPeriodId, st.appliedTotal);
+    }
+    // Only weeks he was expected to play: a projection near zero means he was not
+    // in the plan, and counting those measures roster churn rather than volatility.
+    const weeks = [...act.keys()].filter(w => prj.has(w) && prj.get(w) > 1
+      && act.get(w) != null && prj.get(w) != null);
+    if (weeks.length >= minWeeks) {
+      const res = weeks.map(w => act.get(w) - prj.get(w));
+      const mean = res.reduce((a, b) => a + b, 0) / res.length;
+      const sd = Math.sqrt(res.reduce((a, b) => a + (b - mean) ** 2, 0) / (res.length - 1));
+      bySigma.set(p.id, sd);
+      all.push(sd);
+      if (!posSamples.has(p.pos)) posSamples.set(p.pos, []);
+      posSamples.get(p.pos).push(sd);
+    }
+  }
+  const median = (a) => {
+    if (!a.length) return null;
+    const s = [...a].sort((x, y) => x - y);
+    return s[Math.floor(s.length / 2)];
+  };
+  const byPos = new Map([...posSamples].map(([k, v]) => [k, median(v)]));
+  return { bySigma, byPos, global: median(all) ?? 6, measured: bySigma.size };
+}
+
+/**
  * Regular-season matchups: week -> [[teamNameA, teamNameB], ...].
  *
  * With a real schedule the projection is a real record. Without one it falls back
@@ -201,7 +248,7 @@ export async function loadFreeAgents({ leagueId, seasonId }, weeks, limit = 400)
     out.push({
       id: p.id, name: p.fullName, eligibleSlots: p.eligibleSlots ?? [],
       pos: positionLabel(p), nfl: PRO_TEAM[p.proTeamId] ?? "?",
-      teamId: null, proj,
+      teamId: null, proj, rawStats: p.stats ?? [],
       owned: Math.round((p.ownership?.percentOwned ?? 0) * 10) / 10,
     });
   }
@@ -240,7 +287,7 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
           eligibleSlots: p.eligibleSlots ?? [],
           pos: positionLabel(p),
           nfl: PRO_TEAM[p.proTeamId] ?? "?",
-          teamId: t.id, proj: {},
+          teamId: t.id, proj: {}, rawStats: p.stats ?? [],
         };
         pl.teamId = t.id;
         // seasonId matters: ESPN returns the prior season's projection for the same

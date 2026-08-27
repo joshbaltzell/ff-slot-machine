@@ -5,8 +5,8 @@
  * machine. The only network calls are to ESPN's own read API, with the session the
  * browser already has.
  */
-import { parseLeagueUrl, loadLeague, loadFreeAgents, loadSchedule, mySwid, identifyTeam,
-         SLOT_LABEL } from "./engine/league.js";
+import { parseLeagueUrl, loadLeague, loadFreeAgents, loadSchedule, measureVolatility,
+         mySwid, identifyTeam, SLOT_LABEL } from "./engine/league.js";
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
@@ -131,6 +131,23 @@ async function start(ref) {
       say("schedule unavailable - season projection will use all-play", "err");
     }
     window.__schedule = schedule;
+
+    // Volatility is measured from last season's actuals, which ESPN returns in the
+    // same payload as the projections. Falling back to a guessed constant would
+    // change every number in the season projection.
+    const vol = measureVolatility([...model.players.values()], ref.seasonId - 1);
+    if (vol.measured >= 20) {
+      eng.setVolatility(vol);
+      const posText = [...vol.byPos].sort()
+        .map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", ");
+      say(`volatility measured on ${vol.measured} players: ${posText}`, "ok");
+      say(`your team's weekly spread: ±${
+        (eng.teamSigma(myTeam).reduce((a, b) => a + b, 0) / model.weeks.length).toFixed(1)} pts`, "ok");
+    } else {
+      say(`only ${vol.measured} players have prior-season history - `
+        + `season projection will assume ±25 pts`, "err");
+    }
+    window.__vol = vol;
     say("searching 1-for-1…");
     const one = eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
@@ -180,6 +197,7 @@ const HINT = {
   podds:  "Share of simulated seasons where this team qualifies for the playoffs.",
   byeodds:"Share of simulated seasons where this team earns a first-round bye. Worth far more than it looks: it skips an elimination game.",
   title:  "Share of simulated seasons where this team wins the league.",
+  swing:  "How far this roster's weekly score typically lands from its projection, measured from last season's results for the players it starts. A lower number means a more predictable team - which helps a favourite and hurts an underdog.",
 };
 const th = (label, key, cls = "") =>
   `<th class="${cls}" data-hint="${esc(HINT[key])}"><span class="hint">${esc(label)}</span></th>`;
@@ -356,6 +374,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
 
   const SIMS = 20000, SIGMA = 25;
   const hasSched = schedule.size > 0;
+  const measured = eng.volatility?.measured ?? 0;
   const proj = projectSeason(eng, schedule, model.settings, { sims: SIMS, sigma: SIGMA });
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   const season = proj.map((r, i) => `<tr${r.team === myTeam ? ' class="mine"' : ""}>
@@ -366,6 +385,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td class="num ${r.playoffPct > .5 ? "up" : ""}">${pct(r.playoffPct)}</td>
       <td class="num" style="color:var(--dim)">${pct(r.byePct)}</td>
       <td class="num ${r.titlePct > .15 ? "up" : ""}">${pct(r.titlePct)}</td>
+      <td class="num" style="color:var(--faint)">±${(r.sigma ?? SIGMA).toFixed(1)}</td>
       <td><div class="meter" style="min-width:90px"><i style="width:${
         (r.titlePct / Math.max(...proj.map(x => x.titlePct)) * 100).toFixed(0)}%"></i></div></td>
     </tr>`).join("");
@@ -447,18 +467,28 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         rather than awarding the win to whoever projects higher, so a narrow edge buys
         a small share of a win rather than a certain one.
         ${hasSched ? "Uses your real schedule."
-          : "<b>No schedule available</b>, so records are an all-play share of the league rather than your actual matchups."}</p>
+          : "<b>No schedule available</b>, so records are an all-play share of the league rather than your actual matchups."}
+        ${measured >= 20
+          ? `How far a week lands from its projection is <b>measured</b> from last
+             season's results for ${measured} players, not assumed, so a roster of
+             steady players is correctly less swingy than a boom-or-bust one.`
+          : "Too little prior-season history, so weekly spread falls back to an assumed ±25 points."}</p>
       <div class="panel"><div class="scroll"><table>
         <thead><tr><th>#</th><th>Team</th>${th("Record", "record", "num")}
           ${th("Points for", "pf", "num")}${th("Playoffs", "podds", "num")}
           ${th("First-round bye", "byeodds", "num")}${th("Title", "title", "num")}
-          <th></th></tr></thead>
+          ${th("Weekly swing", "swing", "num")}<th></th></tr></thead>
         <tbody>${season}</tbody></table></div>
         <div class="note"><b>What this is not.</b> Rosters are frozen: no waiver
-          moves, injuries or trades. Weekly scatter is assumed at ${SIGMA} points,
-          which is the single biggest lever on every number here. Odds are shown to
-          the nearest tenth because the simulation's own error is about
-          ±${(100 * (proj[0]?.mcError ?? 0)).toFixed(2)} points.</div>
+          moves, injuries or trades. ${measured >= 20
+            ? `Weekly swing is measured per player from last season and assumes their
+               results are independent - real correlation, like a quarterback and
+               receiver from the same NFL team, would make a roster swingier than
+               shown.`
+            : `Weekly scatter is assumed at ±${SIGMA} points, the single biggest lever
+               on every number here.`}
+          Odds are shown to the nearest tenth because the simulation's own error is
+          about ±${(100 * (proj[0]?.mcError ?? 0)).toFixed(2)} points.</div>
       </div>
 
       <footer style="padding:34px 0 60px;color:var(--faint);font-family:var(--mono);font-size:11px">

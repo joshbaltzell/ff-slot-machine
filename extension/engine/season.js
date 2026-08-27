@@ -39,6 +39,16 @@ function gauss(rand) {
  * @param settings league settings (playoff shape)
  */
 export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 25 } = {}) {
+  // Prefer measured volatility. The sum of independent normals is normal with the
+  // summed variance, so one draw per team-week is exact - no need to draw each
+  // player separately - while still letting roster composition set the spread.
+  const teamSig = eng.teams.map((t) => eng.teamSigma?.(t) ?? null);
+  const sigFor = (i, w) => {
+    const v = teamSig[i];
+    if (!v) return sigma;
+    const k = eng.weeks.indexOf(w);
+    return k >= 0 && v[k] > 0 ? v[k] : sigma;
+  };
   const teams = eng.teams;
   const T = teams.length;
   const idx = new Map(teams.map((t, i) => [t, i]));
@@ -66,7 +76,7 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
     const pf = new Float64Array(T);
 
     for (const w of reg) {
-      for (let i = 0; i < T; i++) score[i] = mu[i].get(w) + gauss(rand) * sigma;
+      for (let i = 0; i < T; i++) score[i] = mu[i].get(w) + gauss(rand) * sigFor(i, w);
       for (let i = 0; i < T; i++) pf[i] += score[i];
       const games = schedule.get(w);
       if (games && games.length) {
@@ -102,7 +112,7 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
         let tot = 0;
         for (let k = 0; k < roundLen; k++) {
           const w = po[r * roundLen + k];
-          if (w != null) tot += mu[i].get(w) + gauss(rand) * sigma;
+          if (w != null) tot += mu[i].get(w) + gauss(rand) * sigFor(i, w);
         }
         return tot;
       };
@@ -147,5 +157,7 @@ export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 2
     games,
     // Monte Carlo error on a proportion; used to avoid over-reporting precision.
     mcError: Math.sqrt(0.25 / sims),
+    sigma: teamSig[teams.indexOf(t)]
+      ? teamSig[teams.indexOf(t)].reduce((a, b) => a + b, 0) / weeks.length : sigma,
   })).sort((a, b) => b.wins - a.wins || b.pointsFor - a.pointsFor);
 }
