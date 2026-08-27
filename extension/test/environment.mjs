@@ -199,6 +199,25 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   ok(atKickoff({ time: [] }, "2026-09-27T17:00Z") === null, "an empty forecast");
   ok(atKickoff(undefined, "2026-09-27T17:00Z") === null, "no forecast at all");
 
+  const noWind = {
+    time: ["2026-09-27T16:00", "2026-09-27T17:00", "2026-09-27T18:00"],
+    wind_speed_10m: [10, 22],                          // no entry for 18:00
+    wind_gusts_10m: [15, 31, 40],
+    precipitation_probability: [5, 80, 90],
+  };
+  ok(atKickoff(noWind, "2026-09-27T18:00Z") === null,
+     "the nearest sample has no wind value, so there is no reading at all");
+
+  const noPrecip = {
+    time: ["2026-09-27T16:00", "2026-09-27T17:00"],
+    wind_speed_10m: [10, 22],
+    wind_gusts_10m: [15, 31],
+    precipitation_probability: [5],                    // no entry for 17:00
+  };
+  const r2 = atKickoff(noPrecip, "2026-09-27T17:00Z");
+  ok(r2 !== null && r2.wind === 22 && r2.precipProb === 0,
+     "wind is present so a row comes back, with missing precip defaulting to 0");
+
   const week = new Map([
     [9,  { home: true,  opp: 3,  kickoff: "2026-09-27T17:00Z" }],   // Green Bay, open
     [3,  { home: false, opp: 9,  kickoff: "2026-09-27T17:00Z" }],
@@ -227,6 +246,12 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   ok(dead.size === 0, "a dead forecast is an empty map, not a throw");
   ok((await loadWeather(new Map(), { fetchImpl, storage: mkStorage(), now: 0 })).size === 0,
      "no games, no forecasts");
+
+  const windlessHourly = { ...hourly, wind_speed_10m: hourly.wind_speed_10m.slice(0, 1) };
+  const windlessWx = await loadWeather(week,
+    { fetchImpl: mkFetch({ [url]: { hourly: windlessHourly } }), storage: mkStorage(), now: 0 });
+  ok(!windlessWx.has(9) && !windlessWx.has(3),
+     "no usable wind at kickoff means the stadium is absent, not present with zeros");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);

@@ -41,8 +41,15 @@ export function atKickoff(hourly, kickoffIso) {
     if (d < bestD) { bestD = d; best = i; }
   }
   if (best < 0 || bestD > MAX_OFFSET) return null;
+  // Wind is the field every threshold downstream keys on, so a missing wind
+  // reading (an hourly array shorter than `time`) makes the whole row unusable -
+  // a null here reads downstream as "no weather applied", not "calm and dry".
+  // Gust is display-only and precipitation defaults safely to "no rain penalty",
+  // so only wind gates the return; num() still zero-fills the other two.
+  const wind = hourly.wind_speed_10m?.[best];
+  if (!Number.isFinite(Number(wind))) return null;
   return {
-    wind: num(hourly.wind_speed_10m?.[best]),
+    wind: num(wind),
     gust: num(hourly.wind_gusts_10m?.[best]),
     precipProb: num(hourly.precipitation_probability?.[best]),
   };
