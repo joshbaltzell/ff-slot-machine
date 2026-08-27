@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 import { buildSlots, seatMask } from "../engine/lineup.js";
 import { Engine } from "../engine/search.js";
 import { marketParams, marketUrl, trimValues, loadMarket } from "../engine/sources/fantasycalc.js";
-import { indexMarket, sideMarket, tradeFairness, pitchMarketLine } from "../engine/market.js";
+import { indexMarket, sideMarket, tradeFairness, pitchMarketLine, arbitrage } from "../engine/market.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -220,6 +220,91 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
   ok(idx.get(IX(0)).value === 10000, "indexMarket rekeys onto engine indices");
   ok(idx.has(IX(7)) === false, "an unpriced player has no index entry");
   ok(idx.size === 29, "every priced fixture player is bridged");
+}
+
+/* ---- 4. arbitrage: model rank vs market rank over one common pool ---- */
+{
+  // A deliberately small pool: four fixture RBs, two on each of the first two teams,
+  // plus two WRs so there is more than one position group. Nothing else is priced,
+  // so the candidate pool is exactly these six.
+  const RBS = [2, 3, 18, 19];
+  const WRS = [6, 22];
+  const ppgOf = (id, weeks) => {
+    const v = weeks.map((w) => F.proj[id][F.weeks.indexOf(w)]).filter((x) => x > 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+  };
+  const byPpg = RBS.slice().sort((a, b) => ppgOf(b, F.weeks) - ppgOf(a, F.weeks));
+
+  // Price the RBs in EXACTLY the reverse of the model's order, and give them
+  // FantasyCalc positionRanks 11..14 so that poolRank (1..4) is visibly not the
+  // same number as marketRank.
+  const M = new Map();
+  byPpg.forEach((id, k) => {
+    // Reversed against the model: the best projection gets the LEAST market value and
+    // the WORST market rank, so the top-projected RB carries the largest possible edge
+    // and the bottom-projected one the most negative.
+    M.set(IX(id), { value: (k + 1) * 100, positionRank: 10 + (byPpg.length - k),
+                    trend30Day: 5, name: `fc${id}`, pos: "RB" });
+  });
+  WRS.forEach((id, k) => M.set(IX(id), { value: 900 - k * 100, positionRank: 3 + k,
+                                         trend30Day: -3, name: `fc${id}`, pos: "WR" }));
+
+  const A = F.teams[0], B = F.teams[1];
+  const res = arbitrage(eng, model, M, { myTeam: A, remainingWeeks: F.weeks });
+
+  const all = [...res.buy, ...res.sell];
+  ok(all.length === 6, `only priced players are candidates (${all.length} of 160)`);
+  ok(all.every((r) => r.owner === A || r.owner === B), "owner is the team that holds him");
+  ok(res.sell.every((r) => r.owner === A), "sell only contains my players");
+  ok(res.buy.every((r) => r.owner !== A), "buy never contains my players");
+  ok(res.buy.length + res.sell.length === 6, "every candidate lands in exactly one list");
+
+  const rb = new Map(all.filter((r) => r.pos === "RB").map((r) => [r.i, r]));
+  ok(rb.size === 4, "the RB pool is the four priced RBs");
+  ok([...rb.values()].every((r) => r.marketRank >= 11 && r.marketRank <= 14),
+     "marketRank passes FantasyCalc's own positionRank through untouched");
+  ok([...rb.values()].map((r) => r.poolRank).sort().join(",") === "1,2,3,4",
+     "poolRank is dense within the league's own pool");
+  ok([...rb.values()].every((r) => r.edge === r.poolRank - r.modelRank),
+     "edge is poolRank minus modelRank");
+
+  const best = rb.get(IX(byPpg[0]));
+  ok(best.modelRank === 1, "the highest projected RB in the pool is modelRank 1");
+  ok(best.poolRank === 4, "…and was priced last, so his poolRank is 4");
+  ok(best.edge === 3, "…giving him the largest possible edge in a four-player pool");
+  const worst = rb.get(IX(byPpg[3]));
+  ok(worst.modelRank === 4 && worst.poolRank === 1 && worst.edge === -3,
+     "the lowest projected RB was priced first, giving him the most negative edge");
+
+  const notMine = all.filter((r) => r.owner !== A);
+  const mine = all.filter((r) => r.owner === A);
+  ok(res.buy[0].edge === Math.max(...notMine.map((r) => r.edge)),
+     "buy leads with the most undervalued player who is not mine");
+  ok(res.sell[0].edge === Math.min(...mine.map((r) => r.edge)),
+     "sell leads with the player the market rates highest against his projection");
+  ok(res.buy.every((r, k) => k === 0 || res.buy[k - 1].edge >= r.edge),
+     "buy is sorted by descending edge");
+  ok(res.sell.every((r, k) => k === 0 || res.sell[k - 1].edge <= r.edge),
+     "sell is sorted by ascending edge");
+
+  ok(Math.abs(rb.get(IX(byPpg[0])).ppg - ppgOf(byPpg[0], F.weeks)) < 1e-9,
+     "ppg is the mean of the positive weekly projections");
+  const late = arbitrage(eng, model, M, { myTeam: A, remainingWeeks: [15, 16, 17] });
+  const lateBest = [...late.buy, ...late.sell].find((r) => r.i === IX(byPpg[0]));
+  ok(Math.abs(lateBest.ppg - ppgOf(byPpg[0], [15, 16, 17])) < 1e-9,
+     "remainingWeeks narrows the window ppg is measured over");
+
+  const capped = arbitrage(eng, model, M, { myTeam: A, remainingWeeks: F.weeks, limit: 2 });
+  ok(capped.buy.length <= 2 && capped.sell.length <= 2, "limit caps each list");
+
+  const empty = arbitrage(eng, model, new Map(), { myTeam: A });
+  ok(empty.buy.length === 0 && empty.sell.length === 0,
+     "an empty market produces empty lists rather than throwing");
+  const noWeeks = arbitrage(eng, model, M, { myTeam: A, remainingWeeks: [] });
+  ok(noWeeks.buy.length + noWeeks.sell.length === 6,
+     "an empty remainingWeeks falls back to the whole season rather than dividing by zero");
+  ok([...res.buy, ...res.sell].every((r) => typeof r.trend30Day === "number"),
+     "trend30Day rides along for the table");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);

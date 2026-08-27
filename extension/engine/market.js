@@ -91,3 +91,88 @@ export function pitchMarketLine(trade, other, market) {
   const pct = Math.round((s.received / s.sent - 1) * 100);
   return `${head} (${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%).`;
 }
+
+/**
+ * Where the crowd and the projection disagree.
+ *
+ * Two rankings over ONE population: every rostered player plus the usable free-agent
+ * pool, restricted to the ones FantasyCalc has priced. Within each position label,
+ * `modelRank` orders that pool by projected points per game over the weeks that are
+ * left; `poolRank` orders the same pool by FantasyCalc value. The difference is the
+ * disagreement.
+ *
+ * Why not FantasyCalc's own `positionRank` in the subtraction: it ranks every
+ * fantasy-relevant player in football, while the model ranks only the couple of
+ * hundred in this league. Subtracting one from the other measures position depth,
+ * not disagreement - every player would carry a large positive number. `marketRank`
+ * carries the published rank for display; `poolRank` is what the arithmetic uses.
+ *
+ * This is a RANKING comparison, not a value comparison. It says nothing about how
+ * much a player is worth above the replacement the slot would otherwise hold - that
+ * is Phase 4. The hint in the panel says so.
+ */
+export function arbitrage(eng, model, market, opts = {}) {
+  const { myTeam = null, limit = 15 } = opts;
+  const asked = opts.remainingWeeks;
+  const fallback = eng.weeks;
+  const weeks = (Array.isArray(asked) && asked.length) ? asked : fallback;
+  // Column offsets into eng.proj for the weeks we care about, skipping any week the
+  // caller named that this engine does not carry.
+  const cols = weeks.map((w) => eng.weeks.indexOf(w)).filter((k) => k >= 0);
+  const use = cols.length ? cols : eng.weeks.map((_, k) => k);
+
+  const ppg = (i) => {
+    let s = 0, n = 0;
+    for (const k of use) {
+      const v = eng.proj[i * eng.NW + k];
+      if (v > 0) { s += v; n++; }             // a bye is not a bad game, it is no game
+    }
+    return n ? s / n : 0;
+  };
+
+  const ownerOf = new Map();
+  for (const t of eng.teams) for (const i of eng.roster.get(t)) ownerOf.set(i, t);
+
+  const rows = [];
+  const seen = new Set();
+  const consider = (i) => {
+    if (seen.has(i)) return;
+    seen.add(i);
+    const hit = market?.get(i);
+    // No price, or no positional rank, means no market opinion to disagree with.
+    if (!hit || !(Number(hit.positionRank) > 0)) return;
+    const p = model.players.get(eng.ids[i]);
+    if (!p) return;
+    rows.push({
+      i, name: p.name, pos: p.pos, owner: ownerOf.get(i) ?? "free agent",
+      ppg: ppg(i), modelRank: 0, poolRank: 0, edge: 0,
+      marketRank: Number(hit.positionRank),
+      value: Number(hit.value) || 0,
+      trend30Day: Number(hit.trend30Day) || 0,
+    });
+  };
+  for (const t of eng.teams) for (const i of eng.roster.get(t)) consider(i);
+  for (const i of eng.freeAgents) consider(i);
+
+  const byPos = new Map();
+  for (const r of rows) {
+    if (!byPos.has(r.pos)) byPos.set(r.pos, []);
+    byPos.get(r.pos).push(r);
+  }
+  for (const list of byPos.values()) {
+    // Ties break by name so two runs on the same data give the same list.
+    list.slice().sort((a, b) => b.ppg - a.ppg || a.name.localeCompare(b.name))
+      .forEach((r, k) => { r.modelRank = k + 1; });
+    list.slice().sort((a, b) => a.marketRank - b.marketRank || a.name.localeCompare(b.name))
+      .forEach((r, k) => { r.poolRank = k + 1; });
+  }
+  for (const r of rows) r.edge = r.poolRank - r.modelRank;
+
+  const buy = rows.filter((r) => r.owner !== myTeam)
+    .sort((a, b) => b.edge - a.edge || b.ppg - a.ppg || a.name.localeCompare(b.name))
+    .slice(0, limit);
+  const sell = rows.filter((r) => r.owner === myTeam)
+    .sort((a, b) => a.edge - b.edge || b.value - a.value || a.name.localeCompare(b.name))
+    .slice(0, limit);
+  return { buy, sell };
+}
