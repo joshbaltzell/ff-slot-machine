@@ -90,10 +90,9 @@ panel feels broken on every open.
 
 ### Engine port
 
-Straight translation of `ffti/lineup.py`, `swaps.py`, `search.py`, `wins.py` — same
-algorithms, same guarantees, typed arrays instead of numpy. The greedy slot rule
-stays valid for the same reason (nested eligibility sets), and the `_validate` guard
-against partially-overlapping flex groups must port with it.
+Mostly a straight translation of `ffti/swaps.py`, `search.py` and `wins.py` — same
+algorithms, same guarantees, typed arrays instead of numpy. `lineup.py` does **not**
+port as-is; see below.
 
 Two things must not be lost in translation:
 
@@ -102,6 +101,50 @@ Two things must not be lost in translation:
 - **Time windows stay separate.** `gain` / `reg` / `playoff` / `bye` / `full` are
   distinct because they disagree; a trade can be positive on the season average while
   hurting the record that decides seeding.
+
+### Working with any league's settings
+
+The requirement is that this works for any ESPN league, not just league 153385. Two
+changes are needed, and the first is a correctness bug in the current tool.
+
+**The lineup solver must not assume nested slots.** Today it fills dedicated slots
+then FLEX from the leftovers, which is optimal only when eligibility sets are nested
+(`RB ⊂ FLEX`). ESPN also offers `RB/WR` and `WR/TE` slots, which overlap on WR
+without either containing the other. Measured against exhaustive assignment over 300
+random rosters per structure:
+
+| Slot structure | Matroid greedy | Current greedy |
+|---|---|---|
+| Nested (QB/RB/WR/TE/FLEX/K/DST) | 100% | 100% |
+| **RB/WR + WR/TE** | **100%** | **92%** |
+| Double flex + RB/WR | 100% | 100% |
+| Superflex + RB/WR | 100% | 100% |
+
+The players simultaneously assignable to slots form a *transversal matroid*, and
+greedy by descending value is optimal on any matroid — so one algorithm covers every
+structure ESPN can produce. It costs about 49 µs per solve against roughly 19 µs for
+the nested shortcut, so keep both: detect a laminar slot family and take the fast
+path, otherwise run the matroid solver. Both are exact; the fast path is only an
+optimisation, and a test asserts the two agree wherever the fast path is legal.
+
+**Model slots, not positions.** The current engine carries a position taxonomy
+(`TQB`, `RB`, `D/ST`, …) and maps positions to slots. ESPN already gives every player
+an `eligibleSlots` array and every league a `lineupSlotCounts` map. Matching players
+to slots directly through those two fields removes the taxonomy entirely, and with it
+every position-specific special case: TQB, superflex/OP, IDP (DT/DE/LB/CB/S), punters
+and head coaches all work with no extra code, because the engine never asks what a
+player *is* — only which slots he is allowed to fill. Position labels survive as
+display strings only. Bench (20), IR (21) and any slot absent from `lineupSlotCounts`
+are simply not starting slots.
+
+This also deletes the `TQB`-vs-`QB` hazard documented in `CLAUDE.md`: there is no
+longer any position string for logic to key on incorrectly.
+
+**Everything else comes from `mSettings`.** Roster size, number of teams, regular
+season length (`matchupPeriodCount`), playoff team count, playoff round length
+(`playoffMatchupPeriodLength` — some leagues run two-week rounds) and position
+limits are all read, never assumed. The bracket generator derives byes generally:
+with `playoffTeamCount` teams, the first round seats `2^ceil(log2(n)) - n` byes.
 
 ## Correctness: Python as the oracle
 
@@ -154,6 +197,21 @@ strictly better than the Python tool rather than merely equal to it.
    `background.js` so the engine stays portable.
 5. **Firefox and Safari.** Chrome first. Firefox's MV3 differs modestly; Safari needs
    an Xcode wrapper and is out of scope.
+
+## Known limitations to detect and disclose
+
+The tool should say what it cannot model rather than quietly producing a wrong
+number. Detect from `mSettings` and warn in the panel:
+
+- **Divisional seeding.** Some leagues seed division winners ahead of better records.
+  If divisions are configured, say the playoff odds ignore them.
+- **Median/all-play scoring.** Leagues awarding a weekly win against the median have
+  a different record model.
+- **Two-week playoff rounds.** Supported, but the round length must be read and
+  applied rather than assumed to be one week.
+- **Keeper and dynasty value.** Out of scope entirely — every valuation here is
+  about the current season only, and a trade that is right for this year may be wrong
+  for a keeper league.
 
 ## Out of scope
 
