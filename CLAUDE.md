@@ -31,8 +31,7 @@ extension/
   engine/
     league.js        ESPN API -> normalized model; settings; volatility
     lineup.js        optimal lineup for any slot configuration
-    swaps.js         precomputed (out, in) values
-    search.js        shapes, N-sided trades, three-way, free agents
+    search.js        swap table, shapes, N-sided trades, three-way, free agents
     season.js        Monte Carlo season projection
   test/parity.mjs    371 assertions against a frozen league
 ```
@@ -57,7 +56,7 @@ valid for nested eligibility and was measured wrong 8% of the time when `RB/WR` 
 `WR/TE` coexist. Do not reintroduce it as a fast path; the matroid solver runs at
 ~1 µs per team-week.
 
-**Nothing in the search is approximated.** Three-way is exhaustive via `swaps.js`.
+**Nothing in the search is approximated.** Three-way is exhaustive via the swap table in `search.js`.
 A marginal-value pruning heuristic was measured at 57% recall and rejected.
 
 **Time windows stay separate.** `gain` / `reg` / `playoff` / `bye` / `full` disagree
