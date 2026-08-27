@@ -10,6 +10,7 @@ import { parseLeagueUrl, loadLeague, loadFreeAgents, loadSchedule, measureVolati
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
+import { attachOdds } from "./engine/odds.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -25,6 +26,8 @@ const PHASES = [
   ["s1",       "1-for-1 trades"],
   ["s2",       "2-for-2 trades"],
   ["s3",       "Three-team trades"],
+  ["win",      "Win probability"],
+  ["odds",     "Season odds per trade"],
   ["build",    "Building the report"],
 ];
 
@@ -158,6 +161,19 @@ function bindSort(root, onChange) {
 }
 
 const CACHE_HOURS = 12;
+
+/* Per-trade season odds run two 2500-sim worlds per trade. Capped at 100 so the
+   loading screen stays around five seconds (measured ~125 ms per trade at 5000
+   sims in the test suite). */
+const ODDS_CAP = 100;
+const ODDS_SIMS = 2500;
+
+const OBJECTIVES = [
+  ["title", "Championship", "Rank by the change in your odds of winning the league."],
+  ["wins",  "Seeding",      "Rank by the change in your expected regular-season wins."],
+  ["gain",  "Balanced",     "Rank by points per week gained across the whole season."],
+];
+const objSort = (o) => (o === "title" ? "dtitle" : o === "wins" ? "dwins" : "gain");
 
 /** Must match the fingerprint the background check computes. */
 function rosterFingerprint(model) {
@@ -323,6 +339,27 @@ async function start(ref) {
     const trades = [...dedupe(one, 3), ...dedupe(two, 3), ...dedupe(three, 3)]
       .sort((a, b) => b.total - a.total);
     Steps.set("s3", "done", `${three.length}`);
+
+    // Wins, not points, decide a season. The exact search is done; these passes only
+    // re-score its survivors, so recall is unaffected.
+    Steps.set("win", "run");
+    eng.setSchedule(schedule);
+    await eng.enrich(trades, (n, tot) => progress(n / tot));
+    Steps.set("win", "done", `${trades.length} trades`);
+
+    Steps.set("odds", "run");
+    const mine = trades.filter((t) => t.sides.some((s) => s.team === myTeam))
+      .sort((a, b) => b.sides.find((s) => s.team === myTeam).win - a.sides.find((s) => s.team === myTeam).win)
+      .slice(0, ODDS_CAP);
+    const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
+    const divSeedSaved = (await chrome.storage.local.get("ffsm.divSeed"))["ffsm.divSeed"] ?? false;
+    window.__divSeed = divSeedSaved;
+    const { ms } = await attachOdds(eng, schedule, model.settings, mine, myTeam,
+      { sims: ODDS_SIMS, batches: 10, divisionSeeding: divSeedSaved && (model.settings.divisionCount ?? 0) > 1, divisionOf },
+      (n, tot) => progress(n / tot));
+    say(`season odds for ${mine.length} trades in ${(ms / 1000).toFixed(1)}s`, "ok");
+    Steps.set("odds", "done", `${mine.length} trades`);
+
     Steps.set("build", "run");
     say(`${trades.length} offers after dedupe`, "ok");
 
@@ -340,6 +377,7 @@ async function start(ref) {
 
     Steps.set("build", "done");
     Steps.stop();
+    window.__objective = (await chrome.storage.local.get("ffsm.objective"))["ffsm.objective"] ?? "title";
     render(eng, model, trades, myTeam, schedule);
   } catch (err) {
     Steps.stop();
@@ -388,6 +426,11 @@ const HINT = {
   byehelp:"What the trade is worth to your partner during their bye-thinned weeks. A big number here with little full-strength value means you are selling them a bye fix, not talent.",
   balance:"How evenly the gain splits. Lopsided offers are the ones that get declined, however good the total looks.",
   swing:  "How far this roster's weekly score typically lands from its projection, measured from last season's results for the players it starts. A lower number means a more predictable team - which helps a favourite and hurts an underdog.",
+  objective:"What the list is sorted by. Championship uses the change in title odds from a paired season simulation; Seeding uses expected regular-season wins from your schedule; Balanced is points per week.",
+  dwins:  "Change in your expected regular-season wins: each week's win probability against your scheduled opponent, before and after the trade, summed. Uses the measured spread of both lineups.",
+  dtitle: "Change in your odds of winning the league, from two season simulations with identical luck - one with today's rosters, one after the trade. A dash means the change is smaller than the simulation's own error.",
+  dbye:   "Change in your odds of a first-round bye. In a six-team bracket a bye roughly doubles title odds, so this is usually the number that matters in November.",
+  calib:  "ESPN projections are over-spread: the gap between a position's #1 and #5 is smaller in reality than on paper. On, each projection is pulled toward its positional mean by the slope measured across twelve seasons (QB 0.67, RB 0.79, WR 0.85, TE 0.72).",
 };
 const th = (label, key, cls = "") =>
   `<th class="${cls}" data-hint="${esc(HINT[key])}"><span class="hint">${esc(label)}</span></th>`;
@@ -426,6 +469,11 @@ const esc = (v) => String(v).replace(/[&<>"]/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f2 = (n) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2);
 const cls = (n) => (n > 0.005 ? "up" : n < -0.005 ? "down" : "zero");
+/** A probability delta in percentage points, or a dash when it is inside its own error. */
+const fpp = (v, se = 0) => (v == null || !Number.isFinite(v) || Math.abs(v) < 2 * se)
+  ? '<span class="zero">—</span>'
+  : `<span class="${cls(v)}">${v >= 0 ? "+" : "−"}${(Math.abs(v) * 100).toFixed(1)}pp</span>`;
+const fw = (v) => `<span class="${cls(v)}">${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}</span>`;
 
 /** Diverging per-week bars: how much the trade helps or hurts, week by week. */
 function deltaBars(weekly, weeks) {
@@ -621,6 +669,12 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       value: (r) => side(r.t).weekly.filter((x) => x > 0.005).length, hint: HINT.weeks },
     { key: "gain", label: mineOnly ? "Your gain" : "Gain", num: true,
       value: (r) => side(r.t).gain, hint: HINT.gain },
+    { key: "dwins", label: "Δ wins", num: true,
+      value: (r) => side(r.t).win ?? 0, hint: HINT.dwins },
+    { key: "dtitle", label: "Δ title", num: true,
+      value: (r) => (side(r.t).team === myTeam ? r.t.odds?.title ?? -Infinity : -Infinity), hint: HINT.dtitle },
+    { key: "dbye", label: "Δ bye", num: true,
+      value: (r) => (side(r.t).team === myTeam ? r.t.odds?.bye ?? -Infinity : -Infinity), hint: HINT.dbye },
     { key: "theirs", label: "Partner gain", num: true,
       value: (r) => Math.min(...others(r.t).map((o) => o.gain)), hint: HINT.theirs },
     { key: "combined", label: "Combined", num: true, value: (r) => r.t.total, hint: HINT.combined },
@@ -631,7 +685,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "balance", label: "Balance", num: true, value: (r) => balance(r.t), hint: HINT.balance },
   ];
   const tradeGrid = grid("tradeGrid", tradeCols, shown, {
-    sort: "gain", dir: -1,
+    sort: objSort(window.__objective ?? "title"), dir: -1,
     empty: '<div class="empty"><b>No trades match</b>Lower the minimum gain, enable '
          + 'more shapes, or clear the player filter.</div>',
     row: ({ t, i }) => {
@@ -646,6 +700,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <td class="num">${me.weekly.filter((x) => x > 0.005).length}<span
           style="color:var(--faint)">/${W.length}</span></td>
         <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
+        <td class="num">${fw(me.win ?? 0)}</td>
+        <td class="num">${me.team === myTeam && t.odds ? fpp(t.odds.title, t.odds.se.title) : '<span class="zero">—</span>'}</td>
+        <td class="num">${me.team === myTeam && t.odds ? fpp(t.odds.bye, t.odds.se.bye) : '<span class="zero">—</span>'}</td>
         <td class="num" style="color:var(--dim)">${rest.map((o) => f2(o.gain)).join(" / ")}</td>
         <td class="num">${t.total.toFixed(2)}</td>
         <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
@@ -772,10 +829,19 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   /* ---------- page ---------- */
   const me = proj.find((r) => r.team === myTeam);
   const myOffers = trades.filter((t) => t.sides.some((s) => s.team === myTeam));
+  const obj = window.__objective ?? "title";
+  const metric = (t) => {
+    const s = t.sides.find((x) => x.team === myTeam);
+    if (obj === "title") return t.odds && Math.abs(t.odds.title) >= 2 * t.odds.se.title ? t.odds.title : null;
+    if (obj === "wins") return s.win ?? null;
+    return s.gain;
+  };
   const best = myOffers.reduce((a, t) => {
-    const g = t.sides.find((s) => s.team === myTeam).gain;
-    return g > (a?.g ?? -1e9) ? { g, t } : a;
+    const g = metric(t);
+    return g != null && g > (a?.g ?? -1e9) ? { g, t } : a;
   }, null);
+  const bestText = !best ? "—" : obj === "title" ? `${best.g >= 0 ? "+" : "−"}${(Math.abs(best.g) * 100).toFixed(1)}pp`
+    : obj === "wins" ? `${best.g >= 0 ? "+" : "−"}${Math.abs(best.g).toFixed(2)} W` : f2(best.g);
   const benchCount = eng.roster.get(myTeam).filter((i) => (rates.get(i) ?? 0) < 0.25).length;
 
   $("#boot").hidden = true;
@@ -799,8 +865,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     <div class="tile hot"><div class="k">Offers for you</div>
       <div class="v">${myOffers.length}</div>
       <div class="s">${trades.length} league-wide</div></div>
-    <div class="tile hot"><div class="k">Best available</div>
-      <div class="v">${best ? f2(best.g) : "—"}</div>
+    <div class="tile hot"><div class="k">Best available · ${esc(OBJECTIVES.find(([k]) => k === obj)[1])}</div>
+      <div class="v">${bestText}</div>
       <div class="s">${best ? "via " + esc(best.t.sides.find((s) => s.team !== myTeam).team) : "none found"}</div></div>
     <div class="tile"><div class="k">Trade chips</div>
       <div class="v">${benchCount}</div>
@@ -815,6 +881,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         can send. <b>Click a column heading</b> to sort; hover one to see what it means.</p>
       <div class="panel">
         <div class="bar">
+          <div class="fld"><label for="obj" data-hint="${esc(HINT.objective)}"><span class="hint">Objective</span></label>
+            <select id="obj">${OBJECTIVES.map(([k, lab]) =>
+              `<option value="${k}"${(window.__objective ?? "title") === k ? " selected" : ""}>${lab}</option>`).join("")}
+            </select></div>
           <div class="fld"><label for="who">Team</label><select id="who">
             ${eng.teams.map((t) => `<option${t === viewing ? " selected" : ""}>${esc(t)}</option>`).join("")}
             <option value="__all__"${viewing === "__all__" ? " selected" : ""}>All teams</option>
@@ -944,7 +1014,11 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     };
   });
   app.querySelectorAll("#divseed button").forEach((b) => {
-    b.onclick = () => { window.__divSeed = b.dataset.v === "1"; rerender(); };
+    b.onclick = () => {
+      window.__divSeed = b.dataset.v === "1";
+      chrome.storage.local.set({ "ffsm.divSeed": window.__divSeed });
+      rerender();
+    };
   });
   $("#mg").oninput = (e) => {
     F.minGain = +e.target.value / 100;
@@ -961,6 +1035,12 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     window.__view = e.target.value;
     if (e.target.value !== "__all__")
       chrome.storage.local.set({ "ffsm.myTeam": e.target.value });
+    rerender();
+  };
+  $("#obj").onchange = (e) => {
+    window.__objective = e.target.value;
+    chrome.storage.local.set({ "ffsm.objective": e.target.value });
+    SORT.delete("tradeGrid");          // let the new objective set the default sort
     rerender();
   };
   $("#reset").onclick = () => {
