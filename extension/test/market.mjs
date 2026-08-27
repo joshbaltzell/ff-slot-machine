@@ -11,6 +11,8 @@ import { buildSlots, seatMask } from "../engine/lineup.js";
 import { Engine } from "../engine/search.js";
 import { marketParams, marketUrl, trimValues, loadMarket } from "../engine/sources/fantasycalc.js";
 import { indexMarket, sideMarket, tradeFairness, pitchMarketLine, arbitrage } from "../engine/market.js";
+import { MARKET_HINT, marketOrNull, marketView, marketFair, marketCol, marketCell,
+         marketDetail, marketPitchLine, arbitrageSection } from "../panel/market.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -305,6 +307,92 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
      "an empty remainingWeeks falls back to the whole season rather than dividing by zero");
   ok([...res.buy, ...res.sell].every((r) => typeof r.trend30Day === "number"),
      "trend30Day rides along for the table");
+}
+
+/* ---- 5. the panel module: HTML strings, and a dash for everything on failure ---- */
+{
+  const storage = mkStorage();
+  const fetchImpl = mkFetch({ [FC_URL]: FC_PAYLOAD });
+  const logged = [];
+  const say = (text, cls = "") => { logged.push({ text, cls }); };
+
+  const loaded = await marketOrNull(SETTINGS, 10, say, { fetchImpl, storage, now: 0 });
+  ok(loaded && loaded.byEspn.size === 29, "marketOrNull returns the feed when it answers");
+  ok(logged.some((l) => l.text === "FantasyCalc: 29 players priced (1QB, 10 teams, 0.5 PPR)"),
+     `the log line names the table that was used: ${JSON.stringify(logged.map((l) => l.text))}`);
+
+  logged.length = 0;
+  const dead = await marketOrNull(SETTINGS, 10, say,
+    { fetchImpl: deadFetch(), storage: mkStorage(), now: 0 });
+  ok(dead === null, "marketOrNull swallows a dead feed and returns null");
+  ok(logged.length === 1 && /market values unavailable/.test(logged[0].text),
+     "a dead feed logs exactly one line");
+  ok(logged[0].cls === "err", "…and logs it as an error");
+
+  ok(marketView(eng, null) === null, "no feed means no view");
+  const mkt = marketView(eng, loaded);
+  ok(mkt.byIndex.size === 29 && mkt.priced === 29, "the view carries the index-keyed map");
+  ok(mkt.params.numTeams === 10, "…and the parameters, for the section caption");
+
+  const t = { shape: "1-for-1", sides: [
+    { team: F.teams[0], sent: [IX(0)], received: [IX(1)] },
+    { team: F.teams[1], sent: [IX(1)], received: [IX(0)] }] };
+  const unpriced = { shape: "1-for-1", sides: [
+    { team: F.teams[0], sent: [IX(0)], received: [IX(7)] },
+    { team: F.teams[1], sent: [IX(7)], received: [IX(0)] }] };
+
+  ok(marketFair(t, null) === null, "no feed means no fairness");
+  ok(marketFair(unpriced, mkt) === null, "an unpriced player means no fairness");
+  ok(marketFair(t, mkt) > 0 && marketFair(t, mkt) <= 1, "fairness is a ratio in (0, 1]");
+
+  ok(/—/.test(marketCell(t, null)), "with no feed the cell is a dash");
+  ok(/—/.test(marketCell(unpriced, mkt)), "with an unpriced player the cell is a dash");
+  ok(/class="bal"/.test(marketCell(t, mkt)) && /%/.test(marketCell(t, mkt)),
+     "a known fairness renders the bar and a percentage");
+  ok((marketCell(t, mkt).match(/<td/g) ?? []).length === 1
+     && (marketCell(t, null).match(/<td/g) ?? []).length === 1,
+     "the cell is exactly one td either way, so the column count never shifts");
+
+  ok(marketCol(null).key === "market" && marketCol(mkt).key === "market", "the column key is stable");
+  ok(marketCol(null).value({ t }) === -1, "a dash sorts below every real fairness");
+  ok(marketCol(mkt).value({ t }) === marketFair(t, mkt), "the column sorts on the fairness itself");
+  ok(typeof marketCol(mkt).hint === "string" && marketCol(mkt).hint.length > 40,
+     "the column carries a hint explaining where the numbers come from");
+
+  ok(marketDetail(t.sides[0], null) === "", "no feed adds nothing to the detail panel");
+  const det = marketDetail(t.sides[0], mkt);
+  ok(/market/.test(det) && /sends/.test(det) && /receives/.test(det),
+     `the detail line names both directions: ${det}`);
+  ok(/—/.test(marketDetail(unpriced.sides[0], mkt)),
+     "an unpriced side shows a dash rather than a partial sum");
+
+  ok(marketPitchLine(t, t.sides[0], null) === null, "no feed omits the pitch sentence");
+  ok(/FantasyCalc/.test(marketPitchLine(t, t.sides[0], mkt)), "the pitch sentence names the source");
+
+  /* The arbitrage section. `grid` is injected, so the test can see what it is asked
+     to render without a DOM. */
+  const gridCalls = [];
+  const fakeGrid = (id, cols, rows, o) => { gridCalls.push({ id, cols, rows, o }); return `[${id}:${rows.length}]`; };
+
+  const html = arbitrageSection(eng, model, mkt, { myTeam: F.teams[0], grid: fakeGrid });
+  ok(html.startsWith("<section") && html.trimEnd().endsWith("</section>"), "the section is one element");
+  ok(/Buy low/.test(html) && /sell high/i.test(html), "the section is titled from the spec");
+  ok(/ranking/i.test(html), "the hint says it is a ranking comparison, not a value one");
+  ok(gridCalls.length === 2 && gridCalls[0].id === "arbBuy" && gridCalls[1].id === "arbSell",
+     "two grids, with stable ids so sort state survives a re-render");
+  ok(gridCalls[0].cols.length === gridCalls[1].cols.length, "both grids share a column set");
+  ok(gridCalls[0].cols.some((c) => c.key === "edge"), "edge is a column");
+  ok(gridCalls[0].rows.every((r) => r.owner !== F.teams[0]), "the buy grid holds nobody of mine");
+  ok(gridCalls[1].rows.every((r) => r.owner === F.teams[0]), "the sell grid holds only mine");
+
+  gridCalls.length = 0;
+  const noFeed = arbitrageSection(eng, model, null, { myTeam: F.teams[0], grid: fakeGrid });
+  ok(typeof noFeed === "string" && noFeed.startsWith("<section"),
+     "with no feed the section still renders rather than vanishing");
+  ok(gridCalls.length === 2 && gridCalls.every((g) => g.rows.length === 0),
+     "…with two empty grids");
+  ok(gridCalls.every((g) => /unavailable/i.test(g.o.empty)),
+     "…and an empty state that says the market is unavailable");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
