@@ -168,6 +168,14 @@ const CACHE_HOURS = 12;
    sims in the test suite). */
 const ODDS_CAP = 100;
 const ODDS_SIMS = 2500;
+/* Odds run in two passes. At 2500 sims the paired title delta often sits inside its
+   own standard error - roughly one trade in fifteen clears it on a live league, 5 of
+   11 on the test fixture - so the top few are re-simulated at 20,000 sims (~210 ms
+   per trade on the fixture, ~290 ms measured on a live league), where it resolved
+   for 10 of those 11. Without the second pass the Championship objective shows a
+   dash for almost everything and quietly becomes a ranking by wins. */
+const REFINE_TOP = 15;
+const REFINE_SIMS = 20000;
 
 const OBJECTIVES = [
   ["title", "Championship", "Rank by the change in your odds of winning the league."],
@@ -366,11 +374,23 @@ async function start(ref) {
     const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
     const divSeedSaved = (await chrome.storage.local.get("ffsm.divSeed"))["ffsm.divSeed"] ?? false;
     window.__divSeed = divSeedSaved;
+    const oddsOpts = { batches: 10, divisionOf,
+      divisionSeeding: divSeedSaved && (model.settings.divisionCount ?? 0) > 1 };
     const { ms } = await attachOdds(eng, schedule, model.settings, mine, myTeam,
-      { sims: ODDS_SIMS, batches: 10, divisionSeeding: divSeedSaved && (model.settings.divisionCount ?? 0) > 1, divisionOf },
-      (n, tot) => progress(n / tot));
-    say(`season odds for ${mine.length} trades in ${(ms / 1000).toFixed(1)}s`, "ok");
-    Steps.set("odds", "done", `${mine.length} trades`);
+      { ...oddsOpts, sims: ODDS_SIMS }, (n, tot) => progress(n / tot));
+
+    // Δ bye resolves at 2500 sims where Δ title usually does not, so it picks the
+    // shortlist; the rest fall through to expected wins. Re-simulating those few at
+    // 20,000 seasons is what makes the Championship number readable at all.
+    const rank = (t) =>
+      significant(t.odds, "bye") ?? (-1e6 + t.sides.find((s) => s.team === myTeam).win);
+    const refine = mine.slice().sort((a, b) => rank(b) - rank(a)).slice(0, REFINE_TOP);
+    const fine = await attachOdds(eng, schedule, model.settings, refine, myTeam,
+      { ...oddsOpts, sims: REFINE_SIMS }, (n, tot) => progress(n / tot));
+    say(`season odds for ${mine.length} trades in ${(ms / 1000).toFixed(1)}s; `
+      + `top ${refine.length} re-run at ${REFINE_SIMS.toLocaleString()} seasons `
+      + `in ${(fine.ms / 1000).toFixed(1)}s`, "ok");
+    Steps.set("odds", "done", `${mine.length} trades · ${refine.length} refined`);
 
     Steps.set("build", "run");
     say(`${trades.length} offers after dedupe`, "ok");
@@ -440,7 +460,7 @@ const HINT = {
   swing:  "How far this roster's weekly score typically lands from its projection, measured from last season's results for the players it starts. A lower number means a more predictable team - which helps a favourite and hurts an underdog.",
   objective:"What the list is sorted by. Championship uses the change in title odds from a paired season simulation; Seeding uses expected regular-season wins from your schedule; Balanced is points per week.",
   dwins:  "Change in your expected regular-season wins: each week's win probability against your scheduled opponent, before and after the trade, summed. Uses the measured spread of both lineups.",
-  dtitle: "Change in your odds of winning the league, from two season simulations with identical luck - one with today's rosters, one after the trade. A dash means the change is smaller than the simulation's own error.",
+  dtitle: "Change in your odds of winning the league, from two season simulations with identical luck - one with today's rosters, one after the trade. A dash means the change is smaller than the simulation's own error. The top trades are re-simulated at 20,000 seasons so this number resolves for the ones you would actually consider.",
   dbye:   "Change in your odds of a first-round bye. In a six-team bracket a bye roughly doubles title odds, so this is usually the number that matters in November.",
   calib:  "ESPN projections are over-spread: the gap between a position's #1 and #5 is smaller in reality than on paper. On, each projection is pulled toward its positional mean by the slope measured across twelve seasons (QB 0.67, RB 0.79, WR 0.85, TE 0.72).",
 };
