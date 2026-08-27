@@ -93,6 +93,12 @@ export async function loadFantasyProsWeek({ week = null, ...opts } = {}) {
   const toEspn = new Map(idFile.data ?? []);
   const byEspn = new Map();
   for (const r of w.rows) {
+    // Fail open on week: a row with no parseable week (no `week` column at all, or a
+    // cell that doesn't parse as a number) is kept for every requested week rather than
+    // dropped. `fp_latest_weekly.csv` is *by definition* the latest week and may carry
+    // no week column whatsoever — failing closed would set every row's week to null and
+    // drop the entire file, silently disabling the source. One stray row entering a
+    // positional mean that gets refetched every six hours is the far cheaper mistake.
     if (r.week != null && week != null && r.week !== Number(week)) continue;
     const espn = toEspn.get(r.fp);
     if (espn == null || !(r.pts > 0)) continue;

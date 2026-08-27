@@ -120,6 +120,17 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   ok(trimWeekly("player_name,r2p_pts\nx,1.0\n").idKey === null, "no id column is reported");
   ok(trimWeekly("").rows.length === 0, "an empty CSV is tolerated");
 
+  // Fail-open on week, ruled: `fp_latest_weekly.csv` is by definition the latest
+  // week and may carry no `week` column at all; a row whose week can't be read is
+  // kept for every requested week rather than dropped, because failing closed would
+  // drop the whole file and silently disable the source.
+  const noWeekCol = 'fp_id,pos,r2p_pts\n7,RB,14.25\n8,WR,11.00\n';
+  ok(trimWeekly(noWeekCol).rows.every((row) => row.week === null),
+    "no week column at all leaves week null on every row");
+
+  const badWeek = 'fp_id,pos,week,r2p_pts\n7,RB,n/a,14.25\n';
+  ok(trimWeekly(badWeek).rows[0].week === null, "an unparseable week cell reads as null, not a throw");
+
   const pairs = trimIds(ids);
   ok(pairs.length === 4, "id rows without an espn id are dropped");
   ok(pairs[0][0] === "7" && pairs[0][1] === 101, "espn_id is numeric");
@@ -147,6 +158,38 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
 
   const dead = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0, fetchImpl: mkFetch({}) });
   ok(dead.available === false && dead.reason.length > 0, "a dead feed returns a reason, not a throw");
+
+  // Fail-open, end to end: a weekly file with no week column at all still produces
+  // points for the requested week (the case that breaks if the fail-open is ever
+  // "fixed" to fail closed instead).
+  const noWeekE2E = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0,
+    fetchImpl: mkFetch({ [WEEKLY_URL]: noWeekCol, [IDS_URL]: ids }) });
+  ok(noWeekE2E.available === true && noWeekE2E.byEspn.get(101) === 14.25 && noWeekE2E.byEspn.get(102) === 11,
+    "a weekly file with no week column at all still yields points for the requested week");
+
+  // Fail-open, end to end: an unparseable week cell is kept too, not just a missing column.
+  const badWeekE2E = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0,
+    fetchImpl: mkFetch({ [WEEKLY_URL]: badWeek, [IDS_URL]: ids }) });
+  ok(badWeekE2E.available === true && badWeekE2E.byEspn.get(101) === 14.25,
+    "a row with an unparseable week cell is kept for the requested week");
+  // (A row with a valid but different week is still excluded — already pinned above
+  // by "another week's row is filtered out" / "only the current week matched".)
+
+  // Degradation, end to end: the weekly file parses and has r2p_pts, but no candidate
+  // id column (fantasypros_id / fp_id / id) is present in its header.
+  const noIdColumn = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0,
+    fetchImpl: mkFetch({ [WEEKLY_URL]: "player_name,pos,week,r2p_pts\nJohn,RB,5,14.25\n" }) });
+  ok(noIdColumn.available === false && noIdColumn.byEspn.size === 0,
+    "no candidate id column means the source is unavailable");
+  ok(/id column/.test(noIdColumn.reason), "the reason names the missing id column");
+
+  // Degradation, end to end: both files fetch fine and the id column is fine, but no
+  // row's fantasypros id is present in the crosswalk, so nothing joins.
+  const noJoin = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0,
+    fetchImpl: mkFetch({ [WEEKLY_URL]: "fp_id,pos,week,r2p_pts\n999,RB,5,14.25\n", [IDS_URL]: ids }) });
+  ok(noJoin.available === false && noJoin.byEspn.size === 0,
+    "no matching id in the crosswalk degrades to unavailable");
+  ok(/no rows matched/.test(noJoin.reason), "the reason is 'no rows matched'");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
