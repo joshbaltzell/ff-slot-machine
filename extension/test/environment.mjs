@@ -11,6 +11,7 @@ import { PRO_TEAM } from "../engine/league.js";
 import { STADIUMS, PRO_TEAM_ID, stadiumOf, isOutdoor } from "../engine/sources/stadiums.js";
 import { VEGAS_BASE, refId, impliedTotals, pickOdds, buildWeek, loadVegas }
   from "../engine/sources/vegas.js";
+import { atKickoff, loadWeather } from "../engine/sources/weather.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -179,6 +180,53 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
 
   const allDead = await loadVegas(season, [week], { fetchImpl: mkFetch({}), storage: mkStorage(), now: 0 });
   ok(allDead.get(week).size === 0, "a dead feed is an empty map, not a throw");
+}
+
+/* ---- 3. weather ---- */
+{
+  const hourly = {
+    time: ["2026-09-27T16:00", "2026-09-27T17:00", "2026-09-27T18:00"],
+    wind_speed_10m: [10, 22, 30],
+    wind_gusts_10m: [15, 31, 40],
+    precipitation_probability: [5, 80, 90],
+  };
+  const at = atKickoff(hourly, "2026-09-27T17:00Z");
+  ok(at.wind === 22 && at.gust === 31 && at.precipProb === 80, "the sample nearest kickoff");
+  ok(atKickoff(hourly, "2026-09-27T16:20Z").wind === 10, "nearest, not next");
+  ok(atKickoff(hourly, "2026-09-27T17:40Z").wind === 30, "18:00 is nearer to 17:40 than 17:00");
+  ok(atKickoff(hourly, "2026-10-04T17:00Z") === null,
+     "a kickoff the forecast does not reach has no reading");
+  ok(atKickoff({ time: [] }, "2026-09-27T17:00Z") === null, "an empty forecast");
+  ok(atKickoff(undefined, "2026-09-27T17:00Z") === null, "no forecast at all");
+
+  const week = new Map([
+    [9,  { home: true,  opp: 3,  kickoff: "2026-09-27T17:00Z" }],   // Green Bay, open
+    [3,  { home: false, opp: 9,  kickoff: "2026-09-27T17:00Z" }],
+    [18, { home: true,  opp: 1,  kickoff: "2026-09-27T17:00Z" }],   // New Orleans, dome
+    [1,  { home: false, opp: 18, kickoff: "2026-09-27T17:00Z" }],
+    [6,  { home: true,  opp: 21, kickoff: "2026-09-27T17:00Z" }],   // Dallas, retractable
+    [21, { home: false, opp: 6,  kickoff: "2026-09-27T17:00Z" }],
+    [2,  { home: true,  opp: 5,  kickoff: null }],                  // Buffalo, no kickoff time
+    [5,  { home: false, opp: 2,  kickoff: null }],
+  ]);
+  const gb = STADIUMS[9];
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${gb.lat}&longitude=${gb.lon}`
+    + "&hourly=wind_speed_10m,wind_gusts_10m,precipitation_probability"
+    + "&forecast_days=7&wind_speed_unit=mph&timezone=UTC";
+  const fetchImpl = mkFetch({ [url]: { hourly } });
+  const wx = await loadWeather(week, { fetchImpl, storage: mkStorage(), now: 0 });
+  ok(fetchImpl.calls.length === 1, `one request per open-roof stadium (${fetchImpl.calls.length})`);
+  ok(wx.get(9)?.wind === 22, "the home team gets the forecast");
+  ok(wx.get(3)?.wind === 22, "so does the visitor - same field, same wind");
+  ok(wx.get(9)?.stadium === "Lambeau Field", "the row names the stadium");
+  ok(!wx.has(18) && !wx.has(1), "a dome is never fetched");
+  ok(!wx.has(6) && !wx.has(21), "neither is a retractable roof");
+  ok(!wx.has(2) && !wx.has(5), "a game with no kickoff time is skipped");
+
+  const dead = await loadWeather(week, { fetchImpl: mkFetch({}), storage: mkStorage(), now: 0 });
+  ok(dead.size === 0, "a dead forecast is an empty map, not a throw");
+  ok((await loadWeather(new Map(), { fetchImpl, storage: mkStorage(), now: 0 })).size === 0,
+     "no games, no forecasts");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
