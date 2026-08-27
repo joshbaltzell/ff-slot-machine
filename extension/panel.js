@@ -118,22 +118,126 @@ async function start(ref) {
   }
 }
 
+/* Column meanings, shown on hover. The numbers are meaningless without these -
+   "gain" in particular is not points scored, it is the change in the best lineup
+   you could field. */
+const HINT = {
+  shape:  "How many players move, and between how many teams. A three-way is a cycle: you send to one team and receive from another.",
+  recv:   "Players who would join your roster.",
+  send:   "Players who would leave your roster.",
+  partner:"The other team or teams in the deal. Every side has to gain, or nobody accepts.",
+  gain:   "Average points per week your BEST POSSIBLE starting lineup improves, across the whole season. Bench depth counts for nothing - only players who would actually start.",
+  reg:    "The same gain, but counting only regular-season weeks: the ones that decide your seeding. A trade can be positive overall while making your record worse.",
+  po:     "The same gain, but counting only playoff weeks.",
+  theirs: "What the other side gains. They need this above zero or they will not say yes.",
+  starts: "Share of weeks this player would crack your optimal lineup. Near zero means his points are sitting on your bench - that is a trade chip.",
+  bye:    "The week his NFL team is off. He scores nothing that week.",
+  optimal:"What this roster would score each week if it started its best possible lineup every week.",
+};
+const th = (label, key, cls = "") =>
+  `<th class="${cls}"><span class="hint" title="${esc(HINT[key])}">${esc(label)}</span></th>`;
+
+const esc = (v) => String(v).replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const f2 = (n) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2);
+const cls = (n) => (n > 0.005 ? "up" : n < -0.005 ? "down" : "zero");
+
+/** Diverging per-week bars: how much the trade helps or hurts, week by week. */
+function deltaBars(weekly, weeks) {
+  const m = Math.max(...weekly.map(Math.abs), 0.05);
+  return `<div class="delta">${weekly.map((v, i) =>
+    `<i class="${v > 0 ? "p" : v < 0 ? "n" : ""}" style="--h:${(Math.abs(v) / m * 48).toFixed(1)}%"
+       title="Wk ${weeks[i]}: ${f2(v)}"></i>`).join("")}</div>
+    <div class="delta-l"><span>WK ${weeks[0]}</span><span>PER-WEEK CHANGE</span>
+      <span>WK ${weeks.at(-1)}</span></div>`;
+}
+
+/** A player's season: bar height is his projection, green means he starts. */
+function usageBars(strip, proj, thin, weeks) {
+  const max = Math.max(...proj, 1);
+  return `<div class="bars">${strip.map((v, i) => {
+    const h = v === -1 ? 12 : Math.max(8, proj[i] / max * 100);
+    return `<i class="${v === 1 ? "on" : v === -1 ? "bye" : ""}${thin && thin[i] ? " thin" : ""}"
+      style="height:${h.toFixed(0)}%" title="Wk ${weeks[i]}: ${
+        v === -1 ? "bye" : proj[i].toFixed(1) + (v === 1 ? " · starts" : " · benched")}"></i>`;
+  }).join("")}</div>`;
+}
+
 function render(eng, model, trades, myTeam) {
   const rates = eng.startRates();
-  const name = (i) => model.players.get(eng.ids[i]).name;
-  const rows = trades.slice(0, 60).map((t) => {
+  const W = eng.weeks;
+  const nm = (i) => model.players.get(eng.ids[i]).name;
+  const pos = (i) => model.players.get(eng.ids[i]).pos;
+  const tag = (i) => `<span class="pos" data-p="${esc(pos(i))}">${esc(pos(i))}</span>`;
+  const pkg = (ids) => ids.map(i => `${esc(nm(i))} ${tag(i)}`).join('<span class="plus">+</span>');
+
+  /* One panel per side, plus the case for each partner. */
+  function detailFor(t) {
+    const ex = eng.explain(t);
+    const panels = t.sides.map(side => {
+      const d = ex[side.team];
+      const li = [];
+      for (const a of d.acquired)
+        li.push(`<li><b>${esc(nm(a.i))}</b> would start <b>${a.startsHere}</b> of ${W.length}
+                 weeks here, versus ${a.startsThere} where he is now.</li>`);
+      for (const x of d.sent)
+        li.push(`<li>Gives up ${esc(nm(x.i))} — ${x.wasStarting} starts.</li>`);
+      for (const x of d.displaced)
+        li.push(`<li class="b">${esc(nm(x.i))} loses ${-x.delta} starts.</li>`);
+      for (const x of d.promoted)
+        li.push(`<li class="g">${esc(nm(x.i))} gains ${x.delta} starts.</li>`);
+      return `<div><h4>${esc(side.team)}${side.team === myTeam ? " — you" : ""}</h4>
+        <div class="hd ${cls(side.gain)}">${f2(side.gain)}<span
+          style="font-size:12px;color:var(--faint)">/wk</span>
+          <span style="font-size:12px;color:var(--dim)">· reg ${f2(side.reg)}
+          · playoffs ${f2(side.playoff)}</span></div>
+        <ul>${li.join("")}</ul>${deltaBars(side.weekly, W)}</div>`;
+    }).join("");
+
+    const cases = t.sides.filter(s => s.team !== myTeam).map(other => {
+      const d = ex[other.team];
+      const rows = d.acquired.map(a => `
+        <div class="cmp-name">${esc(nm(a.i))} ${tag(a.i)}
+          <span class="tag${a.startsHere > a.startsThere ? " g" : ""}">${
+            a.startsThere} &rarr; ${a.startsHere} starts</span></div>
+        <div class="cmp-lab">Where he<br>is now</div>
+        <div>${usageBars(a.now, a.proj, null, W)}</div>
+        <div class="cmp-lab">With ${esc(other.team)}<br>after</div>
+        <div>${usageBars(a.after, a.proj, d.thin, W)}</div>`).join("");
+      const line = d.acquired.map(a => a.startsHere > a.startsThere
+        ? `<b>${esc(nm(a.i))}</b> starts ${a.startsThere} of ${W.length} weeks where he is
+           now — he'd start <b>${a.startsHere}</b> for ${esc(other.team)}.`
+        : `<b>${esc(nm(a.i))}</b> starts ${a.startsHere} of ${W.length} weeks for ${esc(other.team)}.`
+        ).join(" ");
+      return `<div class="pitch">
+        <div class="pitch-hd"><h4>The case for ${esc(other.team)}</h4></div>
+        <p class="pitch-say">${line}</p>
+        <div class="cmp">${rows}</div>
+        <div class="legend">
+          <span><i class="swatch" style="background:var(--accent)"></i> starts</span>
+          <span><i class="swatch" style="background:var(--line-hi)"></i> benched</span>
+          <span><i class="swatch" style="background:var(--warn);height:3px"></i> their thin week</span>
+          <span style="color:var(--dim)">Bar height is his weekly projection.</span>
+        </div></div>`;
+    }).join("");
+    return `<div class="det">${panels}${cases}</div>`;
+  }
+
+  const body = trades.slice(0, 60).map((t, n) => {
     const me = t.sides.find(s => s.team === myTeam) ?? t.sides[0];
     const others = t.sides.filter(s => s !== me);
-    return `<tr>
-      <td>${t.shape}</td>
-      <td><b>${me.received.map(name).join(" + ")}</b></td>
-      <td>${me.sent.map(name).join(" + ")}</td>
-      <td>${others.map(o => o.team).join(" + ")}</td>
-      <td class="num ${me.gain > 0 ? "up" : "down"}">${me.gain >= 0 ? "+" : "−"}${Math.abs(me.gain).toFixed(2)}</td>
-      <td class="num">${me.reg >= 0 ? "+" : "−"}${Math.abs(me.reg).toFixed(2)}</td>
-      <td class="num">${me.playoff >= 0 ? "+" : "−"}${Math.abs(me.playoff).toFixed(2)}</td>
-      <td class="num" style="color:var(--dim)">${others.map(o => (o.gain >= 0 ? "+" : "−") + Math.abs(o.gain).toFixed(2)).join(" / ")}</td>
-    </tr>`;
+    return `<tr class="tr-row${me.team === myTeam ? " mine" : ""}" data-i="${n}">
+      <td class="rank"><span class="car">&#9656;</span></td>
+      <td class="num" style="white-space:nowrap">${esc(t.shape)}</td>
+      <td><div class="pkg">${pkg(me.received)}</div></td>
+      <td><div class="pkg">${pkg(me.sent)}</div></td>
+      <td style="color:var(--dim)">${others.map(o => esc(o.team)).join(" + ")}</td>
+      <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
+      <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
+      <td class="num ${cls(me.playoff)}">${f2(me.playoff)}</td>
+      <td class="num" style="color:var(--dim)">${others.map(o => f2(o.gain)).join(" / ")}</td>
+    </tr>
+    <tr class="detail" data-for="${n}" hidden><td colspan="9"></td></tr>`;
   }).join("");
 
   const chips = eng.roster.get(myTeam)
@@ -141,17 +245,22 @@ function render(eng, model, trades, myTeam) {
     .sort((a, b) => a.r - b.r)
     .map(({ i, r }) => {
       const p = model.players.get(eng.ids[i]);
-      return `<tr><td>${p.name}</td><td><span class="pos">${p.pos}</span></td>
-        <td class="nfl">${p.nfl}</td><td class="num">${p.bye || "—"}</td>
-        <td class="num ${r < .35 ? "down" : r > .8 ? "up" : ""}">${(r * 100).toFixed(0)}%</td></tr>`;
+      return `<tr><td style="font-weight:600">${esc(p.name)}</td><td>${tag(i)}</td>
+        <td class="nfl">${esc(p.nfl)}</td><td class="num" style="color:var(--faint)">${p.bye || "—"}</td>
+        <td class="num ${r < .35 ? "down" : r > .8 ? "up" : ""}">${(r * 100).toFixed(0)}%</td>
+        <td><div class="bar"><i style="width:${(r * 100).toFixed(0)}%"></i></div></td></tr>`;
     }).join("");
 
-  const standings = eng.teams
+  const table = eng.teams
     .map(t => ({ t, avg: eng.baseline.get(t).reduce((a, b) => a + b, 0) / eng.NW }))
-    .sort((a, b) => b.avg - a.avg)
-    .map((s, i) => `<tr><td class="rank">${i + 1}</td>
-      <td${s.t === myTeam ? ' style="font-weight:700"' : ""}>${s.t}</td>
-      <td class="num">${s.avg.toFixed(2)}</td></tr>`).join("");
+    .sort((a, b) => b.avg - a.avg);
+  const hi = table[0].avg, lo = table.at(-1).avg;
+  const standings = table.map((s, i) => `<tr${s.t === myTeam ? ' class="mine"' : ""}>
+      <td class="rank">${i + 1}</td>
+      <td${s.t === myTeam ? ' style="font-weight:700"' : ""}>${esc(s.t)}</td>
+      <td class="num">${s.avg.toFixed(2)}</td>
+      <td><div class="bar"><i style="width:${(8 + 92 * (s.avg - lo) / Math.max(hi - lo, 1e-9)).toFixed(0)}%"></i></div></td>
+    </tr>`).join("");
 
   $("#boot").hidden = true;
   const app = $("#app");
@@ -160,27 +269,33 @@ function render(eng, model, trades, myTeam) {
     <div class="wrap" style="padding-top:26px">
       <h1 style="font-family:var(--serif);font-weight:400;font-size:42px;margin:0 0 4px">
         Trade <em style="font-style:italic;color:var(--accent)">Finder</em></h1>
-      <p class="mast-meta">${model.settings.name.toUpperCase()} · ${myTeam.toUpperCase()}
-        · ${model.teams.size} TEAMS · ${eng.starters} STARTERS · LIVE FROM ESPN</p>
+      <p class="mast-meta">${esc(model.settings.name.toUpperCase())} ·
+        ${esc(myTeam.toUpperCase())} · ${model.teams.size} TEAMS ·
+        ${eng.starters} STARTERS · LIVE FROM ESPN</p>
 
       <h2 class="secttl">Offers for you</h2>
-      <p class="sectsub">Ranked by your gain. Both sides must come out ahead.</p>
-      <div class="panel"><div class="scroll"><table>
-        <thead><tr><th>Shape</th><th>You receive</th><th>You send</th><th>Partner</th>
-          <th class="num">Your gain</th><th class="num">Reg</th><th class="num">Playoffs</th>
-          <th class="num">Partner gain</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="8"><div class="empty">No mutually beneficial trades found.</div></td></tr>'}</tbody>
+      <p class="sectsub">Ranked by your gain; every side has to come out ahead.
+        <b>Click any row</b> for the week-by-week detail and the case to make to your
+        partner. Hover a column heading to see what it measures.</p>
+      <div class="panel"><div class="scroll"><table id="trades">
+        <thead><tr><th></th>${th("Shape", "shape", "num")}${th("You receive", "recv")}
+          ${th("You send", "send")}${th("Partner", "partner")}
+          ${th("Your gain", "gain", "num")}${th("Reg. season", "reg", "num")}
+          ${th("Playoffs", "po", "num")}${th("Partner gain", "theirs", "num")}</tr></thead>
+        <tbody>${body || '<tr><td colspan="9"><div class="empty"><b>No trades found</b>Nothing helps both sides right now.</div></td></tr>'}</tbody>
       </table></div></div>
 
       <h2 class="secttl">Your least-used players</h2>
-      <p class="sectsub">How often each would crack your optimal lineup. Low numbers are trade chips.</p>
+      <p class="sectsub">Points parked on your bench are what another roster would
+        actually start.</p>
       <div class="panel"><div class="scroll"><table>
-        <thead><tr><th>Player</th><th>Pos</th><th>NFL</th><th class="num">Bye</th>
-          <th class="num">Starts</th></tr></thead><tbody>${chips}</tbody></table></div></div>
+        <thead><tr><th>Player</th><th>Pos</th><th>NFL</th>${th("Bye", "bye", "num")}
+          ${th("Starts", "starts", "num")}<th></th></tr></thead>
+        <tbody>${chips}</tbody></table></div></div>
 
       <h2 class="secttl">League strength</h2>
       <div class="panel"><div class="scroll"><table>
-        <thead><tr><th>#</th><th>Team</th><th class="num">Optimal pts/wk</th></tr></thead>
+        <thead><tr><th>#</th><th>Team</th>${th("Optimal pts/wk", "optimal", "num")}<th></th></tr></thead>
         <tbody>${standings}</tbody></table></div></div>
 
       <footer style="padding:34px 0 60px;color:var(--faint);font-family:var(--mono);font-size:11px">
@@ -188,6 +303,21 @@ function render(eng, model, trades, myTeam) {
         <button class="btn ghost2" id="refresh" style="margin-left:14px">Refresh data</button>
       </footer>
     </div>`;
+
+  // Accordion: build the detail only when a row is first opened - explain() re-solves
+  // lineups, and doing it for 60 rows up front would stall the page.
+  app.querySelectorAll("#trades tr.tr-row").forEach((row) => {
+    row.onclick = () => {
+      const n = row.dataset.i;
+      const det = app.querySelector(`tr.detail[data-for="${n}"]`);
+      const open = row.classList.toggle("open");
+      if (open && !det.dataset.built) {
+        det.firstElementChild.innerHTML = detailFor(trades[Number(n)]);
+        det.dataset.built = "1";
+      }
+      det.hidden = !open;
+    };
+  });
   $("#refresh").onclick = async () => {
     await chrome.storage.local.clear();
     location.reload();

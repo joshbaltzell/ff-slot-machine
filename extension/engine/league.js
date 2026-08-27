@@ -17,6 +17,27 @@ export const SLOT_LABEL = {
 };
 const POS_LABEL = { 1: "QB", 2: "RB", 3: "WR", 4: "TE", 5: "K", 7: "P",
                     9: "DT", 10: "DE", 11: "LB", 12: "CB", 13: "S", 16: "D/ST" };
+
+/** Slots that accept several positions, so they never name one. */
+const MULTI_SLOTS = new Set([3, 5, 7, 11, 14, 15, 23]);   // RB/WR, WR/TE, OP, DL, DB, DP, FLEX
+
+/**
+ * A player's display position, derived from the slots he may fill.
+ *
+ * `defaultPositionId` is unreliable - this league's team-QB entities do not carry
+ * one that maps to anything, which showed up as "?" in the UI. Eligibility is the
+ * authoritative signal and it is what the engine already uses, so the label should
+ * come from the same place: the first single-position slot he is allowed to start
+ * in. That yields TQB for team quarterbacks, and works for IDP and superflex too.
+ */
+export function positionLabel(player) {
+  const elig = (player.eligibleSlots ?? []).filter(
+    (s) => !MULTI_SLOTS.has(s) && s !== 20 && s !== 21 && s !== 24);
+  for (const slot of elig.sort((a, b) => a - b)) {
+    if (SLOT_LABEL[slot]) return SLOT_LABEL[slot];
+  }
+  return POS_LABEL[player.defaultPositionId] ?? "?";
+}
 export const PRO_TEAM = {
   0: "FA", 1: "ATL", 2: "BUF", 3: "CHI", 4: "CIN", 5: "CLE", 6: "DAL", 7: "DEN",
   8: "DET", 9: "GB", 10: "TEN", 11: "IND", 12: "KC", 13: "LV", 14: "LAR",
@@ -128,7 +149,7 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
         const pl = players.get(p.id) ?? {
           id: p.id, name: p.fullName,
           eligibleSlots: p.eligibleSlots ?? [],
-          pos: POS_LABEL[p.defaultPositionId] ?? "?",
+          pos: positionLabel(p),
           nfl: PRO_TEAM[p.proTeamId] ?? "?",
           teamId: t.id, proj: {},
         };

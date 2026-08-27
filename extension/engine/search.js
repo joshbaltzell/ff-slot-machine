@@ -186,6 +186,69 @@ export class Engine {
     return out.sort((a, b) => b.total - a.total);
   }
 
+  /** Per-week start mask for a roster: playerIdx -> Uint8Array(NW). */
+  starterMask(ids) {
+    const vals = this._vals;
+    const out = new Map(ids.map(i => [i, new Uint8Array(this.NW)]));
+    for (let w = 0; w < this.NW; w++) {
+      for (const i of ids) vals[i] = this.proj[i * this.NW + w];
+      const order = ids.slice().sort((a, b) => vals[b] - vals[a]);
+      for (const p of seatsOf(order, vals, this.mask, this.starters))
+        if (p >= 0) out.get(p)[w] = 1;
+    }
+    return out;
+  }
+
+  /**
+   * Why a trade works, per side. Answers the question the point delta cannot:
+   * does the incoming player actually crack this lineup, and who does he push out?
+   */
+  explain(trade) {
+    const detail = {};
+    for (const side of trade.sides) {
+      const ids = this.roster.get(side.team);
+      const before = this.starterMask(ids);
+      const after = this.starterMask(this.swap(ids, side.sent, side.received));
+      const sum = (a) => a.reduce((x, y) => x + y, 0);
+      const cnt = (m, i) => (m.get(i) ? sum([...m.get(i)]) : 0);
+
+      const moved = [];
+      for (const i of ids) {
+        if (side.sent.includes(i)) continue;
+        const d = cnt(after, i) - cnt(before, i);
+        if (d !== 0) moved.push({ i, delta: d });
+      }
+      moved.sort((a, b) => a.delta - b.delta);
+
+      detail[side.team] = {
+        acquired: side.received.map(i => ({
+          i,
+          startsHere: cnt(after, i),
+          // how often he starts on the roster that owns him today
+          startsThere: cnt(this.starterMask(this.roster.get(this.ownerOf(i))), i),
+          now: [...(this.starterMask(this.roster.get(this.ownerOf(i))).get(i) ?? [])]
+                 .map((v, w) => (this.bye[i] === this.weeks[w] ? -1 : v)),
+          after: [...(after.get(i) ?? [])]
+                 .map((v, w) => (this.bye[i] === this.weeks[w] ? -1 : v)),
+          proj: Array.from({ length: this.NW }, (_, w) => this.proj[i * this.NW + w]),
+        })),
+        sent: side.sent.map(i => ({ i, wasStarting: cnt(before, i) })),
+        displaced: moved.filter(m => m.delta < 0).slice(0, 3),
+        promoted: moved.filter(m => m.delta > 0).slice(-3).reverse(),
+        thin: this.thin.get(side.team),
+      };
+    }
+    return detail;
+  }
+
+  ownerOf(i) {
+    if (!this._owner) {
+      this._owner = new Map();
+      for (const t of this.teams) for (const j of this.roster.get(t)) this._owner.set(j, t);
+    }
+    return this._owner.get(i);
+  }
+
   /** Fraction of weeks each player starts on the team that owns him. */
   startRates() {
     const rates = new Map();
