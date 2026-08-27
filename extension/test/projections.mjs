@@ -11,6 +11,8 @@ import { parseCsv, parseCsvObjects } from "../engine/sources/csv.js";
 import { loadSleeperProjections, pprColumn, trimWeek, weekUrl } from "../engine/sources/sleeperproj.js";
 import { IDS_URL, WEEKLY_URL, loadFantasyProsWeek, trimIds, trimWeekly } from "../engine/sources/fantasypros.js";
 import { aggregateProjections } from "../engine/aggregate.js";
+import { FIT_POS, MIN_N, MIN_WEEKS, attachActuals, fitSlopes, loadLog, logKey, logWeek,
+         summary, weeksStored, weeksWithActuals } from "../engine/calibration.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -327,6 +329,122 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     ok(r5.band.get(101).length === 3, "band is aligned to the weeks argument");
     ok(close(r5.band.get(101)[1], 0) && close(r5.band.get(101)[2], 0), "uncovered weeks band at zero");
     ok(r5.changed === 4, "changed counts the players actually moved");
+  }
+}
+
+/* ---- 5. the calibration log ---- */
+{
+  ok(logKey(7, 2026) === "ffsm.calib.7.2026", "the log is keyed by league and season");
+
+  /* storage round trip */
+  {
+    const storage = mkStorage();
+    const ref = { storage, leagueId: 7, seasonId: 2026 };
+    await logWeek({ ...ref, week: 5, rows: [{ id: 101, pos: "RB", espn: 10, sleeper: 11, fp: 12, agg: 11 }], now: 1 });
+    await logWeek({ ...ref, week: 6, rows: [{ id: 101, pos: "RB", espn: 20, sleeper: null, fp: null, agg: 20 }], now: 2 });
+    const log = await loadLog(ref);
+    ok(weeksStored(log) === 2, "two weeks stored");
+    ok(log.weeks["5"].rows[0].sleeper === 11, "a row round-trips");
+    ok(log.weeks["5"].at === 1, "each week records when it was written");
+    await logWeek({ ...ref, week: 5, rows: [{ id: 101, pos: "RB", espn: 99, sleeper: null, fp: null, agg: 99 }], now: 3 });
+    const log2 = await loadLog(ref);
+    ok(weeksStored(log2) === 2 && log2.weeks["5"].rows[0].espn === 99, "re-running a week overwrites it");
+    ok((await loadLog({ storage, leagueId: 8, seasonId: 2026 })).weeks
+       && weeksStored(await loadLog({ storage, leagueId: 8, seasonId: 2026 })) === 0,
+       "an unknown league reads as an empty log");
+  }
+
+  /* actuals come from ESPN's own rawStats, filtered on seasonId */
+  {
+    const log = { weeks: { 5: { at: 0, rows: [
+      { id: 101, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10 },
+      { id: 999, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10 },
+    ] } } };
+    const players = new Map([[101, { id: 101, rawStats: [
+      { statSourceId: 0, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 13.456 },
+      { statSourceId: 0, statSplitTypeId: 1, seasonId: 2025, scoringPeriodId: 5, appliedTotal: 99 },
+      { statSourceId: 1, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 88 },
+      { statSourceId: 0, statSplitTypeId: 0, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 77 },
+    ] }]]);
+    const r = attachActuals(log, players, 2026);
+    ok(close(log.weeks["5"].rows[0].actual, 13.46), "the actual is read and rounded");
+    ok(log.weeks["5"].rows[1].actual === undefined, "a player no longer in the league is left alone");
+    ok(r.filled === 1, "filled counts the rows joined");
+    ok(weeksWithActuals(log) === 1, "a week with any actual counts");
+    ok(weeksWithActuals({ weeks: { 6: { rows: [{ id: 1, espn: 1 }] } } }) === 0, "a week with no actuals does not");
+  }
+
+  /* MAE, bias and slope on a hand-checkable log */
+  {
+    // espn 10 -> actual 12 (err +2) ; espn 20 -> actual 16 (err -4)
+    const log = { weeks: {
+      5: { at: 0, rows: [{ id: 1, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10, actual: 12 }] },
+      6: { at: 0, rows: [{ id: 1, pos: "RB", espn: 20, sleeper: null, fp: null, agg: 20, actual: 16 }] },
+    } };
+    const rows = summary(log);
+    const rb = rows.find((r) => r.source === "espn" && r.pos === "RB");
+    ok(rb.n === 2, "summary counts pairs");
+    ok(close(rb.mae, 3), "MAE is the mean absolute error");
+    ok(close(rb.bias, -1), "bias is the mean signed error");
+    ok(close(rb.slope, 0.4), "slope is OLS of actual on projection");
+    ok(rows.every((r) => r.source !== "sleeper"), "a source with no values produces no row");
+    ok(summary({ weeks: {} }).length === 0, "an empty log summarises to nothing");
+  }
+
+  /* a synthetic season: actual = 0.8 * proj + deterministic noise */
+  {
+    // A small LCG so the test is reproducible: real noise, no Math.random.
+    // MINSTD: seed * 48271 stays inside the safe-integer range. The textbook
+    // (seed * 1103515245 + 12345) does not, and silently degenerates.
+    let seed = 12345;
+    const noise = () => { seed = (seed * 48271) % 2147483647; return (seed / 2147483647 - 0.5) * 4; };
+    const weeks = {};
+    for (let w = 1; w <= 8; w++) {
+      const rows = [];
+      for (const pos of FIT_POS)
+        for (let k = 0; k < 20; k++) {
+          const proj = 4 + k * 1.2;
+          rows.push({ id: `${pos}${k}`, pos, espn: proj, sleeper: null, fp: null,
+                      agg: proj, actual: Math.round((0.8 * proj + noise()) * 100) / 100 });
+        }
+      weeks[w] = { at: 0, rows };
+    }
+    const log = { weeks };
+    ok(weeksWithActuals(log) === 8, "eight weeks have actuals");
+    const k = fitSlopes(log);
+    ok(k !== null, "with eight weeks the fit runs");
+    ok(FIT_POS.every((p) => Math.abs(k[p] - 0.8) < 0.05), `fitted slopes land near 0.8 (${JSON.stringify(k)})`);
+
+    /* fewer than six weeks with actuals returns null slopes */
+    const short = { weeks: Object.fromEntries(Object.entries(weeks).slice(0, 5)) };
+    ok(weeksWithActuals(short) === 5, "five weeks in the short log");
+    ok(fitSlopes(short) === null, "fewer than six weeks with actuals returns null");
+
+    /* a position below the observation floor is null rather than a noisy number */
+    const thin = { weeks: Object.fromEntries(Object.entries(weeks).map(([w, e]) =>
+      [w, { at: 0, rows: e.rows.filter((r) => r.pos !== "TE" || Number(r.id.slice(2)) < 1) }])) };
+    const kThin = fitSlopes(thin);
+    ok(kThin.TE === null, `a position with fewer than ${MIN_N} pairs is null`);
+    ok(typeof kThin.QB === "number", "the other positions still fit");
+
+    /* an absurd slope is clamped rather than trusted */
+    const wild = { weeks: Object.fromEntries(Object.entries(weeks).map(([w, e]) =>
+      [w, { at: 0, rows: e.rows.map((r) => ({ ...r, actual: r.agg * 9 })) }])) };
+    ok(fitSlopes(wild).RB === 1.2, "a slope above the clamp is clamped");
+    const flat = { weeks: Object.fromEntries(Object.entries(weeks).map(([w, e]) =>
+      [w, { at: 0, rows: e.rows.map((r) => ({ ...r, actual: r.agg * 0.01 })) }])) };
+    ok(flat && fitSlopes(flat).RB === 0.3, "a slope below the clamp is clamped");
+
+    ok(MIN_WEEKS === 6, "the week floor is six");
+  }
+
+  /* rows with no variation cannot produce a slope */
+  {
+    const rows = [];
+    for (let k = 0; k < 25; k++) rows.push({ id: k, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10, actual: 11 });
+    const log = { weeks: Object.fromEntries([1, 2, 3, 4, 5, 6].map((w) => [w, { at: 0, rows: rows.map((r) => ({ ...r })) }])) };
+    ok(fitSlopes(log).RB === null, "no spread in the projections means no slope");
+    ok(close(summary(log).find((r) => r.source === "agg" && r.pos === "RB").bias, 1), "bias still works");
   }
 }
 
