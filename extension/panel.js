@@ -438,9 +438,9 @@ function deltaBars(weekly, weeks) {
 }
 
 /** A player's season: bar height is his projection, green means he starts. */
-function usageBars(strip, proj, thin, weeks) {
+function usageBars(strip, proj, thin, weeks, outgoing = false) {
   const max = Math.max(...proj, 1);
-  return `<div class="bars">${strip.map((v, i) => {
+  return `<div class="bars${outgoing ? " out" : ""}">${strip.map((v, i) => {
     const h = v === -1 ? 12 : Math.max(8, proj[i] / max * 100);
     return `<i class="${v === 1 ? "on" : v === -1 ? "bye" : ""}${thin && thin[i] ? " thin" : ""}"
       style="height:${h.toFixed(0)}%" title="Wk ${weeks[i]}: ${
@@ -524,7 +524,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       const d = ex[other.team];
       const bw = W.filter((_, i) => d.thin?.[i]);
       const isBye = other.full <= 0.15 && other.bye >= 1.5 && bw.length;
-      const rows = d.acquired.map((a) => `
+      const inRows = d.acquired.map((a) => `
         <div class="cmp-name">${esc(nm(a.i))} ${tag(a.i)}
           <span class="tag${a.startsHere > a.startsThere ? " g" : ""}">${
             a.startsThere} &rarr; ${a.startsHere} starts</span></div>
@@ -532,6 +532,16 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <div>${usageBars(a.now, a.proj, null, W)}</div>
         <div class="cmp-lab">With ${esc(other.team)}<br>after</div>
         <div>${usageBars(a.after, a.proj, d.thin, W)}</div>`).join("");
+
+      // What this partner gives up. There is no "after" strip - he is gone - so it
+      // shows the starts being surrendered, which is the cost side of the pitch.
+      const outRows = (d.sent ?? []).map((x) => `
+        <div class="cmp-name">${esc(nm(x.i))} ${tag(x.i)}
+          <span class="tag warn">gives up ${x.wasStarting} start${
+            x.wasStarting === 1 ? "" : "s"}</span></div>
+        <div class="cmp-lab">Starting for<br>them now</div>
+        <div>${x.now ? usageBars(x.now, x.proj, d.thin, W, true) : ""}</div>`).join("");
+
       return `<div class="pitch">
         <div class="pitch-hd">
           <h4>The case for ${esc(other.team)}</h4>
@@ -548,7 +558,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           ${isBye ? `Most of the value lands in weeks ${bw.join(", ")}, when byes leave
              that roster starting players it would rather bench — at full strength it is
              only ${f2(other.full)} per week.` : ""}</p>
-        <div class="cmp">${rows}</div>
+        <div class="cmp-group"><h5>What ${esc(other.team)} gets</h5>
+          <div class="cmp">${inRows}</div></div>
+        ${outRows ? `<div class="cmp-group out"><h5>What ${esc(other.team)} gives up</h5>
+          <div class="cmp">${outRows}</div></div>` : ""}
         <div class="legend">
           <span><i class="swatch" style="background:var(--accent)"></i> starts</span>
           <span><i class="swatch" style="background:var(--line-hi)"></i> benched</span>
@@ -575,6 +588,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           + `starts ${a.startsThere} where he is now — ${g} more weeks in a lineup.`
         : `${nm(a.i)} starts ${a.startsHere} of ${W.length} weeks for you.`);
     }
+    for (const x of d.sent ?? [])
+      L.push(x.wasStarting > 0
+        ? `You give up ${nm(x.i)}, who starts ${x.wasStarting} of ${W.length} weeks for you.`
+        : `You give up ${nm(x.i)}, who never cracks your lineup.`);
     L.push("", `Net for you: ${f2(other.gain)} points per week, using your best possible `
       + `lineup each week.`);
     if (Math.abs(other.reg - other.gain) > 0.15)

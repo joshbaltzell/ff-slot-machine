@@ -321,7 +321,15 @@ export class Engine {
                  .map((v, w) => (this.bye[i] === this.weeks[w] ? -1 : v)),
           proj: Array.from({ length: this.NW }, (_, w) => this.proj[i * this.NW + w]),
         })),
-        sent: side.sent.map(i => ({ i, wasStarting: cnt(before, i) })),
+        // Outgoing players need their usage strip too: a partner cannot judge a
+        // trade from what arrives alone, they have to see what leaves.
+        sent: side.sent.map(i => ({
+          i,
+          wasStarting: cnt(before, i),
+          now: [...(before.get(i) ?? [])]
+                 .map((v, w) => (this.bye[i] === this.weeks[w] ? -1 : v)),
+          proj: Array.from({ length: this.NW }, (_, w) => this.proj[i * this.NW + w]),
+        })),
         displaced: moved.filter(m => m.delta < 0).slice(0, 3),
         promoted: moved.filter(m => m.delta > 0).slice(-3).reverse(),
         thin: this.thin.get(side.team),

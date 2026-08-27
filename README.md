@@ -43,6 +43,9 @@ season, playoffs and bye weeks, who starts more, who gets benched, a per-week ba
 chart, and a **Copy pitch** button that puts a plain-language case on your clipboard,
 written from your partner's side.
 
+The pitch shows **both directions**: what your partner gains, and what they give up.
+A trade cannot be judged from the incoming players alone.
+
 ## The daily reminder
 
 Once installed, a small notice can appear on your ESPN league page — "3 trade
