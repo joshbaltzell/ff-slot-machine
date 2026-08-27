@@ -23,6 +23,7 @@ import { Engine, dedupe } from "../engine/search.js";
 import { projectSeason } from "../engine/season.js";
 import { shrinkProjections, CALIBRATION_K } from "../engine/calibrate.js";
 import { Phi, phi, winProb, leverage } from "../engine/winprob.js";
+import { tradeOdds, attachOdds } from "../engine/odds.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -278,6 +279,37 @@ ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
   }
   ok(JSON.stringify(d.map((r) => [r.team, r.wins, r.titlePct])) ===
      JSON.stringify(a.map((r) => [r.team, r.wins, r.titlePct])), "batching does not change the totals");
+}
+
+/* ---- 8. per-trade season odds ---- */
+{
+  const t0 = F.teams[0], t1 = F.teams[1];
+  const nothing = eng.score([[t0, t1, []], [t1, t0, []]], "1-for-1");
+  const z = tradeOdds(eng, new Map(), model.settings, nothing, t0, { sims: 2000, batches: 5 });
+  ok(z.title === 0 && z.bye === 0 && z.playoff === 0 && z.wins === 0, "null trade: exactly zero deltas");
+  ok(z.se.title === 0 && z.se.bye === 0, "null trade: zero standard error");
+
+  // A trade that hands team 0 the best player in the league for its worst must help.
+  const best = [...eng.roster.get(t1)].sort((a, b) =>
+    eng.proj.subarray(b * NW, b * NW + NW).reduce((x, y) => x + y, 0) -
+    eng.proj.subarray(a * NW, a * NW + NW).reduce((x, y) => x + y, 0))[0];
+  const worst = [...eng.roster.get(t0)].sort((a, b) =>
+    eng.proj.subarray(a * NW, a * NW + NW).reduce((x, y) => x + y, 0) -
+    eng.proj.subarray(b * NW, b * NW + NW).reduce((x, y) => x + y, 0))[0];
+  const heist = { shape: "1-for-1", sides: [
+    { team: t0, sent: [worst], received: [best] }, { team: t1, sent: [best], received: [worst] }] };
+  const h = tradeOdds(eng, new Map(), model.settings, heist, t0, { sims: 4000, batches: 10 });
+  ok(h.wins > 0, "a heist raises expected wins");
+  ok(h.playoff >= 0 && h.title >= 0, "a heist never lowers playoff or title odds");
+  ok(h.se.title >= 0 && Number.isFinite(h.se.title), "standard error is a finite non-negative number");
+
+  const list = [nothing, heist];
+  let calls = 0;
+  const { ms } = await attachOdds(eng, new Map(), model.settings, list, t0, { sims: 2000, batches: 5 }, () => calls++);
+  ok(list.every((t) => t.odds && "title" in t.odds && "se" in t.odds), "attachOdds sets t.odds on every trade");
+  ok(list[0].odds.title === 0, "attachOdds agrees with tradeOdds on the null trade");
+  ok(calls >= 1 && ms >= 0, "reports progress and elapsed time");
+  console.log(`  per-trade odds: ${(ms / list.length).toFixed(0)} ms per trade at 2000 sims`);
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
