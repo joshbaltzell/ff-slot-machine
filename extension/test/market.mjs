@@ -385,6 +385,20 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
   ok(gridCalls[0].rows.every((r) => r.owner !== F.teams[0]), "the buy grid holds nobody of mine");
   ok(gridCalls[1].rows.every((r) => r.owner === F.teams[0]), "the sell grid holds only mine");
 
+  /* The row renderer is injected into `grid` as `o.row`. Call it directly with a
+     hostile player/owner name - `esc()` is the only thing standing between a
+     league's own names and innerHTML. */
+  const rowHtml = gridCalls[0].o.row({
+    i: 0, name: "<script>x</script>", pos: 'RB"><img src=x>', owner: '"><img src=x>',
+    ppg: 1.25, modelRank: 1, marketRank: 2, poolRank: 1, edge: 3, value: 1234, trend30Day: -5,
+  });
+  ok(!/<script>/.test(rowHtml), "a player name cannot inject a tag into the arbitrage row");
+  ok(/&lt;script&gt;/.test(rowHtml), "…it is escaped instead");
+  ok(!/"><img/.test(rowHtml), "an owner or position name cannot break out of an attribute");
+  ok(/&quot;/.test(rowHtml), "…the quote is escaped");
+  ok(/data-p="RB&quot;&gt;&lt;img src=x&gt;"/.test(rowHtml),
+     "the position lands in data-p, escaped, including inside the attribute value");
+
   gridCalls.length = 0;
   const noFeed = arbitrageSection(eng, model, null, { myTeam: F.teams[0], grid: fakeGrid });
   ok(typeof noFeed === "string" && noFeed.startsWith("<section"),
