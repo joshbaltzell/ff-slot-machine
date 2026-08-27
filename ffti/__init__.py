@@ -1,2 +1,2 @@
-"""FF Trade Identifier — find trades that raise both teams' projected starting-lineup points."""
+"""FF Slot Machine engine — the reference implementation the extension is tested against."""
 __all__ = ["data", "lineup", "search", "report"]

@@ -1,4 +1,4 @@
-# Fantasy Trade Finder — Chrome extension
+# FF Slot Machine — Chrome extension
 
 Finds ESPN fantasy trades that raise **both** teams' projected starting-lineup
 points, reading your league live from the browser.

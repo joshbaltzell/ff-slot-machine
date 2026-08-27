@@ -1,7 +1,13 @@
-# FF Trade Identifier
+# FF Slot Machine
 
-Finds trades that raise **both** teams' projected starting-lineup points in ESPN
-fantasy league 153385.
+Finds the ESPN fantasy football trades and waiver adds that actually raise your
+score — by only counting players who would **start**.
+
+> **The Chrome extension in [`extension/`](extension/) is the product.** It reads
+> any ESPN league live from your browser session, so there are no cookies to copy
+> and no spreadsheet to refresh. The Python engine documented below is now the
+> reference implementation the extension is tested against; it still runs, but new
+> features go to the extension.
 
 The premise: a roster's value is not the sum of its players, it's the sum of the
 players who actually *start*. A fourth RB on a team that starts two is worth

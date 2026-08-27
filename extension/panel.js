@@ -32,7 +32,7 @@ function pickTeam(teams) {
        <button class="btn" id="pick">That's me</button>`;
     $("#pick").onclick = () => {
       const t = $("#whoami").value;
-      chrome.storage.local.set({ myTeam: t });
+      chrome.storage.local.set({ "ffsm.myTeam": t });
       $("#bootact").innerHTML = "";
       resolve(t);
     };
@@ -110,7 +110,7 @@ async function start(ref) {
     say(`baseline built for ${eng.teams.length} teams`, "ok");
 
     const swid = await mySwid();
-    const saved = (await chrome.storage.local.get("myTeam")).myTeam;
+    const saved = (await chrome.storage.local.get("ffsm.myTeam"))["ffsm.myTeam"];
     let { team: myTeam, how } = identifyTeam(model, { swid, teamId: ref.teamId });
     if (saved && eng.teams.includes(saved)) { myTeam = saved; how = "your saved choice"; }
     if (myTeam) say(`your team: ${myTeam} (from ${how})`, "ok");
@@ -411,7 +411,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   app.innerHTML = `
     <div class="wrap" style="padding-top:26px">
       <h1 style="font-family:var(--serif);font-weight:400;font-size:42px;margin:0 0 4px">
-        Trade <em style="font-style:italic;color:var(--accent)">Finder</em></h1>
+        FF Slot <em style="font-style:italic;color:var(--accent)">Machine</em></h1>
       <p class="mast-meta">${esc(model.settings.name.toUpperCase())} ·
         ${esc(myTeam.toUpperCase())} · ${model.teams.size} TEAMS ·
         ${eng.starters} STARTERS · LIVE FROM ESPN</p>
@@ -543,13 +543,13 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   });
   $("#who").onchange = (e) => {
     window.__view = e.target.value;
-    if (e.target.value !== "__all__") chrome.storage.local.set({ myTeam: e.target.value });
+    if (e.target.value !== "__all__") chrome.storage.local.set({ "ffsm.myTeam": e.target.value });
     render(eng, model, trades, e.target.value === "__all__" ? myTeam : e.target.value, schedule);
   };
   $("#refresh").onclick = async () => {
-    const keep = (await chrome.storage.local.get("myTeam")).myTeam;
+    const keep = (await chrome.storage.local.get("ffsm.myTeam"))["ffsm.myTeam"];
     await chrome.storage.local.clear();
-    if (keep) await chrome.storage.local.set({ myTeam: keep });
+    if (keep) await chrome.storage.local.set({ "ffsm.myTeam": keep });
     location.reload();
   };
 }
