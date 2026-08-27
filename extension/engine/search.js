@@ -9,6 +9,7 @@
  * against known-good trades, so it was dropped.
  */
 import { bestLineup } from "./lineup.js";
+import { winProb, leverage, FALLBACK_SIGMA } from "./winprob.js";
 
 /**
  * Hand the browser a turn.
@@ -155,7 +156,7 @@ export class Engine {
     return {
       team, sent: out, received: inn, weekly: d,
       gain: avg(d), reg: avg(d, this.regMask), playoff: avg(d, this.poMask),
-      bye: avg(d, thin), full: avg(d, thin.map(x => !x)), win: 0,
+      bye: avg(d, thin), full: avg(d, thin.map(x => !x)), win: 0, winWeekly: null,
     };
   }
 
@@ -256,8 +257,13 @@ export class Engine {
   teamSigma(team) {
     if (!this.sigmaOf) return null;
     this._teamSigma ??= new Map();
-    if (this._teamSigma.has(team)) return this._teamSigma.get(team);
-    const ids = this.roster.get(team);
+    if (!this._teamSigma.has(team)) this._teamSigma.set(team, this.rosterSigma(this.roster.get(team)));
+    return this._teamSigma.get(team);
+  }
+
+  /** Same, for any roster - a trade changes who starts, so it changes the spread. */
+  rosterSigma(ids) {
+    if (!this.sigmaOf) return null;
     const mask = this.starterMask(ids);
     const out = new Float64Array(this.NW);
     for (let w = 0; w < this.NW; w++) {
@@ -265,8 +271,116 @@ export class Engine {
       for (const [i, m] of mask) if (m[w]) v += this.sigmaOf[i] ** 2;
       out[w] = Math.sqrt(v);
     }
-    this._teamSigma.set(team, out);
     return out;
+  }
+
+  /**
+   * Who each team plays each week. `schedule` is week -> [[a, b], ...] from
+   * loadSchedule; weeks without a game (playoffs, or no schedule at all) are null and
+   * fall back to all-play in weekWins.
+   */
+  setSchedule(schedule) {
+    this.opp = new Map(this.teams.map(t => [t, new Array(this.NW).fill(null)]));
+    for (let w = 0; w < this.NW; w++) {
+      for (const [a, b] of schedule.get(this.weeks[w]) ?? []) {
+        if (this.opp.has(a) && this.opp.has(b)) { this.opp.get(a)[w] = b; this.opp.get(b)[w] = a; }
+      }
+    }
+    this._baseWins = null;
+  }
+
+  _state(team, world) {
+    const o = world.get(team);
+    return {
+      mu: o?.mu ?? this.baseline.get(team),
+      sigma: o?.sigma ?? this.teamSigma(team),
+    };
+  }
+  _sig(st, w) { const v = st.sigma?.[w]; return v > 0 ? v : FALLBACK_SIGMA; }
+
+  /**
+   * P(win) per week for each team in `teams`, with `world` overriding any team's
+   * (mu, sigma) - the post-trade rosters. Both teams in a game read from `world`, so
+   * two trading partners who meet are both evaluated after the trade.
+   */
+  weekWins(teams, world) {
+    const out = new Map();
+    for (const t of teams) {
+      const me = this._state(t, world);
+      const p = new Float64Array(this.NW);
+      for (let w = 0; w < this.NW; w++) {
+        const o = this.opp?.get(t)?.[w];
+        if (o) {
+          const them = this._state(o, world);
+          p[w] = winProb(me.mu[w], this._sig(me, w), them.mu[w], this._sig(them, w));
+        } else {
+          let s = 0, n = 0;
+          for (const u of this.teams) {
+            if (u === t) continue;
+            const them = this._state(u, world);
+            s += winProb(me.mu[w], this._sig(me, w), them.mu[w], this._sig(them, w)); n++;
+          }
+          p[w] = n ? s / n : NaN;
+        }
+      }
+      out.set(t, p);
+    }
+    return out;
+  }
+
+  /** dP(win)/dPoint per week for a team's current roster. */
+  weekLeverage(team) {
+    const me = this._state(team, new Map());
+    const out = new Float64Array(this.NW);
+    for (let w = 0; w < this.NW; w++) {
+      const o = this.opp?.get(team)?.[w];
+      if (o) {
+        const them = this._state(o, new Map());
+        out[w] = leverage(me.mu[w], this._sig(me, w), them.mu[w], this._sig(them, w));
+      } else {
+        let s = 0, n = 0;
+        for (const u of this.teams) {
+          if (u === team) continue;
+          const them = this._state(u, new Map());
+          s += leverage(me.mu[w], this._sig(me, w), them.mu[w], this._sig(them, w)); n++;
+        }
+        out[w] = n ? s / n : 0;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Fill `win` and `winWeekly` on every side. Runs on the survivors of the exact
+   * search, never inside it: each side costs one extra lineup solve for its sigma.
+   * Yields to the browser between groups like the searches do.
+   */
+  async enrich(trades, onProgress = () => {}) {
+    if (!this.opp) this.setSchedule(new Map());
+    this._baseWins ??= this.weekWins(this.teams, new Map());
+    for (let n = 0; n < trades.length; n++) {
+      const t = trades[n];
+      if (!t) continue;
+      const world = new Map();
+      for (const s of t.sides) {
+        const ids = this.swap(this.roster.get(s.team), s.sent, s.received);
+        world.set(s.team, { mu: this.weekly(ids, new Float64Array(this.NW)), sigma: this.rosterSigma(ids) });
+      }
+      const after = this.weekWins(t.sides.map(s => s.team), world);
+      for (const s of t.sides) {
+        const a = after.get(s.team), b = this._baseWins.get(s.team);
+        s.winWeekly = [];
+        let win = 0;
+        for (let w = 0; w < this.NW; w++) {
+          const d = (a[w] || 0) - (b[w] || 0);
+          s.winWeekly.push(d);
+          if (this.regMask[w]) win += d;
+        }
+        s.win = win;
+      }
+      if (n % 25 === 24) { onProgress(n + 1, trades.length); await yieldToBrowser(); }
+    }
+    onProgress(trades.length, trades.length);
   }
 
   /** Roster indices belonging to no team - i.e. the free agents. */

@@ -22,6 +22,7 @@ import { buildSlots, seatMask, bestLineup } from "../engine/lineup.js";
 import { Engine, dedupe } from "../engine/search.js";
 import { projectSeason } from "../engine/season.js";
 import { shrinkProjections, CALIBRATION_K } from "../engine/calibrate.js";
+import { Phi, phi, winProb, leverage } from "../engine/winprob.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -189,6 +190,64 @@ ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
   ok(half.get(wr.id).proj[F.weeks[0]] === wr.proj[F.weeks[0]], "positions absent from k are untouched");
   ok(CALIBRATION_K.QB === 0.67 && CALIBRATION_K.RB === 0.79 && CALIBRATION_K.WR === 0.85 && CALIBRATION_K.TE === 0.72,
      "literature slopes are the defaults");
+}
+
+/* ---- 6. win probability ---- */
+{
+  ok(Math.abs(Phi(0) - 0.5) < 1e-7, "Phi(0) = 0.5");
+  ok(Math.abs(Phi(1.96) - 0.9750021) < 1e-5, "Phi(1.96)");
+  ok(Math.abs(Phi(-1.96) - 0.0249979) < 1e-5, "Phi(-1.96)");
+  ok(Math.abs(phi(0) - 0.3989423) < 1e-6, "phi(0)");
+  ok(Math.abs(winProb(100, 20, 90, 20) + winProb(90, 20, 100, 20) - 1) < 1e-9, "winProb is symmetric");
+  ok(winProb(100, 0, 90, 0) === 1 && winProb(90, 0, 100, 0) === 0 && winProb(90, 0, 90, 0) === 0.5,
+     "zero sigma degenerates to a comparison");
+  ok(leverage(100, 20, 100, 20) > leverage(130, 20, 100, 20), "a point is worth more in a close game");
+
+  // Analytic P matches a Monte Carlo of the same normals.
+  let seed = 12345;
+  const lcg = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const g = () => { let u = 0, v = 0; while (!u) u = lcg(); while (!v) v = lcg();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  let wins = 0; const N = 200000;
+  for (let i = 0; i < N; i++) if (105 + 22 * g() > 100 + 18 * g()) wins++;
+  ok(Math.abs(wins / N - winProb(105, 22, 100, 18)) < 0.01, "analytic P matches Monte Carlo");
+
+  // Schedule: pair teams 0-1, 2-3, ... every regular-season week.
+  const sched = new Map();
+  for (const w of model.settings.regularSeasonWeeks) {
+    const games = [];
+    for (let i = 0; i + 1 < F.teams.length; i += 2) games.push([F.teams[i], F.teams[i + 1]]);
+    sched.set(w, games);
+  }
+  eng.setSchedule(sched);
+  ok(eng.opp.get(F.teams[0])[0] === F.teams[1], "opponent lookup follows the schedule");
+  const p = eng.weekWins([F.teams[0]], new Map()).get(F.teams[0]);
+  const a = eng.baseline.get(F.teams[0])[0], b = eng.baseline.get(F.teams[1])[0];
+  ok(Math.abs(p[0] - Phi((a - b) / (25 * Math.SQRT2))) < 1e-9,
+     "without measured volatility, P uses the ±25 fallback for both sides");
+  const q = eng.weekWins([F.teams[1]], new Map()).get(F.teams[1]);
+  ok(Math.abs(p[0] + q[0] - 1) < 1e-9, "the two sides of a game sum to one");
+  const lev = eng.weekLeverage(F.teams[0]);
+  ok(lev.length === NW && lev[0] > 0 && lev[0] <= 1, "leverage is a positive density per point");
+
+  // Playoff weeks have no scheduled game: all-play fallback, still a probability.
+  ok(p[NW - 1] >= 0 && p[NW - 1] <= 1, "unscheduled week falls back to all-play");
+
+  // enrich: a trade that moves nobody changes nothing.
+  const nothing = eng.score([[F.teams[0], F.teams[1], []], [F.teams[1], F.teams[0], []]], "1-for-1");
+  await eng.enrich([nothing]);
+  ok(nothing.sides.every((s) => s.win === 0 && s.winWeekly.every((x) => x === 0)),
+     "null trade has zero win delta");
+
+  // enrich a real trade: win deltas exist, are bounded, and match the weekly sum.
+  const real = (await eng.findTwoTeam(1, 0.05)).slice(0, 5);
+  await eng.enrich(real);
+  for (const t of real) for (const s of t.sides) {
+    const regSum = s.winWeekly.reduce((acc, x, w) => acc + (eng.regMask[w] ? x : 0), 0);
+    ok(Math.abs(s.win - regSum) < 1e-9, "win is the regular-season sum of winWeekly");
+    ok(Math.abs(s.win) < model.settings.regularSeasonWeeks.length, "win delta is bounded by games");
+  }
+  eng.setSchedule(new Map());   // leave the shared engine as other sections expect
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
