@@ -252,6 +252,34 @@ ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
   eng.setSchedule(new Map());   // leave the shared engine as other sections expect
 }
 
+/* ---- 7. season: common random numbers, overrides, batches ---- */
+{
+  const opts = { sims: 4000 };
+  const a = projectSeason(eng, new Map(), model.settings, opts);
+  const b = projectSeason(eng, new Map(), model.settings, opts);
+  ok(JSON.stringify(a) === JSON.stringify(b), "same inputs, bit-identical output");
+
+  const t0 = F.teams[0];
+  const mu = Float64Array.from(eng.baseline.get(t0), (x) => x + 5);
+  const c = projectSeason(eng, new Map(), model.settings, { ...opts, override: new Map([[t0, { mu, sigma: null }]]) });
+  const row = (res, t) => res.find((r) => r.team === t);
+  ok(row(c, t0).wins > row(a, t0).wins, "+5 a week raises expected wins");
+  ok(row(c, t0).titlePct >= row(a, t0).titlePct, "+5 a week does not lower title odds");
+  ok(F.teams.slice(1).every((t) => row(c, t).wins <= row(a, t).wins + 1e-9),
+     "nobody else gains from another team's boost");
+  ok(Math.abs(c.reduce((s, r) => s + r.titlePct, 0) - 1) < 1e-9, "still one champion per season");
+
+  const d = projectSeason(eng, new Map(), model.settings, { ...opts, batches: 10 });
+  ok(d.every((r) => r.batches?.length === 10), "ten batches per team");
+  for (const r of d) {
+    const avg = (k) => r.batches.reduce((s, x) => s + x[k], 0) / 10;
+    ok(Math.abs(avg("titlePct") - r.titlePct) < 1e-9, `batch title odds average to the whole ${r.team}`);
+    ok(Math.abs(avg("wins") - r.wins) < 1e-9, `batch wins average to the whole ${r.team}`);
+  }
+  ok(JSON.stringify(d.map((r) => [r.team, r.wins, r.titlePct])) ===
+     JSON.stringify(a.map((r) => [r.team, r.wins, r.titlePct])), "batching does not change the totals");
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("ENGINE OK — reproduces the verified baseline exactly");

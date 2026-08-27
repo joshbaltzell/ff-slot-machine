@@ -39,11 +39,15 @@ function gauss(rand) {
  * @param settings league settings (playoff shape)
  */
 export function projectSeason(eng, schedule, settings,
-    { sims = 20000, sigma = 25, divisionSeeding = false, divisionOf = null } = {}) {
+    { sims = 20000, sigma = 25, divisionSeeding = false, divisionOf = null,
+      override = null, batches = 1 } = {}) {
   // Prefer measured volatility. The sum of independent normals is normal with the
   // summed variance, so one draw per team-week is exact - no need to draw each
   // player separately - while still letting roster composition set the spread.
-  const teamSig = eng.teams.map((t) => eng.teamSigma?.(t) ?? null);
+  // `override` swaps in a post-trade (mu, sigma) for some teams; everything else,
+  // including the draw order, is unchanged, so two runs share their noise and the
+  // difference between them is a paired estimate (common random numbers).
+  const teamSig = eng.teams.map((t) => override?.get(t)?.sigma ?? eng.teamSigma?.(t) ?? null);
   const sigFor = (i, w) => {
     const v = teamSig[i];
     if (!v) return sigma;
@@ -78,7 +82,7 @@ export function projectSeason(eng, schedule, settings,
   }
 
   const mu = teams.map((t) => {
-    const b = eng.baseline.get(t);
+    const b = override?.get(t)?.mu ?? eng.baseline.get(t);
     const m = new Map();
     weeks.forEach((w, k) => m.set(w, b[k]));
     return m;
@@ -86,6 +90,9 @@ export function projectSeason(eng, schedule, settings,
 
   const rand = mulberry32(0x5EED);
   const acc = teams.map(() => ({ wins: 0, pf: 0, playoff: 0, bye: 0, title: 0, final: 0, seed: 0 }));
+  const nb = Math.max(1, Math.floor(batches));
+  const per = teams.map(() => Array.from({ length: nb }, () => ({ wins: 0, playoff: 0, bye: 0, title: 0 })));
+  const batchOf = (s) => Math.min(nb - 1, Math.floor(s * nb / sims));
   const score = new Float64Array(T);
 
   for (let s = 0; s < sims; s++) {
@@ -130,11 +137,13 @@ export function projectSeason(eng, schedule, settings,
       const rest = order.filter((i) => !champs.includes(i));
       order = [...champs, ...rest];
     }
+    const bi = batchOf(s);
     for (let k = 0; k < T; k++) {
       const i = order[k];
       acc[i].wins += wins[i]; acc[i].pf += pf[i]; acc[i].seed += k + 1;
-      if (k < nPlayoff) acc[i].playoff++;
-      if (k < byes) acc[i].bye++;
+      per[i][bi].wins += wins[i];
+      if (k < nPlayoff) { acc[i].playoff++; per[i][bi].playoff++; }
+      if (k < byes) { acc[i].bye++; per[i][bi].bye++; }
     }
 
     if (roundWeeks.length) {
@@ -171,6 +180,7 @@ export function projectSeason(eng, schedule, settings,
         if (alive.length === 2) for (const i of alive) acc[i].final++;
       }
       acc[alive[0]].title++;
+      per[alive[0]][bi].title++;
     }
   }
 
@@ -190,5 +200,9 @@ export function projectSeason(eng, schedule, settings,
     mcError: Math.sqrt(0.25 / sims),
     sigma: teamSig[teams.indexOf(t)]
       ? teamSig[teams.indexOf(t)].reduce((a, b) => a + b, 0) / weeks.length : sigma,
+    batches: nb > 1 ? per[i].map((x) => {
+      const n = sims / nb;
+      return { wins: x.wins / n, playoffPct: x.playoff / n, byePct: x.bye / n, titlePct: x.title / n };
+    }) : undefined,
   })).sort((a, b) => b.wins - a.wins || b.pointsFor - a.pointsFor);
 }
