@@ -36,7 +36,7 @@ extension/
     calibrate.js     positional shrinkage of ESPN projections
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
-  test/parity.mjs    600 assertions against a frozen league
+  test/parity.mjs    605 assertions against a frozen league
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -94,6 +94,11 @@ divisions still reports one named "League Standings".
 the same scoring period alongside the current one. Matching on `statSourceId`,
 `statSplitTypeId` and `scoringPeriodId` alone silently reads last season — measured
 ~15% low.
+
+**Projections are calibrated before the engine sees them.** `panel.js` runs
+`shrinkProjections` on the model after free agents are merged and before `Engine` is
+built; fixture tests run with it off. `measureVolatility` reads `rawStats`, so sigma
+is unaffected.
 
 **Volatility is measured, not assumed.** `statSourceId: 0` gives the prior season's
 actual weekly scores in the same payload as projections; the residual is real
