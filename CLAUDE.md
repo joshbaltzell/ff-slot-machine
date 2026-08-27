@@ -64,6 +64,13 @@ A marginal-value pruning heuristic was measured at 57% recall and rejected.
 with each other, and that is the point: a trade can be positive on the season
 average while hurting the record that decides seeding. Never collapse them.
 
+**The searches are async and must stay that way.** `findTwoTeam`, `findThreeWay`
+and `buildSwapTable` yield a macrotask between groups. Without that, 2-for-2 blocks
+the main thread for about fourteen seconds: the progress bar freezes, and nothing on
+the page can be clicked. A microtask (`await Promise.resolve()`) is not enough — the
+browser needs a real turn to render. If a future change makes them synchronous
+again, the loading screen will look hung.
+
 **Read settings, never derive them.** `matchupPeriods` maps a matchup to the weeks
 it spans (a two-week final is `{"16": [16,17]}`); `playoffMatchupPeriodLength` can
 be 0 when lengths vary by round; `playoffReseed` can be false; a league with no

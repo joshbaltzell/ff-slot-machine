@@ -10,6 +10,17 @@
  */
 import { bestLineup } from "./lineup.js";
 
+/**
+ * Hand the browser a turn.
+ *
+ * The searches run on whichever thread calls them, and 2-for-2 is roughly fourteen
+ * seconds of solid arithmetic. Without yielding, the page cannot paint its progress
+ * bar or respond to a click for the whole run - it simply looks hung. A macrotask
+ * (not a microtask) is required: awaiting a resolved promise would not let the
+ * browser render between chunks.
+ */
+const yieldToBrowser = () => new Promise((r) => setTimeout(r, 0));
+
 export class Engine {
   /**
    * @param model {weeks, players:Map, teams:Map, settings}
@@ -82,7 +93,7 @@ export class Engine {
   }
 
   /** Per-team swap table: value after (out -> in). Makes three-way a lookup. */
-  buildSwapTable() {
+  async buildSwapTable() {
     if (this._swaps) return this._swaps;
     const tab = new Map();
     // Only rostered players can be traded, so free agents must not enter this
@@ -102,6 +113,7 @@ export class Engine {
         m.set(o, row);
       }
       tab.set(t, m);
+      await yieldToBrowser();
     }
     this._swaps = tab;
     return tab;
@@ -138,26 +150,28 @@ export class Engine {
              balance: Math.min(...sides.map(s => s.gain)) / Math.max(...sides.map(s => s.gain)) };
   }
 
-  /** Symmetric two-team search, `depth` players per side. */
-  findTwoTeam(depth, minGain = 0.05, onProgress = () => {}) {
+  /** Symmetric two-team search, `depth` players per side. Yields between pairs. */
+  async findTwoTeam(depth, minGain = 0.05, onProgress = () => {}) {
     const out = [];
     const pairs = [];
     for (let i = 0; i < this.teams.length; i++)
       for (let j = i + 1; j < this.teams.length; j++) pairs.push([this.teams[i], this.teams[j]]);
-    pairs.forEach(([A, B], n) => {
+    for (let n = 0; n < pairs.length; n++) {
+      const [A, B] = pairs[n];
       for (const sa of combos(this.roster.get(A), depth))
         for (const sb of combos(this.roster.get(B), depth)) {
           const t = this.score([[A, B, sa], [B, A, sb]], `${depth}-for-${depth}`);
           if (t.sides.every(s => s.gain >= minGain)) out.push(t);
         }
       onProgress(n + 1, pairs.length, out.length);
-    });
+      await yieldToBrowser();
+    }
     return out.sort((a, b) => b.total - a.total);
   }
 
-  /** Exhaustive one-player-each cycles, both directions. */
-  findThreeWay(minGain = 0.05, onProgress = () => {}) {
-    const tab = this.buildSwapTable();
+  /** Exhaustive one-player-each cycles, both directions. Yields between triples. */
+  async findThreeWay(minGain = 0.05, onProgress = () => {}) {
+    const tab = await this.buildSwapTable();
     const out = [];
     const T = this.teams;
     const triples = [];
@@ -169,7 +183,8 @@ export class Engine {
       let s = 0; for (let w = 0; w < this.NW; w++) s += arr[w] - base[w];
       return s / this.NW;
     };
-    triples.forEach((tri, n) => {
+    for (let n = 0; n < triples.length; n++) {
+      const tri = triples[n];
       for (const [A, B, C] of [[tri[0], tri[1], tri[2]], [tri[0], tri[2], tri[1]]]) {
         for (const pa of this.roster.get(A)) {
           const gb = [];
@@ -188,7 +203,8 @@ export class Engine {
         }
       }
       onProgress(n + 1, triples.length, out.length);
-    });
+      if (n % 4 === 3) await yieldToBrowser();     // triples are quick; yield less often
+    }
     return out.sort((a, b) => b.total - a.total);
   }
 

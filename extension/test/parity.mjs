@@ -86,13 +86,13 @@ const key = (list) => JSON.stringify(list
         .sort((a, b) => (a[0] < b[0] ? -1 : 1)))
   .sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1)));
 
-const one = eng.findTwoTeam(1, 0.05);
+const one = await eng.findTwoTeam(1, 0.05);
 ok(one.length === GOLDEN.length, `1-for-1 count ${one.length} vs ${GOLDEN.length}`);
 ok(key(one) === JSON.stringify(GOLDEN.slice().sort(
   (a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1))), "1-for-1 set matches golden");
 ok(one.every((t) => t.sides.every((s) => s.gain > 0)), "every reported trade helps every side");
 
-const three = eng.findThreeWay(0.05);
+const three = await eng.findThreeWay(0.05);
 ok(three.length === 92, `three-way count ${three.length} vs 92`);
 ok(three.every((t) => t.sides.length === 3), "three-way has three sides");
 ok(three.every((t) => {

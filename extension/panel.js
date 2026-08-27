@@ -307,17 +307,17 @@ async function start(ref) {
     }
     window.__vol = vol;
     Steps.set("s1", "run");
-    const one = eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
+    const one = await eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
 
     Steps.set("s1", "done", `${one.length}`);
     Steps.set("s2", "run", "slowest step");
-    const two = eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot));
+    const two = await eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot));
     say(`  ${two.length} mutually beneficial`, "ok");
 
     Steps.set("s2", "done", `${two.length}`);
     Steps.set("s3", "run");
-    const three = eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
+    const three = await eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
     say(`  ${three.length} cycles`, "ok");
 
     const trades = [...dedupe(one, 3), ...dedupe(two, 3), ...dedupe(three, 3)]
