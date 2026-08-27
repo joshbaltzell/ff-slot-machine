@@ -9,6 +9,7 @@
  */
 import { parseCsv, parseCsvObjects } from "../engine/sources/csv.js";
 import { loadSleeperProjections, pprColumn, trimWeek, weekUrl } from "../engine/sources/sleeperproj.js";
+import { IDS_URL, WEEKLY_URL, loadFantasyProsWeek, trimIds, trimWeekly } from "../engine/sources/fantasypros.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -99,6 +100,53 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   const dead = await loadSleeperProjections({ season: 2026, weeks: [11, 12], pprValue: 1, bySleeper,
     fetchImpl: mkFetch({}), storage: mkStorage(), now: 0 });
   ok(dead.byWeek.size === 0 && dead.covered === 0 && dead.failed.length === 2, "a dead feed returns empty, not a throw");
+}
+
+/* ---- 3. FantasyPros ECR via DynastyProcess ---- */
+{
+  const weekly = 'fp_id,player_name,pos,week,ecr,r2p_pts\n'
+    + '7,"Smith, John",RB,5,3.1,14.25\n'
+    + '8,Jones,WR,5,9.4,11.00\n'
+    + '9,Ghost,TE,5,20.0,\n'
+    + '10,Old,QB,4,1.0,25.00\n';
+  const ids = "fantasypros_id,espn_id,name\n7,101,a\n8,102,b\n9,103,c\n10,104,d\n11,,e\n";
+
+  const tw = trimWeekly(weekly);
+  ok(tw.idKey === "fp_id", "the id column is probed from the header");
+  ok(tw.hasPts === true, "r2p_pts is detected");
+  ok(tw.rows.length === 3, "a row with no r2p_pts value is dropped");
+  ok(tw.rows[0].fp === "7" && tw.rows[0].pts === 14.25 && tw.rows[0].week === 5, "a weekly row is read");
+  ok(trimWeekly("fp_id,ecr\n7,1.0\n").hasPts === false, "no r2p_pts column is reported, not guessed");
+  ok(trimWeekly("player_name,r2p_pts\nx,1.0\n").idKey === null, "no id column is reported");
+  ok(trimWeekly("").rows.length === 0, "an empty CSV is tolerated");
+
+  const pairs = trimIds(ids);
+  ok(pairs.length === 4, "id rows without an espn id are dropped");
+  ok(pairs[0][0] === "7" && pairs[0][1] === 101, "espn_id is numeric");
+
+  const storage = mkStorage();
+  const fetchImpl = mkFetch({ [WEEKLY_URL]: weekly, [IDS_URL]: ids });
+  const r = await loadFantasyProsWeek({ week: 5, fetchImpl, storage, now: 0 });
+  ok(r.available === true, "the source reports itself available");
+  ok(r.byEspn.get(101) === 14.25 && r.byEspn.get(102) === 11, "points arrive keyed by espn id");
+  ok(!r.byEspn.has(104), "another week's row is filtered out");
+  ok(r.byEspn.size === 2, "only the current week matched");
+  ok(fetchImpl.calls.length === 2, "two files, one fetch each");
+
+  const r2 = await loadFantasyProsWeek({ week: 5, fetchImpl, storage, now: 1000 });
+  ok(r2.byEspn.get(101) === 14.25 && fetchImpl.calls.length === 2, "both files come from the cache");
+
+  const noPts = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0,
+    fetchImpl: mkFetch({ [WEEKLY_URL]: "fp_id,ecr\n7,1.0\n", [IDS_URL]: ids }) });
+  ok(noPts.available === false && noPts.byEspn.size === 0, "no r2p_pts means the source is skipped");
+  ok(/r2p_pts/.test(noPts.reason), "the reason names the missing column");
+
+  const deadIds = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0,
+    fetchImpl: mkFetch({ [WEEKLY_URL]: weekly }) });
+  ok(deadIds.available === false && deadIds.byEspn.size === 0, "a dead crosswalk degrades to unavailable");
+
+  const dead = await loadFantasyProsWeek({ week: 5, storage: mkStorage(), now: 0, fetchImpl: mkFetch({}) });
+  ok(dead.available === false && dead.reason.length > 0, "a dead feed returns a reason, not a throw");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
