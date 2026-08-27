@@ -12,6 +12,8 @@ import { STADIUMS, PRO_TEAM_ID, stadiumOf, isOutdoor } from "../engine/sources/s
 import { VEGAS_BASE, refId, impliedTotals, pickOdds, buildWeek, loadVegas }
   from "../engine/sources/vegas.js";
 import { atKickoff, loadWeather } from "../engine/sources/weather.js";
+import { ENV_K, envGroup, avgImplied, vegasFactor, weatherFactor, applyEnvironment }
+  from "../engine/environment.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -252,6 +254,111 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
     { fetchImpl: mkFetch({ [url]: { hourly: windlessHourly } }), storage: mkStorage(), now: 0 });
   ok(!windlessWx.has(9) && !windlessWx.has(3),
      "no usable wind at kickoff means the stadium is absent, not present with zeros");
+}
+
+/* ---- 4. environment factors ---- */
+{
+  ok(envGroup("D/ST") === "dst", "defences are their own group");
+  ok(envGroup("K") === "k", "so are kickers");
+  ok(envGroup("RB") === "rb", "so are running backs");
+  ok(envGroup("QB") === "pass" && envGroup("TQB") === "pass"
+     && envGroup("WR") === "pass" && envGroup("TE") === "pass",
+     "quarterbacks, team quarterbacks, receivers and tight ends share a group");
+  ok(envGroup("LB") === null && envGroup("P") === null && envGroup("?") === null,
+     "a position with no measured effect gets no factor");
+
+  const week = new Map([
+    [12, { implied: 28, opp: 7,  oppImplied: 20, total: 48, spread: 8, home: true }],
+    [7,  { implied: 20, opp: 12, oppImplied: 28, total: 48, spread: 8, home: false }],
+    [9,  { implied: 22, opp: 3,  oppImplied: 18, total: 40, spread: 4, home: true }],
+    [3,  { implied: 18, opp: 9,  oppImplied: 22, total: 40, spread: 4, home: false }],
+  ]);
+  const avg = avgImplied(week);
+  ok(Math.abs(avg - 22) < 1e-9, `avgImplied is the mean over the week's teams (${avg})`);
+  ok(avgImplied(new Map()) === 0 && avgImplied(undefined) === 0, "no games, no average");
+
+  const edge = (28 - 22) / 22;
+  ok(Math.abs(vegasFactor("pass", week.get(12), avg) - (1 + 0.25 * edge)) < 1e-12,
+     "passers move 0.25 of the gap to the week's average");
+  ok(Math.abs(vegasFactor("rb", week.get(12), avg) - (1 + 0.15 * edge)) < 1e-12,
+     "running backs move 0.15");
+  ok(Math.abs(vegasFactor("k", week.get(12), avg) - (1 + 0.4 * edge)) < 1e-12,
+     "kickers move 0.4");
+  ok(Math.abs(vegasFactor("dst", week.get(12), avg) - (1 + 0.6 * (22 - 20) / 22)) < 1e-12,
+     "a defence is priced off its opponent's implied total, not its own offence's");
+  ok(vegasFactor("pass", week.get(3), avg) < 1, "below the week's average is a cut");
+  ok(vegasFactor("dst", week.get(7), avg) < 1, "a defence facing the best offence is cut");
+  ok(vegasFactor("pass", null, avg) === 1, "no game is identity");
+  ok(vegasFactor("pass", week.get(12), 0) === 1, "no average is identity");
+  ok(vegasFactor(null, week.get(12), avg) === 1, "a group with no coefficient is identity");
+  ok(vegasFactor("dst", { implied: 5, oppImplied: 0.1 }, 1) === ENV_K.clamp.hi,
+     "an absurd edge clamps high");
+  ok(vegasFactor("dst", { implied: 5, oppImplied: 100 }, 1) === ENV_K.clamp.lo,
+     "an absurd edge clamps low");
+
+  ok(weatherFactor("k", { wind: 10, precipProb: 0 }) === 1, "a calm day is identity");
+  ok(weatherFactor("k", { wind: 15, precipProb: 0 }) === 1, "the threshold is exclusive");
+  ok(weatherFactor("k", { wind: 18, precipProb: 0 }) === 0.9, "a kicker in 18 mph");
+  ok(weatherFactor("k", { wind: 30, precipProb: 0 }) === 0.8,
+     "the stronger wind rule replaces the weaker one, it does not compound");
+  ok(weatherFactor("k", { wind: 30, precipProb: 100 }) === 0.8, "rain does not move a kicker");
+  ok(weatherFactor("pass", { wind: 22, precipProb: 0 }) === 0.95, "passing in 22 mph");
+  ok(weatherFactor("pass", { wind: 10, precipProb: 70 }) === 0.95, "passing in the rain");
+  ok(weatherFactor("pass", { wind: 10, precipProb: 69 }) === 1, "just under the rain threshold");
+  ok(Math.abs(weatherFactor("pass", { wind: 22, precipProb: 80 }) - 0.9025) < 1e-12,
+     "wind and rain do compound with each other");
+  ok(weatherFactor("rb", { wind: 30, precipProb: 90 }) === 1, "running backs ignore the weather");
+  ok(weatherFactor("dst", { wind: 30, precipProb: 90 }) === 1, "so do defences");
+  ok(weatherFactor("pass", null) === 1, "no forecast is identity");
+
+  /* applyEnvironment */
+  const mk = () => ({ players: new Map([
+    [1, { id: 1, pos: "QB",   nfl: "KC",  proj: { 4: 20, 5: 20, 6: 20 } }],
+    [2, { id: 2, pos: "RB",   nfl: "KC",  proj: { 4: 12, 5: 12, 6: 12 } }],
+    [3, { id: 3, pos: "K",    nfl: "GB",  proj: { 4: 8,  5: 8,  6: 8 } }],
+    [4, { id: 4, pos: "D/ST", nfl: "CHI", proj: { 4: 6,  5: 6,  6: 6 } }],
+    [5, { id: 5, pos: "LB",   nfl: "KC",  proj: { 4: 9,  5: 9,  6: 9 } }],
+    [6, { id: 6, pos: "WR",   nfl: "SEA", proj: { 4: 11, 5: 11, 6: 11 } }],
+    [7, { id: 7, pos: "WR",   nfl: "KC",  proj: { 4: 0,  5: 11, 6: 11 } }],
+  ]) });
+  const vegas = new Map([[4, week], [5, week]]);
+  const gust = { wind: 30, gust: 40, precipProb: 90 };
+  const weather = new Map([[9, gust], [3, gust]]);
+
+  const m = mk();
+  const r = applyEnvironment(m, vegas, weather, [4, 5]);
+  ok(m.players.get(1).proj[6] === 20, "a week outside the window is untouched");
+  ok(m.players.get(6).proj[4] === 11, "a team with no line that week is untouched");
+  ok(m.players.get(5).proj[4] === 9, "a position with no group is untouched");
+  ok(m.players.get(7).proj[4] === 0, "a bye - nothing projected - is left at zero");
+  ok(m.players.get(1).proj[4] > 20, "a quarterback on the week's highest total goes up");
+  ok((m.players.get(2).proj[4] - 12) / 12 < (m.players.get(1).proj[4] - 20) / 20,
+     "a running back moves less than a quarterback on the same team");
+  ok(m.players.get(3).proj[4] < m.players.get(3).proj[5],
+     "wind is applied only to the week the forecast covers");
+  ok(Math.abs(m.players.get(3).proj[4] - 6.4) < 1e-9,
+     `a kicker at the week's average in 30 mph loses a fifth (${m.players.get(3).proj[4]})`);
+  ok(r.adjusted > 0, "the count of adjusted player-weeks is reported");
+  ok(r.byPlayer.get(1).vegas > 1 && r.byPlayer.get(1).factor > 1,
+     "byPlayer carries the current week's factors");
+  ok(r.byPlayer.get(3).weeks[4].wx.wind === 30, "byPlayer carries the forecast for the hint");
+  ok(Math.abs(r.byPlayer.get(1).weeks[4].implied - 28) < 1e-9,
+     "byPlayer carries the implied total for the hint");
+  ok(!r.byPlayer.has(5), "a player with no group is not recorded");
+  ok(!r.byPlayer.has(6), "a player with no line is not recorded");
+
+  const off = applyEnvironment(mk(), vegas, weather, [4, 5], { enabled: false });
+  ok(off.adjusted === 0 && off.byPlayer.size === 0, "toggled off is exactly identity");
+
+  const m2 = mk();
+  const none = applyEnvironment(m2, new Map(), new Map(), [4, 5]);
+  ok(none.adjusted === 0 && m2.players.get(1).proj[4] === 20 && m2.players.get(3).proj[4] === 8,
+     "a dead Vegas feed leaves every projection exactly as it was");
+
+  const m3 = mk();
+  const noWx = applyEnvironment(m3, vegas, new Map(), [4, 5]);
+  ok(m3.players.get(3).proj[4] === 8 && noWx.byPlayer.get(3).weather === 1,
+     "a dead forecast still lets the lines through");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
