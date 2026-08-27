@@ -1,0 +1,151 @@
+/**
+ * Projected season, from current rosters.
+ *
+ * Points are the wrong unit for a decision - leagues are won on record - so this
+ * turns weekly projections into a distribution of outcomes.
+ *
+ * Two things make it honest rather than theatre:
+ *
+ * 1. Scores are not deterministic. A weekly fantasy score scatters around its
+ *    projection by roughly 25 points, so each week is drawn as Normal(proj, sigma).
+ *    Declaring the higher projection the winner every week would turn a half-point
+ *    edge into a certain win and produce absurdly confident records.
+ * 2. Rosters are frozen. No waiver moves, no injuries, no trades. It answers
+ *    "if today's rosters played the season out", which is a real question but not
+ *    a forecast of what will happen.
+ */
+
+/** Deterministic PRNG, so the same data always yields the same projection. */
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Box-Muller, one value per call (the spare is cheap enough to discard). */
+function gauss(rand) {
+  let u = 0, v = 0;
+  while (u === 0) u = rand();
+  while (v === 0) v = rand();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/**
+ * @param eng      Engine (for baselines and week list)
+ * @param schedule Map week -> [[teamNameA, teamNameB], ...]; empty falls back to all-play
+ * @param settings league settings (playoff shape)
+ */
+export function projectSeason(eng, schedule, settings, { sims = 20000, sigma = 25 } = {}) {
+  const teams = eng.teams;
+  const T = teams.length;
+  const idx = new Map(teams.map((t, i) => [t, i]));
+  const weeks = eng.weeks;
+  const reg = settings.regularSeasonWeeks.filter((w) => weeks.includes(w));
+  const po = settings.playoffWeeks.filter((w) => weeks.includes(w));
+  const roundLen = Math.max(1, settings.playoffRoundLength ?? 1);
+  const nPlayoff = Math.min(settings.playoffTeams ?? 6, T);
+  const bracket = 2 ** Math.ceil(Math.log2(Math.max(nPlayoff, 2)));
+  const byes = bracket - nPlayoff;
+
+  const mu = teams.map((t) => {
+    const b = eng.baseline.get(t);
+    const m = new Map();
+    weeks.forEach((w, k) => m.set(w, b[k]));
+    return m;
+  });
+
+  const rand = mulberry32(0x5EED);
+  const acc = teams.map(() => ({ wins: 0, pf: 0, playoff: 0, bye: 0, title: 0, final: 0, seed: 0 }));
+  const score = new Float64Array(T);
+
+  for (let s = 0; s < sims; s++) {
+    const wins = new Float64Array(T);
+    const pf = new Float64Array(T);
+
+    for (const w of reg) {
+      for (let i = 0; i < T; i++) score[i] = mu[i].get(w) + gauss(rand) * sigma;
+      for (let i = 0; i < T; i++) pf[i] += score[i];
+      const games = schedule.get(w);
+      if (games && games.length) {
+        for (const [a, b] of games) {
+          const ia = idx.get(a), ib = idx.get(b);
+          if (ia === undefined || ib === undefined) continue;
+          if (score[ia] > score[ib]) wins[ia]++; else if (score[ib] > score[ia]) wins[ib]++;
+          else { wins[ia] += 0.5; wins[ib] += 0.5; }
+        }
+      } else {
+        // No schedule: credit the share of the league each team would have beaten.
+        for (let i = 0; i < T; i++) {
+          let beat = 0;
+          for (let j = 0; j < T; j++) if (j !== i && score[i] > score[j]) beat++;
+          wins[i] += beat / (T - 1);
+        }
+      }
+    }
+
+    // Seed on record, then points scored - the near-universal ESPN tiebreak.
+    const order = [...Array(T).keys()].sort((a, b) =>
+      wins[b] - wins[a] || pf[b] - pf[a]);
+    for (let k = 0; k < T; k++) {
+      const i = order[k];
+      acc[i].wins += wins[i]; acc[i].pf += pf[i]; acc[i].seed += k + 1;
+      if (k < nPlayoff) acc[i].playoff++;
+      if (k < byes) acc[i].bye++;
+    }
+
+    if (po.length) {
+      // Round scores are summed across the round's weeks, so two-week rounds work.
+      const roundScore = (i, r) => {
+        let tot = 0;
+        for (let k = 0; k < roundLen; k++) {
+          const w = po[r * roundLen + k];
+          if (w != null) tot += mu[i].get(w) + gauss(rand) * sigma;
+        }
+        return tot;
+      };
+      let alive = order.slice(0, nPlayoff);            // in seed order
+      let round = 0;
+      if (byes > 0) {
+        const seatIn = alive.slice(0, byes);
+        let playing = alive.slice(byes);
+        const next = [];
+        for (let i = 0; i < playing.length / 2; i++) {
+          const hi = playing[i], lo = playing[playing.length - 1 - i];
+          next.push(roundScore(hi, round) >= roundScore(lo, round) ? hi : lo);
+        }
+        alive = [...seatIn, ...next].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        round++;
+      }
+      while (alive.length > 1) {
+        const next = [];
+        for (let i = 0; i < alive.length / 2; i++) {
+          const hi = alive[i], lo = alive[alive.length - 1 - i];
+          next.push(roundScore(hi, round) >= roundScore(lo, round) ? hi : lo);
+        }
+        alive = next.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+        round++;
+        if (alive.length === 2) for (const i of alive) acc[i].final++;
+      }
+      acc[alive[0]].title++;
+    }
+  }
+
+  const games = reg.length;
+  return teams.map((t, i) => ({
+    team: t,
+    wins: acc[i].wins / sims,
+    losses: games - acc[i].wins / sims,
+    pointsFor: acc[i].pf / sims,
+    avgSeed: acc[i].seed / sims,
+    playoffPct: acc[i].playoff / sims,
+    byePct: acc[i].bye / sims,
+    finalPct: acc[i].final / sims,
+    titlePct: acc[i].title / sims,
+    games,
+    // Monte Carlo error on a proportion; used to avoid over-reporting precision.
+    mcError: Math.sqrt(0.25 / sims),
+  })).sort((a, b) => b.wins - a.wins || b.pointsFor - a.pointsFor);
+}

@@ -153,6 +153,27 @@ export function readSettings(raw) {
 }
 
 /**
+ * Regular-season matchups: week -> [[teamNameA, teamNameB], ...].
+ *
+ * With a real schedule the projection is a real record. Without one it falls back
+ * to an all-play share, which measures strength but not the opponents actually
+ * faced - so it is worth asking for.
+ */
+export async function loadSchedule({ leagueId, seasonId }, teamsById) {
+  const blob = await get(seasonId, leagueId, "view=mSchedule");
+  const byWeek = new Map();
+  for (const m of blob.schedule ?? []) {
+    const wk = m.matchupPeriodId;
+    const home = teamsById.get(m.home?.teamId)?.name;
+    const away = teamsById.get(m.away?.teamId)?.name;
+    if (!wk || !home || !away) continue;          // byes and playoff placeholders
+    if (!byWeek.has(wk)) byWeek.set(wk, []);
+    byWeek.get(wk).push([home, away]);
+  }
+  return byWeek;
+}
+
+/**
  * The unrostered pool, scored under this league's own settings.
  *
  * One request, not one per week: a player's `stats` array already carries every

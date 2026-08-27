@@ -5,10 +5,11 @@
  * machine. The only network calls are to ESPN's own read API, with the session the
  * browser already has.
  */
-import { parseLeagueUrl, loadLeague, loadFreeAgents, mySwid, identifyTeam, SLOT_LABEL }
-  from "./engine/league.js";
+import { parseLeagueUrl, loadLeague, loadFreeAgents, loadSchedule, mySwid, identifyTeam,
+         SLOT_LABEL } from "./engine/league.js";
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
+import { projectSeason } from "./engine/season.js";
 
 const $ = (s) => document.querySelector(s);
 const steps = $("#steps");
@@ -121,6 +122,15 @@ async function start(ref) {
     }
 
     say(`free-agent pool usable: ${eng.freeAgents.length}`, "ok");
+
+    let schedule = new Map();
+    try {
+      schedule = await loadSchedule(ref, model.teams);
+      say(`schedule: ${schedule.size} weeks of real matchups`, "ok");
+    } catch {
+      say("schedule unavailable - season projection will use all-play", "err");
+    }
+    window.__schedule = schedule;
     say("searching 1-for-1…");
     const one = eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
@@ -133,7 +143,7 @@ async function start(ref) {
       .sort((a, b) => b.total - a.total);
     say(`${trades.length} offers after dedupe`, "ok");
 
-    render(eng, model, trades, myTeam);
+    render(eng, model, trades, myTeam, schedule);
   } catch (err) {
     say(String(err.message ?? err), "err");
     if (/signed in|access/i.test(String(err))) {
@@ -165,6 +175,11 @@ const HINT = {
   optimal:"What this roster would score each week if it started its best possible lineup every week.",
   fagain: "How much your best lineup improves if you add this player and drop the one shown. A free agent who would never start is worth nothing, however good his projection looks.",
   owned:  "Share of ESPN leagues where this player is rostered. A low number with a real gain is the most likely to still be available.",
+  record: "Average wins and losses across every simulated season. Fractional because it is an average of many outcomes, not a prediction of one.",
+  pf:     "Average total points scored over the regular season. Used as the seeding tiebreak, as in most ESPN leagues.",
+  podds:  "Share of simulated seasons where this team qualifies for the playoffs.",
+  byeodds:"Share of simulated seasons where this team earns a first-round bye. Worth far more than it looks: it skips an elimination game.",
+  title:  "Share of simulated seasons where this team wins the league.",
 };
 const th = (label, key, cls = "") =>
   `<th class="${cls}" data-hint="${esc(HINT[key])}"><span class="hint">${esc(label)}</span></th>`;
@@ -225,7 +240,7 @@ function usageBars(strip, proj, thin, weeks) {
   }).join("")}</div>`;
 }
 
-function render(eng, model, trades, myTeam) {
+function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new Map()) {
   const rates = eng.startRates();
   const W = eng.weeks;
   const nm = (i) => model.players.get(eng.ids[i]).name;
@@ -319,7 +334,7 @@ function render(eng, model, trades, myTeam) {
       return `<tr><td style="font-weight:600">${esc(p.name)}</td><td>${tag(i)}</td>
         <td class="nfl">${esc(p.nfl)}</td><td class="num" style="color:var(--faint)">${p.bye || "—"}</td>
         <td class="num ${r < .35 ? "down" : r > .8 ? "up" : ""}">${(r * 100).toFixed(0)}%</td>
-        <td><div class="bar"><i style="width:${(r * 100).toFixed(0)}%"></i></div></td></tr>`;
+        <td><div class="meter"><i style="width:${(r * 100).toFixed(0)}%"></i></div></td></tr>`;
     }).join("");
 
   const upgrades = eng.freeAgents.length
@@ -339,6 +354,22 @@ function render(eng, model, trades, myTeam) {
     </tr>`;
   }).join("");
 
+  const SIMS = 20000, SIGMA = 25;
+  const hasSched = schedule.size > 0;
+  const proj = projectSeason(eng, schedule, model.settings, { sims: SIMS, sigma: SIGMA });
+  const pct = (v) => `${(v * 100).toFixed(1)}%`;
+  const season = proj.map((r, i) => `<tr${r.team === myTeam ? ' class="mine"' : ""}>
+      <td class="rank">${i + 1}</td>
+      <td${r.team === myTeam ? ' style="font-weight:700"' : ""}>${esc(r.team)}</td>
+      <td class="num">${r.wins.toFixed(1)}&#8202;–&#8202;${r.losses.toFixed(1)}</td>
+      <td class="num" style="color:var(--dim)">${r.pointsFor.toFixed(0)}</td>
+      <td class="num ${r.playoffPct > .5 ? "up" : ""}">${pct(r.playoffPct)}</td>
+      <td class="num" style="color:var(--dim)">${pct(r.byePct)}</td>
+      <td class="num ${r.titlePct > .15 ? "up" : ""}">${pct(r.titlePct)}</td>
+      <td><div class="meter" style="min-width:90px"><i style="width:${
+        (r.titlePct / Math.max(...proj.map(x => x.titlePct)) * 100).toFixed(0)}%"></i></div></td>
+    </tr>`).join("");
+
   const table = eng.teams
     .map(t => ({ t, avg: eng.baseline.get(t).reduce((a, b) => a + b, 0) / eng.NW }))
     .sort((a, b) => b.avg - a.avg);
@@ -347,7 +378,7 @@ function render(eng, model, trades, myTeam) {
       <td class="rank">${i + 1}</td>
       <td${s.t === myTeam ? ' style="font-weight:700"' : ""}>${esc(s.t)}</td>
       <td class="num">${s.avg.toFixed(2)}</td>
-      <td><div class="bar"><i style="width:${(8 + 92 * (s.avg - lo) / Math.max(hi - lo, 1e-9)).toFixed(0)}%"></i></div></td>
+      <td><div class="meter"><i style="width:${(8 + 92 * (s.avg - lo) / Math.max(hi - lo, 1e-9)).toFixed(0)}%"></i></div></td>
     </tr>`).join("");
 
   $("#boot").hidden = true;
@@ -367,7 +398,7 @@ function render(eng, model, trades, myTeam) {
         <b>Click any row</b> for the week-by-week detail and the case to make to your
         partner. Hover a column heading to see what it measures.</p>
       <div class="panel">
-        <div class="bar">
+        <div class="meter">
           <div class="fld"><label for="who">Viewing as</label>
             <select id="who">
               ${eng.teams.map(t => `<option${t === viewing ? " selected" : ""}>${esc(t)}</option>`).join("")}
@@ -410,6 +441,26 @@ function render(eng, model, trades, myTeam) {
         <thead><tr><th>#</th><th>Team</th>${th("Optimal pts/wk", "optimal", "num")}<th></th></tr></thead>
         <tbody>${standings}</tbody></table></div></div>
 
+      <h2 class="secttl">Projected season</h2>
+      <p class="sectsub">If today's rosters played the whole season out. Each week is
+        drawn ${SIMS.toLocaleString()} times as a random result around its projection
+        rather than awarding the win to whoever projects higher, so a narrow edge buys
+        a small share of a win rather than a certain one.
+        ${hasSched ? "Uses your real schedule."
+          : "<b>No schedule available</b>, so records are an all-play share of the league rather than your actual matchups."}</p>
+      <div class="panel"><div class="scroll"><table>
+        <thead><tr><th>#</th><th>Team</th>${th("Record", "record", "num")}
+          ${th("Points for", "pf", "num")}${th("Playoffs", "podds", "num")}
+          ${th("First-round bye", "byeodds", "num")}${th("Title", "title", "num")}
+          <th></th></tr></thead>
+        <tbody>${season}</tbody></table></div>
+        <div class="note"><b>What this is not.</b> Rosters are frozen: no waiver
+          moves, injuries or trades. Weekly scatter is assumed at ${SIGMA} points,
+          which is the single biggest lever on every number here. Odds are shown to
+          the nearest tenth because the simulation's own error is about
+          ±${(100 * (proj[0]?.mcError ?? 0)).toFixed(2)} points.</div>
+      </div>
+
       <footer style="padding:34px 0 60px;color:var(--faint);font-family:var(--mono);font-size:11px">
         Live from ESPN. Nothing leaves your machine.
         <button class="btn ghost2" id="refresh" style="margin-left:14px">Refresh data</button>
@@ -443,7 +494,7 @@ function render(eng, model, trades, myTeam) {
   $("#who").onchange = (e) => {
     window.__view = e.target.value;
     if (e.target.value !== "__all__") chrome.storage.local.set({ myTeam: e.target.value });
-    render(eng, model, trades, e.target.value === "__all__" ? myTeam : e.target.value);
+    render(eng, model, trades, e.target.value === "__all__" ? myTeam : e.target.value, schedule);
   };
   $("#refresh").onclick = async () => {
     const keep = (await chrome.storage.local.get("myTeam")).myTeam;

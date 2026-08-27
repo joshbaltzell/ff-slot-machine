@@ -272,6 +272,11 @@ footer{padding:30px 0 46px;color:var(--faint);font-size:11px;font-family:var(--m
 
 /* ---- column tooltips ---- */
 .hint{border-bottom:1px dotted var(--faint);cursor:help}
+/* A progress meter. Named distinctly because `.bar` is already the filter toolbar
+   in the ported stylesheet - the collision rendered every meter as an empty box. */
+.meter{height:6px;background:var(--sunken);border:1px solid var(--line);
+  border-radius:3px;overflow:hidden;min-width:70px}
+.meter i{display:block;height:100%;background:var(--accent);border-radius:3px}
 th[data-hint]{cursor:help}
 th[data-hint]:hover .hint,th[data-hint]:focus .hint{color:var(--accent);
   border-bottom-color:var(--accent)}
