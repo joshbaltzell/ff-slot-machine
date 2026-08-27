@@ -16,6 +16,7 @@ import { Engine } from "../engine/search.js";
 import { projectSeason } from "../engine/season.js";
 import {
   PLAY_PROB, normStatus, playProb, buildAvailability, restrictToRemaining,
+  mulberry32,
 } from "../engine/availability.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -156,6 +157,140 @@ const mkEngine = (model) =>
     for (let w = 0; w < NW; w++)
       ok(Math.abs(engine.baseline.get(t)[w] - F.baseline[t][w]) < 1e-6,
          `a week-1 horizon leaves the baseline alone ${t}`);
+}
+
+/* ---- 4. weekly() under uncertainty ---- */
+{
+  const base = mkEngine(mkModel(1));
+  const team = F.teams[0];
+  const roster = base.roster.get(team);
+
+  // The engine indexes players by their own id here, so index === player id.
+  const idOf = (i) => base.ids[i];
+  const byProj = roster.slice().sort((a, b) =>
+    base.proj[b * NW] - base.proj[a * NW]);
+  const star = byProj[0], second = byProj[1];
+
+  const allOnes = () => {
+    const m = new Map();
+    for (const i of roster) m.set(idOf(i), new Float64Array(NW).fill(1));
+    return m;
+  };
+  const withAvail = (edit) => {
+    const e = mkEngine(mkModel(1));
+    const m = allOnes();
+    edit(m, e);
+    e.setAvailability(m);
+    return e;
+  };
+
+  /* all ones reproduces the frozen contract exactly */
+  {
+    const e = withAvail(() => {});
+    for (const t of F.teams)
+      for (let w = 0; w < NW; w++)
+        ok(Math.abs(e.baseline.get(t)[w] - F.baseline[t][w]) < 1e-9,
+           `all-available baseline ${t} wk${F.weeks[w]}`);
+  }
+
+  /* one OUT starter this week === the roster without him */
+  {
+    const e = withAvail((m) => { m.get(idOf(star))[0] = 0; });
+    const without = base.weekly(roster.filter((i) => i !== star));
+    near(e.weekly(roster)[0], without[0], 1e-9, "an OUT starter is simply not there");
+    near(e.weekly(roster)[1], base.baseline.get(team)[1], 1e-9,
+         "and next week he is back");
+  }
+
+  /* one Questionable === the probability-weighted mean of the two lineups */
+  {
+    const e = withAvail((m) => { m.get(idOf(star))[0] = 0.71; });
+    const with_ = base.baseline.get(team)[0];
+    const without = base.weekly(roster.filter((i) => i !== star))[0];
+    near(e.weekly(roster)[0], 0.71 * with_ + 0.29 * without, 1e-9,
+         "Q is weighted between playing and not");
+    ok(e.weekly(roster)[0] < with_ && e.weekly(roster)[0] > without,
+       "and lands strictly between the two");
+  }
+
+  /* two uncertain players: all four outcomes, exactly */
+  {
+    const e = withAvail((m) => {
+      m.get(idOf(star))[0] = 0.6;
+      m.get(idOf(second))[0] = 0.4;
+    });
+    const L = (drop) => base.weekly(roster.filter((i) => !drop.includes(i)))[0];
+    const want = 0.6 * 0.4 * L([])
+               + 0.6 * 0.6 * L([second])
+               + 0.4 * 0.4 * L([star])
+               + 0.4 * 0.6 * L([star, second]);
+    near(e.weekly(roster)[0], want, 1e-9, "k = 2 enumerates all four outcomes");
+  }
+
+  /* k = 6 is enumerated; k = 7 is sampled, deterministic, and close */
+  {
+    const six = byProj.slice(0, 6), seventh = byProj[6];
+    const enumerated = withAvail((m) => {
+      for (const i of six) m.get(idOf(i))[0] = 0.4;
+      m.get(idOf(seventh))[0] = 1;
+    });
+    const sampled = withAvail((m) => {
+      for (const i of six) m.get(idOf(i))[0] = 0.4;
+      m.get(idOf(seventh))[0] = 0.999;
+    });
+    const a = sampled.weekly(roster)[0];
+    const b = sampled.weekly(roster)[0];
+    ok(a === b, "the sampled branch is deterministic across calls");
+    const exact = enumerated.weekly(roster)[0];
+    ok(Math.abs(a - exact) / exact < 0.03,
+       `64 draws land within 3% of the enumerated value (${a} vs ${exact})`);
+    console.log(`  sampling error at k=7: ${(100 * Math.abs(a - exact) / exact).toFixed(2)}%`);
+  }
+
+  /* the modal lineup drives the usage strips and the spread */
+  {
+    const e = withAvail((m) => {
+      m.get(idOf(star))[0] = 0.2;         // most likely: out
+      m.get(idOf(second))[0] = 0.8;       // most likely: in
+    });
+    ok(e.starterMask(roster).get(star)[0] === 0,
+       "a player more likely out than in does not appear in the strip");
+    ok(e.starterMask(roster).get(star)[1] === 1,
+       "and appears again once he is healthy");
+    ok(e.starterMask(roster).get(second)[0] === 1,
+       "a player more likely in than out still starts");
+    ok(e.startRates().get(star) < 1, "start rates follow the modal lineup too");
+  }
+
+  /* sigma scales with the chance of playing */
+  {
+    const vol = { bySigma: new Map(roster.map((i) => [idOf(i), 10])), byPos: new Map(), global: 10 };
+    const full = mkEngine(mkModel(1));
+    full.setVolatility(vol);
+    const half = withAvail((m) => { for (const i of roster) m.get(idOf(i))[0] = 0.5; });
+    half.setVolatility(vol);
+    const a = full.rosterSigma(roster)[0], b = half.rosterSigma(roster)[0];
+    near(b, a / Math.SQRT2, 1e-9, "p = 0.5 halves the variance, not the sigma");
+  }
+
+  /* the searches still run, still yield, and still find the same shapes */
+  {
+    const e = withAvail((m) => { m.get(idOf(star))[0] = 0.5; });
+    const found = await e.findTwoTeam(1, 0.05);
+    ok(Array.isArray(found) && found.every((t) => t.sides.length === 2),
+       "1-for-1 still returns two-sided trades with availability attached");
+    ok(found.every((t) => t.sides.every((s) => s.gain >= 0.05)),
+       "and still only mutually beneficial ones");
+  }
+
+  // Drift guard for the deliberate duplication of mulberry32 in season.js: the five
+  // expected values were produced by running season.js's own copy with its own seed.
+  {
+    const r = mulberry32(0x5EED);
+    const want = [0.7100320369936526, 0.286336648510769, 0.9519026265479624,
+                  0.10175976227037609, 0.3784139291383326];
+    ok(want.every((v) => r() === v), "mulberry32 has not drifted from season.js's copy");
+  }
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
