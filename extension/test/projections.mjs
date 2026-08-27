@@ -10,6 +10,7 @@
 import { parseCsv, parseCsvObjects } from "../engine/sources/csv.js";
 import { loadSleeperProjections, pprColumn, trimWeek, weekUrl } from "../engine/sources/sleeperproj.js";
 import { IDS_URL, WEEKLY_URL, loadFantasyProsWeek, trimIds, trimWeekly } from "../engine/sources/fantasypros.js";
+import { aggregateProjections } from "../engine/aggregate.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -22,6 +23,27 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   const hit = table[url]; if (!hit) return { ok: false, status: 404 };
   if (hit instanceof Error) throw hit;
   return { ok: true, status: 200, json: async () => hit, text: async () => String(hit) }; }; f.calls = calls; return f; };
+
+/**
+ * A synthetic league: four RBs and two QBs over three weeks. Deliberately not the
+ * fixture — `fixture.json` is the engine contract and must never be aggregated.
+ * Shaped like `loadLeague`'s return: `proj` is an object keyed by week number.
+ */
+const mkModel = (weeks = [5, 6, 7]) => {
+  const spec = [
+    [101, "RB", 10], [102, "RB", 20], [103, "RB", 30], [104, "RB", 40],
+    [201, "QB", 15], [202, "QB", 25],
+  ];
+  return {
+    weeks: [...weeks],
+    settings: { pprValue: 0.5, currentWeek: weeks[0] },
+    players: new Map(spec.map(([id, pos, base]) => [id, {
+      id, name: `p${id}`, pos, nfl: "X", eligibleSlots: [], rawStats: [],
+      proj: Object.fromEntries(weeks.map((w) => [w, base])),
+    }])),
+  };
+};
+const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(entries)]]) });
 
 /* ---- 1. CSV ---- */
 {
@@ -190,6 +212,122 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   ok(noJoin.available === false && noJoin.byEspn.size === 0,
     "no matching id in the crosswalk degrades to unavailable");
   ok(/no rows matched/.test(noJoin.reason), "the reason is 'no rows matched'");
+}
+
+/* ---- 4. the aggregate: positional-fraction normalization ---- */
+{
+  // A source that agrees with ESPN exactly changes nothing and disagrees by nothing.
+  {
+    const m = mkModel();
+    const s = src("sleeper", 5, [[101, 10], [102, 20], [103, 30], [104, 40]]);
+    const r = aggregateProjections(m, [s], [5, 6, 7]);
+    ok(close(m.players.get(101).proj[5], 10) && close(m.players.get(104).proj[5], 40),
+       "a source agreeing exactly leaves agg = espn");
+    ok(close(r.band.get(101)[0], 0) && close(r.band.get(104)[0], 0), "agreement means band = 0");
+    ok(close(m.players.get(101).proj[6], 10), "a week the source does not cover is untouched");
+    ok(r.coverage.sleeper === 4, "coverage counts the players the source reached");
+  }
+
+  // Only the shape matters, not the scale: a source at 2x across the board is the
+  // same source. This is what makes averaging a non-league-scored feed legitimate.
+  {
+    const m = mkModel();
+    const s = src("sleeper", 5, [[101, 20], [102, 40], [103, 60], [104, 80]]);
+    aggregateProjections(m, [s], [5]);
+    ok(close(m.players.get(101).proj[5], 10) && close(m.players.get(103).proj[5], 30),
+       "a source at 2x scale is identical after normalization");
+  }
+
+  // One player doubled inside the source. Hand-computed:
+  //   src = 20,20,30,40 -> mS = 27.5 ; mE = 25 ; kS = 1
+  //   frac_s : 0.727272..., 0.727272..., 1.090909..., 1.454545...
+  //   frac_E : 0.4, 0.8, 1.2, 1.6
+  //   agg(101) = 25 * (0.4 + 0.727272...)/2 = 14.09
+  //   agg(102) = 25 * (0.8 + 0.727272...)/2 = 19.09
+  //   agg(104) = 25 * (1.6 + 1.454545...)/2 = 38.18
+  //   band(101) = 25 * |0.4 - 0.727272...|/2 = 4.09
+  {
+    const m = mkModel();
+    const s = src("sleeper", 5, [[101, 20], [102, 20], [103, 30], [104, 40]]);
+    const r = aggregateProjections(m, [s], [5]);
+    ok(close(m.players.get(101).proj[5], 14.09, 5e-3), "a doubled player moves halfway to the source");
+    ok(close(m.players.get(102).proj[5], 19.09, 5e-3), "the other players move by the mean shift");
+    ok(close(m.players.get(104).proj[5], 38.18, 5e-3), "the top player moves too");
+    ok(close(r.band.get(101)[0], 4.09, 5e-3), "band is the population sd, scaled back to points");
+    ok(close(r.band.get(103)[0], 25 * Math.abs(1.2 - 30 / 27.5) / 2, 1e-6), "band for a middling player");
+  }
+
+  // Two sources, both agreeing: still espn, still no band.
+  {
+    const m = mkModel();
+    const a = src("sleeper", 5, [[101, 10], [102, 20], [103, 30], [104, 40]]);
+    const b = src("fp", 5, [[101, 5], [102, 10], [103, 15], [104, 20]]);
+    const r = aggregateProjections(m, [a, b], [5]);
+    ok(close(m.players.get(102).proj[5], 20), "two agreeing sources produce agg = espn");
+    ok(close(r.band.get(102)[0], 0), "two agreeing sources produce band = 0");
+    ok(r.coverage.sleeper === 4 && r.coverage.fp === 4, "coverage is reported per source");
+  }
+
+  // A player nobody else covers is left exactly alone.
+  {
+    const m = mkModel();
+    const s = src("sleeper", 5, [[101, 20], [102, 20], [103, 30]]);
+    const before = m.players.get(104).proj[5];
+    const r = aggregateProjections(m, [s], [5]);
+    ok(m.players.get(104).proj[5] === before, "a player only ESPN covers is unchanged");
+    ok(!r.band.has(104) || close(r.band.get(104)[0], 0), "an uncovered player has no band");
+    ok(r.coverage.sleeper === 3, "coverage excludes the player the source missed");
+  }
+
+  // Partial coverage must not shift the covered players (ruling 3): the source agrees
+  // with ESPN on the three players it covers, so all three stay put even though the
+  // subset's mean is well below the position's.
+  {
+    const m = mkModel();
+    const s = src("sleeper", 5, [[101, 10], [102, 20], [103, 30]]);
+    aggregateProjections(m, [s], [5]);
+    ok(close(m.players.get(101).proj[5], 10) && close(m.players.get(102).proj[5], 20)
+       && close(m.players.get(103).proj[5], 30),
+       "a source agreeing on a skewed subset does not move that subset");
+  }
+
+  // Positions are normalized independently.
+  {
+    const m = mkModel();
+    const s = src("sleeper", 5, [[201, 30], [202, 25]]);
+    aggregateProjections(m, [s], [5]);
+    ok(m.players.get(101).proj[5] === 10, "an RB is untouched by a QB-only source");
+    ok(m.players.get(201).proj[5] > 15, "the QB the source likes moves up");
+    ok(m.players.get(202).proj[5] < 25, "the QB the source likes less moves down");
+  }
+
+  // Degradation and edges.
+  {
+    const m = mkModel();
+    const r = aggregateProjections(m, [], [5, 6, 7]);
+    ok(r.changed === 0 && r.band.size === 0, "no sources changes nothing");
+    ok(m.players.get(103).proj[5] === 30, "no sources leaves ESPN alone");
+
+    const m2 = mkModel();
+    const dead = { name: "sleeper", byWeek: new Map() };
+    aggregateProjections(m2, [dead], [5]);
+    ok(m2.players.get(103).proj[5] === 30, "a dead source leaves agg = espn");
+
+    const m3 = mkModel();
+    aggregateProjections(m3, [src("sleeper", 5, [[101, 20]])], [5]);
+    ok(m3.players.get(101).proj[5] === 10, "a source covering one player is ignored (no mean to take)");
+
+    const m4 = mkModel();
+    for (const p of m4.players.values()) p.proj[5] = 0;      // a bye-like week
+    aggregateProjections(m4, [src("sleeper", 5, [[101, 20], [102, 20], [103, 30], [104, 40]])], [5]);
+    ok(m4.players.get(101).proj[5] === 0, "a week with no ESPN projection is skipped");
+
+    const m5 = mkModel();
+    const r5 = aggregateProjections(m5, [src("sleeper", 5, [[101, 20], [102, 20], [103, 30], [104, 40]])], [5, 6, 7]);
+    ok(r5.band.get(101).length === 3, "band is aligned to the weeks argument");
+    ok(close(r5.band.get(101)[1], 0) && close(r5.band.get(101)[2], 0), "uncovered weeks band at zero");
+    ok(r5.changed === 4, "changed counts the players actually moved");
+  }
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
