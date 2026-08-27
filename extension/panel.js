@@ -10,7 +10,7 @@ import { parseLeagueUrl, loadLeague, loadFreeAgents, loadSchedule, measureVolati
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
-import { attachOdds } from "./engine/odds.js";
+import { attachOdds, significant } from "./engine/odds.js";
 import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
 
 const $ = (s) => document.querySelector(s);
@@ -481,8 +481,8 @@ const esc = (v) => String(v).replace(/[&<>"]/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f2 = (n) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2);
 const cls = (n) => (n > 0.005 ? "up" : n < -0.005 ? "down" : "zero");
-/** A probability delta in percentage points, or a dash when it is inside its own error. */
-const fpp = (v, se = 0) => (v == null || !Number.isFinite(v) || Math.abs(v) < 2 * se)
+/** A probability delta in percentage points, or a dash. Feed it `significant()`. */
+const fpp = (v) => (v == null || !Number.isFinite(v))
   ? '<span class="zero">—</span>'
   : `<span class="${cls(v)}">${v >= 0 ? "+" : "−"}${(Math.abs(v) * 100).toFixed(1)}pp</span>`;
 const fw = (v) => `<span class="${cls(v)}">${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}</span>`;
@@ -688,10 +688,20 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "dwins", label: "Δ wins", num: true,
       value: (r) => side(r.t).win ?? 0, hint: HINT.dwins },
     { key: "dtitle", label: "Δ title", num: true,
-      value: (r) => { const s = side(r.t); return s.team === myTeam && r.t.odds ? r.t.odds.title : -1e6 + (s.win ?? 0); },
+      // A dash in the cell must sort as a dash: fall through to Δ wins, below every
+      // resolved title delta, so the significance rule and the order agree.
+      value: (r) => {
+        const s = side(r.t);
+        const v = s.team === myTeam ? significant(r.t.odds, "title") : null;
+        return v ?? -1e6 + (s.win ?? 0);
+      },
       hint: HINT.dtitle },
     { key: "dbye", label: "Δ bye", num: true,
-      value: (r) => { const s = side(r.t); return s.team === myTeam && r.t.odds ? r.t.odds.bye : -1e6 + (s.win ?? 0); },
+      value: (r) => {
+        const s = side(r.t);
+        const v = s.team === myTeam ? significant(r.t.odds, "bye") : null;
+        return v ?? -1e6 + (s.win ?? 0);
+      },
       hint: HINT.dbye },
     { key: "theirs", label: "Partner gain", num: true,
       value: (r) => Math.min(...others(r.t).map((o) => o.gain)), hint: HINT.theirs },
@@ -719,8 +729,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           style="color:var(--faint)">/${W.length}</span></td>
         <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
         <td class="num">${fw(me.win ?? 0)}</td>
-        <td class="num">${me.team === myTeam && t.odds ? fpp(t.odds.title, t.odds.se.title) : '<span class="zero">—</span>'}</td>
-        <td class="num">${me.team === myTeam && t.odds ? fpp(t.odds.bye, t.odds.se.bye) : '<span class="zero">—</span>'}</td>
+        <td class="num">${fpp(me.team === myTeam ? significant(t.odds, "title") : null)}</td>
+        <td class="num">${fpp(me.team === myTeam ? significant(t.odds, "bye") : null)}</td>
         <td class="num" style="color:var(--dim)">${rest.map((o) => f2(o.gain)).join(" / ")}</td>
         <td class="num">${t.total.toFixed(2)}</td>
         <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
@@ -873,18 +883,27 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const me = proj.find((r) => r.team === myTeam);
   const myOffers = trades.filter((t) => t.sides.some((s) => s.team === myTeam));
   const obj = window.__objective ?? "title";
-  const metric = (t) => {
+  const metric = (mode) => (t) => {
     const s = t.sides.find((x) => x.team === myTeam);
-    if (obj === "title") return t.odds && Math.abs(t.odds.title) >= 2 * t.odds.se.title ? t.odds.title : null;
-    if (obj === "wins") return s.win ?? null;
+    if (mode === "title") return significant(t.odds, "title");
+    if (mode === "wins") return s.win ?? null;
     return s.gain;
   };
-  const best = myOffers.reduce((a, t) => {
-    const g = metric(t);
+  const pick = (m) => myOffers.reduce((a, t) => {
+    const g = m(t);
     return g != null && g > (a?.g ?? -1e9) ? { g, t } : a;
   }, null);
-  const bestText = !best ? "—" : obj === "title" ? `${best.g >= 0 ? "+" : "−"}${(Math.abs(best.g) * 100).toFixed(1)}pp`
-    : obj === "wins" ? `${best.g >= 0 ? "+" : "−"}${Math.abs(best.g).toFixed(2)} W` : f2(best.g);
+  // On an average roster no title delta clears its own error, and a tile reading
+  // "—  ·  none found" says there are no offers, which is false. Fall back to the
+  // best Δ wins and say which number is on screen.
+  let best = pick(metric(obj)), bestMode = obj, byWins = false;
+  if (!best && obj === "title") {
+    best = pick(metric("wins"));
+    bestMode = "wins";
+    byWins = !!best;
+  }
+  const bestText = !best ? "—" : bestMode === "title" ? `${best.g >= 0 ? "+" : "−"}${(Math.abs(best.g) * 100).toFixed(1)}pp`
+    : bestMode === "wins" ? `${best.g >= 0 ? "+" : "−"}${Math.abs(best.g).toFixed(2)} W` : f2(best.g);
   const benchCount = eng.roster.get(myTeam).filter((i) => (rates.get(i) ?? 0) < 0.25).length;
 
   $("#boot").hidden = true;
@@ -910,7 +929,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <div class="s">${trades.length} league-wide</div></div>
     <div class="tile hot"><div class="k">Best available · ${esc(OBJECTIVES.find(([k]) => k === obj)[1])}</div>
       <div class="v">${bestText}</div>
-      <div class="s">${best ? "via " + esc(best.t.sides.find((s) => s.team !== myTeam).team) : "none found"}</div></div>
+      <div class="s">${!best ? "none found"
+        : byWins ? "title odds inside simulation error · ranked by wins"
+        : "via " + esc(best.t.sides.find((s) => s.team !== myTeam).team)}</div></div>
     <div class="tile"><div class="k">Trade chips</div>
       <div class="v">${benchCount}</div>
       <div class="s">players under 25% usage</div></div>
