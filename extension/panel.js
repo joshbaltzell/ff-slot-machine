@@ -5,7 +5,8 @@
  * machine. The only network calls are to ESPN's own read API, with the session the
  * browser already has.
  */
-import { parseLeagueUrl, loadLeague, mySwid, identifyTeam, SLOT_LABEL } from "./engine/league.js";
+import { parseLeagueUrl, loadLeague, loadFreeAgents, mySwid, identifyTeam, SLOT_LABEL }
+  from "./engine/league.js";
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 
@@ -85,6 +86,16 @@ async function start(ref) {
     if (s.divisions > 1)
       say(`note: ${s.divisions} divisions - playoff odds ignore divisional seeding`, "err");
 
+    // Free agents are optional: a failure here should not cost you the trade search.
+    try {
+      say("reading the free-agent pool…");
+      const fas = await loadFreeAgents(ref, model.weeks);
+      for (const fa of fas) model.players.set(fa.id, fa);
+      say(`  ${fas.length} available players`, "ok");
+    } catch (e) {
+      say(`  free agents unavailable (${e.message}) - continuing without them`, "err");
+    }
+
     const { slots, starters } = buildSlots(s.lineupSlotCounts);
     const masks = new Map();
     for (const [id, p] of model.players) masks.set(id, seatMask(p.eligibleSlots, slots));
@@ -109,6 +120,7 @@ async function start(ref) {
       myTeam = await pickTeam(eng.teams);
     }
 
+    say(`free-agent pool usable: ${eng.freeAgents.length}`, "ok");
     say("searching 1-for-1…");
     const one = eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
@@ -151,6 +163,8 @@ const HINT = {
   starts: "Share of weeks this player would crack your optimal lineup. Near zero means his points are sitting on your bench - that is a trade chip.",
   bye:    "The week his NFL team is off. He scores nothing that week.",
   optimal:"What this roster would score each week if it started its best possible lineup every week.",
+  fagain: "How much your best lineup improves if you add this player and drop the one shown. A free agent who would never start is worth nothing, however good his projection looks.",
+  owned:  "Share of ESPN leagues where this player is rostered. A low number with a real gain is the most likely to still be available.",
 };
 const th = (label, key, cls = "") =>
   `<th class="${cls}" data-hint="${esc(HINT[key])}"><span class="hint">${esc(label)}</span></th>`;
@@ -308,6 +322,23 @@ function render(eng, model, trades, myTeam) {
         <td><div class="bar"><i style="width:${(r * 100).toFixed(0)}%"></i></div></td></tr>`;
     }).join("");
 
+  const upgrades = eng.freeAgents.length
+    ? eng.freeAgentUpgrades(myTeam, { minGain: 0.05, limit: 25 }) : [];
+  const fa = upgrades.map((u) => {
+    const p = model.players.get(eng.ids[u.fa]);
+    const d = model.players.get(eng.ids[u.drop]);
+    return `<tr>
+      <td style="font-weight:600">${esc(p.name)}</td>
+      <td>${tag(u.fa)}</td>
+      <td class="nfl">${esc(p.nfl)}</td>
+      <td style="color:var(--dim)">${esc(d.name)}</td>
+      <td class="num ${cls(u.gain)}">${f2(u.gain)}</td>
+      <td class="num ${cls(u.reg)}">${f2(u.reg)}</td>
+      <td class="num ${cls(u.playoff)}">${f2(u.playoff)}</td>
+      <td class="num" style="color:var(--faint)">${p.owned != null ? p.owned + "%" : "—"}</td>
+    </tr>`;
+  }).join("");
+
   const table = eng.teams
     .map(t => ({ t, avg: eng.baseline.get(t).reduce((a, b) => a + b, 0) / eng.NW }))
     .sort((a, b) => b.avg - a.avg);
@@ -362,6 +393,17 @@ function render(eng, model, trades, myTeam) {
         <thead><tr><th>Player</th><th>Pos</th><th>NFL</th>${th("Bye", "bye", "num")}
           ${th("Starts", "starts", "num")}<th></th></tr></thead>
         <tbody>${chips}</tbody></table></div></div>
+
+      <h2 class="secttl">Free agents worth adding</h2>
+      <p class="sectsub">A full roster means a pickup is really a swap, so each row
+        shows who to drop. Gains are measured the same way as trades: the change in
+        your best possible starting lineup.</p>
+      <div class="panel"><div class="scroll"><table>
+        <thead><tr><th>Add</th><th>Pos</th><th>NFL</th><th>Drop</th>
+          ${th("Gain", "fagain", "num")}${th("Reg. season", "reg", "num")}
+          ${th("Playoffs", "po", "num")}${th("Owned", "owned", "num")}</tr></thead>
+        <tbody>${fa || '<tr><td colspan="8"><div class="empty"><b>Nothing on waivers helps</b>Your worst starter already beats the pool.</div></td></tr>'}</tbody>
+      </table></div></div>
 
       <h2 class="secttl">League strength</h2>
       <div class="panel"><div class="scroll"><table>

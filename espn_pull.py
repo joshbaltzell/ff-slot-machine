@@ -125,7 +125,8 @@ def free_agents(season: int, league: int, jar: dict, weeks: range,
             proj = next((st["appliedTotal"] for st in p.get("stats", [])
                          if st.get("statSourceId") == 1
                          and st.get("statSplitTypeId") == 1
-                         and st.get("scoringPeriodId") == wk), 0.0)
+                         and st.get("scoringPeriodId") == wk
+                         and st.get("seasonId") == season), 0.0)
             rec[f"Wk {wk}"] = round(float(proj or 0.0), 2)
         print(f" {len(rows)} known")
     return pd.DataFrame(rows.values())
@@ -157,10 +158,14 @@ def pull(season: int, league: int, jar: dict, weeks: range) -> tuple[pd.DataFram
                     "Fantasy Team": tname,
                     "Bye": None})
                 rec["Fantasy Team"] = tname
+                # seasonId matters: ESPN returns the prior season's projection for
+                # the same week alongside this one, and taking the first match can
+                # silently use it.
                 proj = next((s["appliedTotal"] for s in p.get("stats", [])
                              if s.get("statSourceId") == 1
                              and s.get("statSplitTypeId") == 1
-                             and s.get("scoringPeriodId") == wk), 0.0)
+                             and s.get("scoringPeriodId") == wk
+                             and s.get("seasonId") == season), 0.0)
                 rec[f"Wk {wk}"] = round(float(proj or 0.0), 2)
         print(" ok")
 

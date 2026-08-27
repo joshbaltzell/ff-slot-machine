@@ -83,11 +83,15 @@ export class Engine {
   buildSwapTable() {
     if (this._swaps) return this._swaps;
     const tab = new Map();
+    // Only rostered players can be traded, so free agents must not enter this
+    // table - they would quadruple it for combinations that can never occur.
+    const rostered = new Set();
+    for (const t of this.teams) for (const i of this.roster.get(t)) rostered.add(i);
     for (const t of this.teams) {
       const ids = this.roster.get(t);
       const own = new Set(ids);
       const incoming = [];
-      for (let i = 0; i < this.n; i++) if (!own.has(i)) incoming.push(i);
+      for (const i of rostered) if (!own.has(i)) incoming.push(i);
       const m = new Map();
       for (const o of ids) {
         const kept = ids.filter(x => x !== o);
@@ -184,6 +188,54 @@ export class Engine {
       onProgress(n + 1, triples.length, out.length);
     });
     return out.sort((a, b) => b.total - a.total);
+  }
+
+  /** Roster indices belonging to no team - i.e. the free agents. */
+  get freeAgents() {
+    if (!this._fa) {
+      const owned = new Set();
+      for (const t of this.teams) for (const i of this.roster.get(t)) owned.add(i);
+      this._fa = [];
+      for (let i = 0; i < this.n; i++) if (!owned.has(i) && this.mask[i]) this._fa.push(i);
+    }
+    return this._fa;
+  }
+
+  /**
+   * Free agents who would improve a roster.
+   *
+   * A roster is full, so a pickup is really a swap: the value of adding someone is
+   * what he is worth *after* dropping the player he makes redundant. Reporting the
+   * raw projection instead would recommend a kicker nobody would ever start.
+   */
+  freeAgentUpgrades(team, { minGain = 0.05, limit = 30 } = {}) {
+    const ids = this.roster.get(team);
+    const base = this.baseline.get(team);
+    const thin = this.thin.get(team);
+    const mean = (arr, m) => {
+      let s = 0, n = 0;
+      for (let w = 0; w < this.NW; w++) if (!m || m[w]) { s += arr[w] - base[w]; n++; }
+      return n ? s / n : 0;
+    };
+    const out = [];
+    for (const fa of this.freeAgents) {
+      let best = null;
+      for (const drop of ids) {
+        const w = this.weekly(this.swap(ids, [drop], [fa]));
+        const g = mean(w);
+        if (!best || g > best.gain) best = { drop, gain: g, after: Float64Array.from(w) };
+      }
+      if (best && best.gain >= minGain) {
+        const d = [];
+        for (let w = 0; w < this.NW; w++) d.push(best.after[w] - base[w]);
+        out.push({
+          fa, drop: best.drop, gain: best.gain,
+          reg: mean(best.after, this.regMask), playoff: mean(best.after, this.poMask),
+          bye: mean(best.after, thin), weekly: d,
+        });
+      }
+    }
+    return out.sort((a, b) => b.gain - a.gain).slice(0, limit);
   }
 
   /** Per-week start mask for a roster: playerIdx -> Uint8Array(NW). */

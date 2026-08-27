@@ -153,6 +153,41 @@ export function readSettings(raw) {
 }
 
 /**
+ * The unrostered pool, scored under this league's own settings.
+ *
+ * One request, not one per week: a player's `stats` array already carries every
+ * scoring period. Only players who could actually start are worth returning, so
+ * anyone eligible for no starting slot is dropped by the caller.
+ */
+export async function loadFreeAgents({ leagueId, seasonId }, weeks, limit = 400) {
+  const filter = {
+    players: {
+      filterStatus: { value: ["FREEAGENT", "WAIVERS"] },
+      limit,
+      sortPercOwned: { sortPriority: 1, sortAsc: false },
+    },
+  };
+  const blob = await get(seasonId, leagueId, "view=kona_player_info", filter);
+  const out = [];
+  for (const entry of blob.players ?? []) {
+    const p = entry.player ?? entry;
+    const proj = {};
+    for (const st of p.stats ?? []) {
+      if (st.statSourceId === 1 && st.statSplitTypeId === 1 && st.seasonId === seasonId)
+        proj[st.scoringPeriodId] = Math.round((st.appliedTotal ?? 0) * 100) / 100;
+    }
+    if (!weeks.some((w) => proj[w] > 0)) continue;      // nothing projected at all
+    out.push({
+      id: p.id, name: p.fullName, eligibleSlots: p.eligibleSlots ?? [],
+      pos: positionLabel(p), nfl: PRO_TEAM[p.proTeamId] ?? "?",
+      teamId: null, proj,
+      owned: Math.round((p.ownership?.percentOwned ?? 0) * 10) / 10,
+    });
+  }
+  return out;
+}
+
+/**
  * Pull a whole league. `onProgress(done, total, label)` drives the panel's status.
  * Weeks are fetched a few at a time - this is a signed-in user reading their own
  * league, and it should stay gentle enough to look like one.
@@ -187,8 +222,11 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
           teamId: t.id, proj: {},
         };
         pl.teamId = t.id;
+        // seasonId matters: ESPN returns the prior season's projection for the same
+        // week alongside this one, and taking the first match can silently use it.
         const stat = (p.stats ?? []).find(st =>
-          st.statSourceId === 1 && st.statSplitTypeId === 1 && st.scoringPeriodId === wk);
+          st.statSourceId === 1 && st.statSplitTypeId === 1
+          && st.scoringPeriodId === wk && st.seasonId === seasonId);
         pl.proj[wk] = Math.round((stat?.appliedTotal ?? 0) * 100) / 100;
         players.set(p.id, pl);
       }
