@@ -11,6 +11,7 @@ import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 import { attachOdds } from "./engine/odds.js";
+import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -272,6 +273,17 @@ async function start(ref) {
     const unplayable = [...model.players.values()].filter(p => !masks.get(p.id));
     if (unplayable.length)
       say(`${unplayable.length} rostered players fit no starting slot (IR/taxi)`, "");
+
+    // Calibrate before anything reads a projection. Off leaves ESPN's numbers as-is.
+    const calibrate = (await chrome.storage.local.get("ffsm.calibrate"))["ffsm.calibrate"] ?? true;
+    window.__calibrate = calibrate;
+    if (calibrate) {
+      const r = shrinkProjections(model.players, model.weeks, CALIBRATION_K);
+      say(`projections calibrated for ${r.changed} players (${Object.entries(CALIBRATION_K)
+        .map(([p, k]) => `${p} ${k}`).join(", ")})`, "ok");
+    } else {
+      say("projections used as ESPN publishes them (calibration off)", "");
+    }
 
     say("building engine…");
     const eng = new Engine(model, { starters }, masks);
@@ -564,8 +576,12 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           <span>playoffs <b class="${cls(sd.playoff)}">${f2(sd.playoff)}</b></span>
           <span>bye weeks <b class="${cls(sd.bye)}">${f2(sd.bye)}</b></span>
           <span>weeks helped <b>${sd.weekly.filter((x) => x > 0.005).length}/${W.length}</b></span>
+          <span>Δ wins <b class="${cls(sd.win ?? 0)}">${(sd.win >= 0 ? "+" : "−") + Math.abs(sd.win ?? 0).toFixed(2)}</b></span>
         </div>
-        <ul>${li.join("")}</ul>${deltaBars(sd.weekly, W)}</div>`;
+        <ul>${li.join("")}</ul>${deltaBars(sd.weekly, W)}
+        ${sd.winWeekly ? `<div class="delta-cap">Win probability, week by week
+          <b class="${cls(sd.win)}">${(sd.win >= 0 ? "+" : "−") + Math.abs(sd.win).toFixed(2)} wins</b></div>
+          ${deltaBars(sd.winWeekly.map((x) => x * 100), W)}` : ""}</div>`;
     }).join("");
 
     const cases = others(t).map((other) => {
@@ -795,6 +811,31 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     </tr>`,
   });
 
+  /* ---------- week leverage: where a point buys the most win probability ---------- */
+  const pWin = eng.weekWins([myTeam], new Map()).get(myTeam);
+  const lev = eng.weekLeverage(myTeam);
+  const regIdx = W.map((_, i) => i).filter((i) => eng.regMask[i]);
+  const levMax = Math.max(...regIdx.map((i) => lev[i]), 1e-9);
+  const underdogWeeks = regIdx.filter((i) => pWin[i] < 0.5).length;
+  const leverageStrip = `<div class="lev">
+    ${regIdx.map((i) => {
+      const o = eng.opp?.get(myTeam)?.[i];
+      const p = pWin[i];
+      return `<div class="lev-wk" style="--heat:${(lev[i] / levMax).toFixed(2)}"
+        data-hint="Week ${W[i]}${o ? " vs " + esc(o) : " (all-play)"}: ${(p * 100).toFixed(0)}% to win. One extra point is worth ${(lev[i] * 100).toFixed(1)} percentage points here.">
+        <div class="lev-w">WK ${W[i]}</div>
+        <div class="lev-p ${p >= 0.5 ? "up" : "down"}">${(p * 100).toFixed(0)}%</div>
+        <div class="lev-o">${o ? esc(o) : "all-play"}</div>
+      </div>`;
+    }).join("")}
+  </div>
+  <div class="note"><b>Leverage.</b> Brighter weeks are where one point moves your win
+    probability most — the coin-flip games. ${underdogWeeks
+      ? `You are the underdog in <b>${underdogWeeks}</b> of ${regIdx.length} weeks: variance helps
+         there, so a boom-or-bust starter is worth more than his average says.`
+      : `You are the favourite every week: protect the floor — steady starters over swingy ones.`}
+  </div>`;
+
   const SIMS = 20000, SIGMA = 25;
   const hasSched = schedule.size > 0;
   const measured = eng.volatility?.measured ?? 0;
@@ -946,15 +987,21 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           ? `Weekly swing is <b>measured</b> from last season for ${measured} players.`
           : "Weekly swing falls back to an assumed ±25 points."}</p>
       <div class="panel">
-        ${divCount > 1 ? `<div class="bar">
-          <div class="fld"><label>Seeding</label><div class="chips" id="divseed">
+        <div class="bar">
+          ${divCount > 1 ? `<div class="fld"><label>Seeding</label><div class="chips" id="divseed">
             <button data-v="0" aria-pressed="${!divSeed}">By record</button>
             <button data-v="1" aria-pressed="${divSeed}">Division winners first</button>
           </div></div>
           <span class="readout" style="color:var(--faint)">${divCount} divisions. ESPN does
-            not say which rule applies — pick yours; it moves the bye odds.</span>
-        </div>` : ""}
+            not say which rule applies — pick yours; it moves the bye odds.</span>` : ""}
+          <div class="fld"><label data-hint="${esc(HINT.calib)}"><span class="hint">Projections</span></label>
+            <div class="chips" id="calib">
+              <button data-v="1" aria-pressed="${window.__calibrate !== false}">Calibrated</button>
+              <button data-v="0" aria-pressed="${window.__calibrate === false}">As published</button>
+            </div></div>
+        </div>
         ${seasonGrid}
+        ${leverageStrip}
         <div class="note"><b>What this is not.</b> Rosters are frozen: no waivers,
           injuries or trades. ${measured >= 20
             ? `Swing is measured per player and assumes independence — a stack of players
@@ -1020,6 +1067,14 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       window.__divSeed = b.dataset.v === "1";
       chrome.storage.local.set({ "ffsm.divSeed": window.__divSeed });
       rerender();
+    };
+  });
+  app.querySelectorAll("#calib button").forEach((b) => {
+    b.onclick = async () => {
+      const on = b.dataset.v === "1";
+      if (on === (window.__calibrate !== false)) return;
+      await chrome.storage.local.set({ "ffsm.calibrate": on });
+      location.reload();      // projections feed everything; a rebuild is the honest path
     };
   });
   $("#mg").oninput = (e) => {

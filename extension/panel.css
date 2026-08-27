@@ -332,3 +332,14 @@ th.s:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   border-color:rgba(255,111,111,.32)}
 .bars.out i.on{background:var(--danger)}
 .bars.out i{opacity:.88}
+
+/* week leverage strip */
+.lev{display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:1px;
+  background:var(--line);border-top:1px solid var(--line)}
+.lev-wk{background:color-mix(in srgb,var(--accent) calc(var(--heat)*38%),var(--panel));
+  padding:9px 8px;text-align:center;cursor:help}
+.lev-w{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--faint)}
+.lev-p{font-family:var(--mono);font-size:15px;font-weight:600;margin:3px 0 1px}
+.lev-o{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.delta-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-top:14px}

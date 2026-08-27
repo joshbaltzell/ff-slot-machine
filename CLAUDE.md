@@ -32,8 +32,11 @@ extension/
     league.js        ESPN API -> normalized model; settings; volatility
     lineup.js        optimal lineup for any slot configuration
     search.js        swap table, shapes, N-sided trades, three-way, free agents
+    winprob.js       normal CDF, P(win), per-week leverage
+    calibrate.js     positional shrinkage of ESPN projections
+    odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
-  test/parity.mjs    371 assertions against a frozen league
+  test/parity.mjs    600 assertions against a frozen league
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -62,6 +65,18 @@ A marginal-value pruning heuristic was measured at 57% recall and rejected.
 **Time windows stay separate.** `gain` / `reg` / `playoff` / `bye` / `full` disagree
 with each other, and that is the point: a trade can be positive on the season
 average while hurting the record that decides seeding. Never collapse them.
+
+**Wins are scored after the search, never inside it.** `Engine.enrich` and
+`attachOdds` re-score the survivors of the exact search; they need an extra lineup
+solve per side and two season simulations per trade, which is fine for hundreds of
+trades and ruinous for millions. `projectSeason` is deterministic and draws a fixed
+number of normals per simulation, so two runs with the same seed share their noise:
+the *difference* between a baseline and a post-trade run is a paired estimate.
+Keep the draw order fixed - an early `continue` or a conditional draw would break
+common random numbers silently.
+
+**`positionLimits` is a filter, not a search constraint.** `score()` returns `null`
+for a roster ESPN would refuse; the searches skip nulls. Recall is unchanged.
 
 **The searches are async and must stay that way.** `findTwoTeam`, `findThreeWay`
 and `buildSwapTable` yield a macrotask between groups. Without that, 2-for-2 blocks
