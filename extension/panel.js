@@ -947,7 +947,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     <div class="tile hot"><div class="k">Offers for you</div>
       <div class="v">${myOffers.length}</div>
       <div class="s">${trades.length} league-wide</div></div>
-    <div class="tile hot"><div class="k">Best available · ${esc(OBJECTIVES.find(([k]) => k === obj)[1])}</div>
+    <div class="tile hot"><div class="k">Best available · ${esc(OBJECTIVES.find(([k]) => k === obj)?.[1] ?? "Championship")}</div>
       <div class="v">${bestText}</div>
       <div class="s">${!best ? "none found"
         : byWins ? "title odds inside simulation error · ranked by wins"
@@ -1150,9 +1150,13 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   $("#theme").onclick = () =>
     theme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
   $("#refresh").onclick = async () => {
-    const keep = (await chrome.storage.local.get("ffsm.myTeam"))["ffsm.myTeam"];
+    // Refresh drops the cached league, not the user's choices: losing the objective
+    // or the calibration toggle on every refetch would be its own bug.
+    const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed"];
+    const had = await chrome.storage.local.get(KEEP);
     await chrome.storage.local.clear();
-    if (keep) await chrome.storage.local.set({ "ffsm.myTeam": keep });
+    const keep = Object.fromEntries(KEEP.filter((k) => had[k] !== undefined).map((k) => [k, had[k]]));
+    if (Object.keys(keep).length) await chrome.storage.local.set(keep);
     location.reload();
   };
 }
