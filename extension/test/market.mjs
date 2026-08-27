@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import { buildSlots, seatMask } from "../engine/lineup.js";
 import { Engine } from "../engine/search.js";
 import { marketParams, marketUrl, trimValues, loadMarket } from "../engine/sources/fantasycalc.js";
+import { indexMarket, sideMarket, tradeFairness, pitchMarketLine } from "../engine/market.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -142,6 +143,83 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
   try { await loadMarket(SETTINGS, 10, { fetchImpl: deadFetch(), storage: mkStorage(), now: 0 }); }
   catch { threw = true; }
   ok(threw, "a dead feed with no cache throws out of loadMarket");
+}
+
+/* ---- 3. fairness: side sums, the ratio, the sentence ---- */
+{
+  // Engine-index keyed, which is what a trade side speaks in.
+  const M = new Map([
+    [IX(0), { value: 100, positionRank: 1 }],
+    [IX(1), { value: 100, positionRank: 2 }],
+    [IX(2), { value: 50, positionRank: 3 }],
+    [IX(3), { value: 30, positionRank: 4 }],
+  ]);
+  const swap = (a, b) => ({ shape: "1-for-1", sides: [
+    { team: "A", sent: a, received: b }, { team: "B", sent: b, received: a }] });
+
+  const sm = sideMarket({ team: "A", sent: [IX(0), IX(2)], received: [IX(1)] }, M);
+  ok(sm.sent === 150, "sent sums every outgoing value");
+  ok(sm.received === 100, "received sums every incoming value");
+  ok(sm.delta === -50, "delta is received minus sent");
+  ok(sm.known === true, "known is true when every player is priced");
+  ok(sideMarket({ team: "A", sent: [IX(0)], received: [IX(7)] }, M).known === false,
+     "one unpriced player makes the side unknown");
+  ok(sideMarket({ team: "A", sent: [], received: [] }, M).known === true,
+     "an empty package is trivially known");
+
+  const even = tradeFairness(swap([IX(0)], [IX(1)]), M);
+  ok(even.known === true, "an all-priced trade is known");
+  ok(Math.abs(even.fairness - 1) < 1e-12, "equal packages are fairness 1");
+  ok(even.sides.get("A").received === 100 && even.sides.get("B").received === 100,
+     "both sides are reported, keyed by team name");
+
+  const two = tradeFairness(swap([IX(0)], [IX(2)]), M);
+  ok(Math.abs(two.fairness - 0.5) < 1e-12, "a 2:1 package is fairness 0.5");
+
+  const unknown = tradeFairness(swap([IX(0)], [IX(7)]), M);
+  ok(unknown.known === false && unknown.fairness === null,
+     "an unpriced player leaves fairness null, not a guess");
+
+  const zeroes = new Map([[IX(0), { value: 0 }], [IX(1), { value: 0 }]]);
+  ok(tradeFairness(swap([IX(0)], [IX(1)]), zeroes).fairness === null,
+     "two worthless packages have no ratio, not a ratio of 1");
+
+  const three = tradeFairness({ shape: "three-way", sides: [
+    { team: "A", sent: [IX(0)], received: [IX(1)] },
+    { team: "B", sent: [IX(1)], received: [IX(2)] },
+    { team: "C", sent: [IX(2)], received: [IX(0)] }] }, M);
+  ok(Math.abs(three.fairness - 0.5) < 1e-12, "three sides use the min/max of all three receipts");
+  ok(three.sides.size === 3, "every side of a three-way is reported");
+
+  /* The sentence. */
+  const P = new Map([[IX(0), { value: 3880 }], [IX(1), { value: 4210 }]]);
+  const t = swap([IX(0)], [IX(1)]);
+  const line = pitchMarketLine(t, t.sides[0], P);
+  ok(line === "By FantasyCalc's crowd values you receive 4,210 and give 3,880 — "
+            + "a fair deal by the market (+9%).", `pitch sentence: ${line}`);
+  const back = pitchMarketLine(t, t.sides[1], P);
+  ok(back === "By FantasyCalc's crowd values you receive 3,880 and give 4,210 — "
+            + "a fair deal by the market (−8%).", `pitch sentence, other side: ${back}`);
+
+  const lop = new Map([[IX(0), { value: 100 }], [IX(1), { value: 1000 }]]);
+  ok(/lopsided by the market/.test(pitchMarketLine(t, t.sides[0], lop)),
+     "a fairness under 0.8 is called lopsided");
+  ok(pitchMarketLine(swap([IX(0)], [IX(7)]), t.sides[0], P) === null,
+     "an unpriced player omits the sentence entirely");
+  ok(pitchMarketLine(t, t.sides[0], null) === null, "no market at all omits the sentence");
+
+  const freebie = new Map([[IX(0), { value: 0 }], [IX(1), { value: 500 }]]);
+  ok(pitchMarketLine(t, t.sides[0], freebie)
+       === "By FantasyCalc's crowd values you receive 500 and give 0 — "
+         + "a fair deal by the market.",
+     "giving up nothing priced drops the percentage rather than dividing by zero");
+
+  /* indexMarket is the only bridge from espn ids to engine indices. */
+  const byEspn = new Map(trimValues(FC_PAYLOAD).map((r) => [r.espnId, r]));
+  const idx = indexMarket(eng, byEspn);
+  ok(idx.get(IX(0)).value === 10000, "indexMarket rekeys onto engine indices");
+  ok(idx.has(IX(7)) === false, "an unpriced player has no index entry");
+  ok(idx.size === 29, "every priced fixture player is bridged");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
