@@ -12,14 +12,150 @@ import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 
 const $ = (s) => document.querySelector(s);
-const steps = $("#steps");
+
+/* ============ loading ============
+   A checklist beats a scrolling log: it shows what is left, not just what happened.
+   The log survives underneath for anything that goes wrong. */
+const PHASES = [
+  ["settings", "League settings"],
+  ["rosters",  "Rosters and projections"],
+  ["agents",   "Free-agent pool"],
+  ["schedule", "Schedule"],
+  ["vol",      "Player volatility"],
+  ["s1",       "1-for-1 trades"],
+  ["s2",       "2-for-2 trades"],
+  ["s3",       "Three-team trades"],
+  ["build",    "Building the report"],
+];
+
+const Steps = {
+  started: 0,
+  init() {
+    this.started = Date.now();
+    $("#steps").innerHTML = PHASES.map(([k, label]) =>
+      `<li data-k="${k}" data-s="wait"><span class="ic"></span>
+        <span>${label}</span><span class="note"></span></li>`).join("");
+    clearInterval(this._t);
+    this._t = setInterval(() => {
+      const s = Math.round((Date.now() - this.started) / 1000);
+      $("#bootclock").textContent = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+    }, 500);
+  },
+  set(key, state, note) {
+    const li = $(`#steps li[data-k="${key}"]`);
+    if (!li) return;
+    li.dataset.s = state;
+    if (note != null) li.querySelector(".note").textContent = note;
+    if (state === "run") $("#bootnow").textContent = li.children[1].textContent;
+    const done = [...document.querySelectorAll("#steps li")]
+      .filter((x) => x.dataset.s === "done" || x.dataset.s === "skip").length;
+    $("#bootbar").style.width = `${(done / PHASES.length * 100).toFixed(0)}%`;
+  },
+  stop() { clearInterval(this._t); },
+};
+
 const say = (text, cls = "") => {
   const d = document.createElement("div");
-  d.className = cls; d.textContent = text;
-  steps.appendChild(d); steps.scrollTop = steps.scrollHeight;
+  d.className = cls;
+  d.textContent = text;
+  $("#log").appendChild(d);
+  $("#log").scrollTop = $("#log").scrollHeight;
   return d;
 };
-const progress = (frac) => { $("#bootbar").style.width = `${Math.round(frac * 100)}%`; };
+const progress = (frac) => {
+  const li = $('#steps li[data-s="run"]');
+  if (li) li.querySelector(".note").textContent = `${Math.round(frac * 100)}%`;
+};
+
+function theme(next) {
+  document.documentElement.dataset.theme = next;
+  const b = document.getElementById("theme");
+  if (b) b.textContent = next === "light" ? "Dark" : "Light";
+  try { localStorage.setItem("ffsm-theme", next); } catch { /* private mode */ }
+}
+
+/* Clipboard: an extension page is a secure context, but keep the execCommand path
+   so a failure is visible rather than silent. */
+function copy(text, btn) {
+  const done = (okd) => {
+    btn.textContent = okd ? "Copied" : "Press \u2318C";
+    btn.classList.toggle("done", okd);
+    setTimeout(() => { btn.textContent = "Copy pitch"; btn.classList.remove("done"); }, 1900);
+  };
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    let okd = false;
+    try { okd = document.execCommand("copy"); } catch { /* blocked */ }
+    ta.remove();
+    done(okd);
+  };
+  if (navigator.clipboard?.writeText)
+    navigator.clipboard.writeText(text).then(() => done(true), fallback);
+  else fallback();
+}
+
+/* ============ sortable grid ============
+   Every table on the page runs through this: it owns header rendering, the sort
+   indicator, aria-sort, and a stable numeric-aware comparison. Sort state is kept
+   per grid id so a re-render (changing team, toggling a filter) does not silently
+   reset the column the user chose. */
+const SORT = new Map();
+
+function grid(id, cols, rows, opts = {}) {
+  const st = SORT.get(id) ?? { key: opts.sort, dir: opts.dir ?? -1 };
+  SORT.set(id, st);
+
+  const head = cols.map((c, i) => {
+    const sortable = c.sortable !== false && c.value;
+    const aria = st.key === c.key ? (st.dir > 0 ? "ascending" : "descending") : null;
+    return `<th class="${c.num ? "num " : ""}${sortable ? "s" : ""}"
+      ${c.hint ? `data-hint="${esc(c.hint)}"` : ""}
+      ${aria ? `aria-sort="${aria}"` : ""}
+      ${sortable ? `data-sort="${c.key}" tabindex="0" role="columnheader"` : ""}
+      >${c.head ?? `<span class="hint">${esc(c.label ?? "")}</span>`}</th>`;
+  }).join("");
+
+  const data = rows.map((r, i) => [r, i]);
+  const col = cols.find((c) => c.key === st.key);
+  if (col?.value) {
+    data.sort(([a, ia], [b, ib]) => {
+      const va = col.value(a), vb = col.value(b);
+      const d = col.num ? (va - vb)
+        : String(va).localeCompare(String(vb), undefined, { sensitivity: "base" });
+      return d ? d * st.dir : ia - ib;          // stable
+    });
+  }
+
+  const body = data.length
+    ? data.map(([r], i) => opts.row(r, i)).join("")
+    : `<tr><td colspan="${cols.length}">${opts.empty
+        ?? '<div class="empty"><b>Nothing here</b>Try widening the filters.</div>'}</td></tr>`;
+
+  return `<div class="scroll"><table id="${id}">
+    <thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+/** Wire click-to-sort after the grid HTML is in the document. */
+function bindSort(root, onChange) {
+  root.querySelectorAll("th[data-sort]").forEach((th) => {
+    const table = th.closest("table");
+    const go = () => {
+      const st = SORT.get(table.id);
+      const num = th.classList.contains("num");
+      st.dir = st.key === th.dataset.sort ? -st.dir : (num ? -1 : 1);
+      st.key = th.dataset.sort;
+      onChange();
+    };
+    th.onclick = go;
+    th.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+    };
+  });
+}
 
 const CACHE_HOURS = 12;
 
@@ -79,12 +215,16 @@ async function start(ref) {
   $("#bootact").innerHTML = "";
   steps.innerHTML = "";
   try {
+    Steps.init();
+    Steps.set("settings", "run");
     say(`league ${ref.leagueId}, season ${ref.seasonId}`);
+    let seenSettings = false;
     const model = await loadLeague(ref, (done, total, label) => {
+      if (!seenSettings) { Steps.set("settings", "done"); Steps.set("rosters", "run"); seenSettings = true; }
       progress(done / total);
-      if (done === 0) say(`reading ${label}…`);
-      else if (done % 3 === 0 || done === total) say(`  ${label} (${done}/${total})`);
+      if (done && (done % 3 === 0 || done === total)) say(`  ${label} (${done}/${total})`);
     });
+    Steps.set("rosters", "done", `${model.players.size} players`);
 
     const s = model.settings;
     say(`${s.name}: ${model.teams.size} teams, ${s.starters} starters, `
@@ -99,12 +239,14 @@ async function start(ref) {
 
     // Free agents are optional: a failure here should not cost you the trade search.
     try {
-      say("reading the free-agent pool…");
+      Steps.set("agents", "run");
       const fas = await loadFreeAgents(ref, model.weeks);
       for (const fa of fas) model.players.set(fa.id, fa);
       say(`  ${fas.length} available players`, "ok");
+      Steps.set("agents", "done", `${fas.length}`);
     } catch (e) {
-      say(`  free agents unavailable (${e.message}) - continuing without them`, "err");
+      say(`  free agents unavailable (${e.message})`, "err");
+      Steps.set("agents", "warn", "unavailable");
     }
 
     const { slots, starters } = buildSlots(s.lineupSlotCounts);
@@ -134,44 +276,54 @@ async function start(ref) {
     say(`free-agent pool usable: ${eng.freeAgents.length}`, "ok");
 
     let schedule = new Map();
+    Steps.set("schedule", "run");
     try {
       schedule = await loadSchedule(ref, model.teams);
       say(`schedule: ${schedule.size} weeks of real matchups`, "ok");
+      Steps.set("schedule", "done", `${schedule.size} wks`);
     } catch {
       say("schedule unavailable - season projection will use all-play", "err");
+      Steps.set("schedule", "warn", "all-play");
     }
     window.__schedule = schedule;
 
     // Volatility is measured from last season's actuals, which ESPN returns in the
     // same payload as the projections. Falling back to a guessed constant would
     // change every number in the season projection.
+    Steps.set("vol", "run");
     const vol = measureVolatility([...model.players.values()], ref.seasonId - 1);
     if (vol.measured >= 20) {
       eng.setVolatility(vol);
       const posText = [...vol.byPos].sort()
         .map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", ");
       say(`volatility measured on ${vol.measured} players: ${posText}`, "ok");
+      Steps.set("vol", "done", `${vol.measured} players`);
       say(`your team's weekly spread: ±${
         (eng.teamSigma(myTeam).reduce((a, b) => a + b, 0) / model.weeks.length).toFixed(1)} pts`, "ok");
     } else {
       say(`only ${vol.measured} players have prior-season history - `
         + `season projection will assume ±25 pts`, "err");
+      Steps.set("vol", "warn", "assumed ±25");
     }
     window.__vol = vol;
-    say("searching 1-for-1…");
+    Steps.set("s1", "run");
     const one = eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
 
-    say("searching 2-for-2… (the slow one)");
+    Steps.set("s1", "done", `${one.length}`);
+    Steps.set("s2", "run", "slowest step");
     const two = eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot));
     say(`  ${two.length} mutually beneficial`, "ok");
 
-    say("searching three-way…");
+    Steps.set("s2", "done", `${two.length}`);
+    Steps.set("s3", "run");
     const three = eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
     say(`  ${three.length} cycles`, "ok");
 
     const trades = [...dedupe(one, 3), ...dedupe(two, 3), ...dedupe(three, 3)]
       .sort((a, b) => b.total - a.total);
+    Steps.set("s3", "done", `${three.length}`);
+    Steps.set("build", "run");
     say(`${trades.length} offers after dedupe`, "ok");
 
     // Record what this run found, so the daily check and the on-page notice have
@@ -186,8 +338,14 @@ async function start(ref) {
       chrome.runtime.sendMessage({ type: "ffsm.analysed" });
     } catch { /* storage unavailable; the report still works */ }
 
+    Steps.set("build", "done");
+    Steps.stop();
     render(eng, model, trades, myTeam, schedule);
   } catch (err) {
+    Steps.stop();
+    const running = $('#steps li[data-s="run"]');
+    if (running) running.dataset.s = "warn";
+    $("#bootmsg").textContent = "Could not finish loading.";
     say(String(err.message ?? err), "err");
     if (/signed in|access/i.test(String(err))) {
       $("#bootmsg").textContent = "ESPN did not accept the request.";
@@ -215,6 +373,8 @@ const HINT = {
   theirs: "What the other side gains. They need this above zero or they will not say yes.",
   starts: "Share of weeks this player would crack your optimal lineup. Near zero means his points are sitting on your bench - that is a trade chip.",
   bye:    "The week his NFL team is off. He scores nothing that week.",
+  projwk: "Average projection in the weeks he actually plays, ignoring his bye.",
+  gap:    "Points per week behind the strongest roster in the league.",
   optimal:"What this roster would score each week if it started its best possible lineup every week.",
   fagain: "How much your best lineup improves if you add this player and drop the one shown. A free agent who would never start is worth nothing, however good his projection looks.",
   owned:  "Share of ESPN leagues where this player is rostered. A low number with a real gain is the most likely to still be available.",
@@ -289,39 +449,82 @@ function usageBars(strip, proj, thin, weeks) {
 }
 
 function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new Map()) {
-  const rates = eng.startRates();
   const W = eng.weeks;
+  const rates = eng.startRates();
   const nm = (i) => model.players.get(eng.ids[i]).name;
-  const pos = (i) => model.players.get(eng.ids[i]).pos;
-  const tag = (i) => `<span class="pos" data-p="${esc(pos(i))}">${esc(pos(i))}</span>`;
-  const pkg = (ids) => ids.map(i => `${esc(nm(i))} ${tag(i)}`).join('<span class="plus">+</span>');
+  const posOf = (i) => model.players.get(eng.ids[i]).pos;
+  const tag = (i) => `<span class="pos" data-p="${esc(posOf(i))}">${esc(posOf(i))}</span>`;
+  const pkg = (ids) => ids.map((i) => `${esc(nm(i))} ${tag(i)}`).join('<span class="plus">+</span>');
+  const pct = (v) => `${(v * 100).toFixed(1)}%`;
+  const avgProj = (i) => {
+    const v = [];
+    for (let w = 0; w < eng.NW; w++) {
+      const x = eng.proj[i * eng.NW + w];
+      if (x > 0) v.push(x);
+    }
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+  };
 
-  /* One panel per side, plus the case for each partner. */
+  /* ---------- filter state ---------- */
+  const viewing = window.__view ?? myTeam;
+  const mineOnly = viewing !== "__all__";
+  const F = (window.__filters ??= {
+    shapes: new Set(["1-for-1", "2-for-2", "three-way"]),
+    minGain: 0.10, only: new Set(), q: "",
+  });
+  const balance = (t) => {
+    const g = t.sides.map((s) => s.gain);
+    return Math.min(...g) / Math.max(...g);
+  };
+  // A bye play rather than a talent upgrade: neutral at full strength, but worth
+  // real points once byes force a partner to start players he would rather bench.
+  const byeDriven = (t) =>
+    t.sides.some((s) => s.team !== viewing && s.full <= 0.15 && s.bye >= 1.5);
+  const side = (t) => t.sides.find((s) => s.team === viewing) ?? t.sides[0];
+  const others = (t) => t.sides.filter((s) => s !== side(t));
+
+  const shown = trades
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) => !mineOnly || t.sides.some((s) => s.team === viewing))
+    .filter(({ t }) => F.shapes.has(t.shape))
+    .filter(({ t }) => Math.min(...t.sides.map((s) => s.gain)) >= F.minGain)
+    .filter(({ t }) => !F.only.has("bye") || byeDriven(t))
+    .filter(({ t }) => !F.only.has("even") || balance(t) >= 0.6)
+    .filter(({ t }) => !F.q || t.sides.some((s) =>
+      [...s.sent, ...s.received].some((i) => nm(i).toLowerCase().includes(F.q))));
+
+  /* ---------- expanded detail ---------- */
   function detailFor(t) {
     const ex = eng.explain(t);
-    const panels = t.sides.map(side => {
-      const d = ex[side.team];
+    const panels = t.sides.map((sd) => {
+      const d = ex[sd.team];
       const li = [];
       for (const a of d.acquired)
-        li.push(`<li><b>${esc(nm(a.i))}</b> would start <b>${a.startsHere}</b> of ${W.length}
-                 weeks here, versus ${a.startsThere} where he is now.</li>`);
+        li.push(`<li><b>${esc(nm(a.i))}</b> would start <b>${a.startsHere}</b> of
+                 ${W.length} weeks here, versus ${a.startsThere} where he is now.</li>`);
       for (const x of d.sent)
         li.push(`<li>Gives up ${esc(nm(x.i))} — ${x.wasStarting} starts.</li>`);
       for (const x of d.displaced)
         li.push(`<li class="b">${esc(nm(x.i))} loses ${-x.delta} starts.</li>`);
       for (const x of d.promoted)
         li.push(`<li class="g">${esc(nm(x.i))} gains ${x.delta} starts.</li>`);
-      return `<div><h4>${esc(side.team)}${side.team === myTeam ? " — you" : ""}</h4>
-        <div class="hd ${cls(side.gain)}">${f2(side.gain)}<span
-          style="font-size:12px;color:var(--faint)">/wk</span>
-          <span style="font-size:12px;color:var(--dim)">· reg ${f2(side.reg)}
-          · playoffs ${f2(side.playoff)}</span></div>
-        <ul>${li.join("")}</ul>${deltaBars(side.weekly, W)}</div>`;
+      return `<div class="det-side${sd.team === myTeam ? " det-mine" : ""}">
+        <h4>${esc(sd.team)}${sd.team === myTeam ? " · you" : ""}</h4>
+        <div class="hd ${cls(sd.gain)}">${f2(sd.gain)}<span class="unit">/wk</span></div>
+        <div class="det-nums">
+          <span>reg <b class="${cls(sd.reg)}">${f2(sd.reg)}</b></span>
+          <span>playoffs <b class="${cls(sd.playoff)}">${f2(sd.playoff)}</b></span>
+          <span>bye weeks <b class="${cls(sd.bye)}">${f2(sd.bye)}</b></span>
+          <span>weeks helped <b>${sd.weekly.filter((x) => x > 0.005).length}/${W.length}</b></span>
+        </div>
+        <ul>${li.join("")}</ul>${deltaBars(sd.weekly, W)}</div>`;
     }).join("");
 
-    const cases = t.sides.filter(s => s.team !== myTeam).map(other => {
+    const cases = others(t).map((other) => {
       const d = ex[other.team];
-      const rows = d.acquired.map(a => `
+      const bw = W.filter((_, i) => d.thin?.[i]);
+      const isBye = other.full <= 0.15 && other.bye >= 1.5 && bw.length;
+      const rows = d.acquired.map((a) => `
         <div class="cmp-name">${esc(nm(a.i))} ${tag(a.i)}
           <span class="tag${a.startsHere > a.startsThere ? " g" : ""}">${
             a.startsThere} &rarr; ${a.startsHere} starts</span></div>
@@ -329,14 +532,22 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <div>${usageBars(a.now, a.proj, null, W)}</div>
         <div class="cmp-lab">With ${esc(other.team)}<br>after</div>
         <div>${usageBars(a.after, a.proj, d.thin, W)}</div>`).join("");
-      const line = d.acquired.map(a => a.startsHere > a.startsThere
-        ? `<b>${esc(nm(a.i))}</b> starts ${a.startsThere} of ${W.length} weeks where he is
-           now — he'd start <b>${a.startsHere}</b> for ${esc(other.team)}.`
-        : `<b>${esc(nm(a.i))}</b> starts ${a.startsHere} of ${W.length} weeks for ${esc(other.team)}.`
-        ).join(" ");
       return `<div class="pitch">
-        <div class="pitch-hd"><h4>The case for ${esc(other.team)}</h4></div>
-        <p class="pitch-say">${line}</p>
+        <div class="pitch-hd">
+          <h4>The case for ${esc(other.team)}</h4>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${isBye ? `<span class="tag">Bye relief · wks ${bw.join(", ")}</span>` : ""}
+            <button class="copy" data-team="${esc(other.team)}">Copy pitch</button>
+          </div>
+        </div>
+        <p class="pitch-say">${d.acquired.map((a) => a.startsHere > a.startsThere
+          ? `<b>${esc(nm(a.i))}</b> starts ${a.startsThere} of ${W.length} weeks where he
+             is now — he'd start <b>${a.startsHere}</b> for ${esc(other.team)}.`
+          : `<b>${esc(nm(a.i))}</b> starts ${a.startsHere} of ${W.length} weeks for
+             ${esc(other.team)}.`).join(" ")}
+          ${isBye ? `Most of the value lands in weeks ${bw.join(", ")}, when byes leave
+             that roster starting players it would rather bench — at full strength it is
+             only ${f2(other.full)} per week.` : ""}</p>
         <div class="cmp">${rows}</div>
         <div class="legend">
           <span><i class="swatch" style="background:var(--accent)"></i> starts</span>
@@ -348,266 +559,375 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     return `<div class="det">${panels}${cases}</div>`;
   }
 
-  const viewing = window.__view ?? myTeam;
-  const mineOnly = viewing !== "__all__";
-  const F = window.__filters ??= {
-    shapes: new Set(["1-for-1", "2-for-2", "three-way"]),
-    minGain: 0.10, only: new Set(), q: "",
-  };
-  const nameOf = (i) => model.players.get(eng.ids[i]).name.toLowerCase();
-  // A bye play rather than a talent upgrade: neutral at full strength, but worth
-  // real points once byes force a partner to start players he would rather bench.
-  const byeDriven = (t) => t.sides.some(s => s.team !== viewing && s.full <= .15 && s.bye >= 1.5);
-  const balance = (t) => {
-    const g = t.sides.map(s => s.gain);
-    return Math.min(...g) / Math.max(...g);
-  };
-  const shown = trades
-    .map((t, i) => ({ t, i }))
-    .filter(({ t }) => !mineOnly || t.sides.some(s => s.team === viewing))
-    .filter(({ t }) => F.shapes.has(t.shape))
-    .filter(({ t }) => Math.min(...t.sides.map(s => s.gain)) >= F.minGain)
-    .filter(({ t }) => !F.only.has("bye") || byeDriven(t))
-    .filter(({ t }) => !F.only.has("even") || balance(t) >= .6)
-    .filter(({ t }) => !F.q || t.sides.some(s =>
-      [...s.sent, ...s.received].some(i => nameOf(i).includes(F.q))));
+  /** Plain text a manager can paste into a league chat. */
+  function pitchText(t, other) {
+    const ex = eng.explain(t);
+    const d = ex[other.team];
+    const L = [t.sides.length > 2
+      ? `Three-team idea — you get ${other.received.map(nm).join(" + ")}, you send ${
+          other.sent.map(nm).join(" + ")}.`
+      : `Trade idea — you get ${other.received.map(nm).join(" + ")}, I get ${
+          other.sent.map(nm).join(" + ")}.`, ""];
+    for (const a of d.acquired) {
+      const g = a.startsHere - a.startsThere;
+      L.push(g > 0
+        ? `${nm(a.i)} would start ${a.startsHere} of ${W.length} weeks for you. He only `
+          + `starts ${a.startsThere} where he is now — ${g} more weeks in a lineup.`
+        : `${nm(a.i)} starts ${a.startsHere} of ${W.length} weeks for you.`);
+    }
+    L.push("", `Net for you: ${f2(other.gain)} points per week, using your best possible `
+      + `lineup each week.`);
+    if (Math.abs(other.reg - other.gain) > 0.15)
+      L.push(`In the regular season specifically it is ${f2(other.reg)} per week.`);
+    if (other.full <= 0.15 && other.bye >= 1.5)
+      L.push(`It is really a bye-week fix: ${f2(other.full)} at full strength, but `
+        + `${f2(other.bye)} in the weeks byes thin you out.`);
+    if (other.playoff > 0.3) L.push(`Playoff weeks: ${f2(other.playoff)} per week.`);
+    const me = side(t);
+    L.push("", balance(t) >= 0.5
+      ? `I gain ${f2(me.gain)} per week, so we both come out ahead.`
+      : `I gain ${f2(me.gain)} per week — most of the value here is on your side.`);
+    return L.join("\n");
+  }
 
-  const body = shown.slice(0, 60).map(({ t, i: n }) => {
-    // With a team selected the row is always written from that team's side. With
-    // "all teams" there is no "you", so each side is labelled by name instead.
-    const me = t.sides.find(s => s.team === viewing) ?? t.sides[0];
-    const others = t.sides.filter(s => s !== me);
-    return `<tr class="tr-row${me.team === myTeam ? " mine" : ""}" data-i="${n}">
-      <td class="rank"><span class="car">&#9656;</span></td>
-      <td class="num" style="white-space:nowrap">${esc(t.shape)}</td>
-      <td>${mineOnly ? "" : `<div class="side-l">${esc(me.team)}</div>`}
-          <div class="pkg">${pkg(me.received)}</div></td>
-      <td><div class="pkg">${pkg(me.sent)}</div></td>
-      <td style="color:var(--dim);white-space:nowrap">${
-        others.map(o => esc(o.team)).join(" + ")}</td>
-      <td class="num">${me.weekly.filter(x => x > .005).length}<span
-        style="color:var(--faint)">/${W.length}</span></td>
-      <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
-      <td class="num" style="color:var(--dim)">${others.map(o => f2(o.gain)).join(" / ")}</td>
-      <td class="num">${t.sides.reduce((a, s) => a + s.gain, 0).toFixed(2)}</td>
-      <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
-      <td class="num ${cls(me.playoff)}">${f2(me.playoff)}</td>
-      <td class="num ${cls(others[0].bye)}">${f2(others[0].bye)}${
-        byeDriven(t) ? ' <span class="tag">bye</span>' : ""}</td>
-      <td><div class="bal"><div class="track"><i style="width:${
-        (balance(t) * 100).toFixed(0)}%"></i></div><span style="font-family:var(--mono);
-        font-size:10.5px;color:var(--faint)">${(balance(t) * 100).toFixed(0)}%</span></div></td>
-    </tr>
-    <tr class="detail" data-for="${n}" hidden><td colspan="12"></td></tr>`;
-  }).join("");
+  /* ---------- grids ---------- */
+  const tradeCols = [
+    { key: "car", label: "", sortable: false },
+    { key: "shape", label: "Shape", num: true, value: (r) => r.t.shape, hint: HINT.shape },
+    { key: "recv", label: mineOnly ? "You receive" : "Receives",
+      value: (r) => side(r.t).received.map(nm).join(" "), hint: HINT.recv },
+    { key: "send", label: mineOnly ? "You send" : "Sends",
+      value: (r) => side(r.t).sent.map(nm).join(" "), hint: HINT.send },
+    { key: "partner", label: "Partner",
+      value: (r) => others(r.t).map((o) => o.team).join(" "), hint: HINT.partner },
+    { key: "weeks", label: "Weeks helped", num: true,
+      value: (r) => side(r.t).weekly.filter((x) => x > 0.005).length, hint: HINT.weeks },
+    { key: "gain", label: mineOnly ? "Your gain" : "Gain", num: true,
+      value: (r) => side(r.t).gain, hint: HINT.gain },
+    { key: "theirs", label: "Partner gain", num: true,
+      value: (r) => Math.min(...others(r.t).map((o) => o.gain)), hint: HINT.theirs },
+    { key: "combined", label: "Combined", num: true, value: (r) => r.t.total, hint: HINT.combined },
+    { key: "reg", label: "Reg. season", num: true, value: (r) => side(r.t).reg, hint: HINT.reg },
+    { key: "po", label: "Playoffs", num: true, value: (r) => side(r.t).playoff, hint: HINT.po },
+    { key: "byehelp", label: "Partner bye help", num: true,
+      value: (r) => Math.max(...others(r.t).map((o) => o.bye)), hint: HINT.byehelp },
+    { key: "balance", label: "Balance", num: true, value: (r) => balance(r.t), hint: HINT.balance },
+  ];
+  const tradeGrid = grid("tradeGrid", tradeCols, shown, {
+    sort: "gain", dir: -1,
+    empty: '<div class="empty"><b>No trades match</b>Lower the minimum gain, enable '
+         + 'more shapes, or clear the player filter.</div>',
+    row: ({ t, i }) => {
+      const me = side(t), rest = others(t);
+      return `<tr class="tr-row${me.team === myTeam ? " mine" : ""}" data-i="${i}">
+        <td class="rank"><span class="car">&#9656;</span></td>
+        <td class="num nowrap">${esc(t.shape)}</td>
+        <td>${mineOnly ? "" : `<div class="side-l">${esc(me.team)}</div>`}
+            <div class="pkg">${pkg(me.received)}</div></td>
+        <td><div class="pkg">${pkg(me.sent)}</div></td>
+        <td class="nowrap" style="color:var(--dim)">${rest.map((o) => esc(o.team)).join(" + ")}</td>
+        <td class="num">${me.weekly.filter((x) => x > 0.005).length}<span
+          style="color:var(--faint)">/${W.length}</span></td>
+        <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
+        <td class="num" style="color:var(--dim)">${rest.map((o) => f2(o.gain)).join(" / ")}</td>
+        <td class="num">${t.total.toFixed(2)}</td>
+        <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
+        <td class="num ${cls(me.playoff)}">${f2(me.playoff)}</td>
+        <td class="num ${cls(rest[0].bye)}">${f2(rest[0].bye)}${
+          byeDriven(t) ? ' <span class="tag">bye</span>' : ""}</td>
+        <td><div class="bal"><div class="track"><i style="width:${
+          (balance(t) * 100).toFixed(0)}%"></i></div><span class="balpct">${
+          (balance(t) * 100).toFixed(0)}%</span></div></td>
+      </tr>
+      <tr class="detail" data-for="${i}" hidden><td colspan="${tradeCols.length}"></td></tr>`;
+    },
+  });
 
-  const chips = eng.roster.get(myTeam)
-    .map(i => ({ i, r: rates.get(i) ?? 0 }))
-    .sort((a, b) => a.r - b.r)
-    .map(({ i, r }) => {
-      const p = model.players.get(eng.ids[i]);
-      return `<tr><td style="font-weight:600">${esc(p.name)}</td><td>${tag(i)}</td>
-        <td class="nfl">${esc(p.nfl)}</td><td class="num" style="color:var(--faint)">${p.bye || "—"}</td>
-        <td class="num ${r < .35 ? "down" : r > .8 ? "up" : ""}">${(r * 100).toFixed(0)}%</td>
-        <td><div class="meter"><i style="width:${(r * 100).toFixed(0)}%"></i></div></td></tr>`;
-    }).join("");
+  const rosterRows = eng.roster.get(mineOnly ? viewing : myTeam).map((i) => ({
+    i, p: model.players.get(eng.ids[i]), rate: rates.get(i) ?? 0, avg: avgProj(i),
+  }));
+  const rosterGrid = grid("rosterGrid", [
+    { key: "name", label: "Player", value: (r) => r.p.name },
+    { key: "pos", label: "Pos", value: (r) => r.p.pos },
+    { key: "nfl", label: "NFL", value: (r) => r.p.nfl },
+    { key: "bye", label: "Bye", num: true, value: (r) => r.p.bye || 99, hint: HINT.bye },
+    { key: "avg", label: "Proj/wk", num: true, value: (r) => r.avg, hint: HINT.projwk },
+    { key: "rate", label: "Starts", num: true, value: (r) => r.rate, hint: HINT.starts },
+    { key: "bar", label: "", sortable: false },
+  ], rosterRows, {
+    sort: "rate", dir: 1,
+    row: (r) => `<tr>
+      <td style="font-weight:600">${esc(r.p.name)}</td>
+      <td>${tag(r.i)}</td>
+      <td class="nfl">${esc(r.p.nfl)}</td>
+      <td class="num" style="color:var(--faint)">${r.p.bye || "—"}</td>
+      <td class="num">${r.avg.toFixed(1)}</td>
+      <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
+        (r.rate * 100).toFixed(0)}%</td>
+      <td><div class="meter"><i style="width:${(r.rate * 100).toFixed(0)}%"></i></div></td>
+    </tr>`,
+  });
 
   const upgrades = eng.freeAgents.length
-    ? eng.freeAgentUpgrades(myTeam, { minGain: 0.05, limit: 25 }) : [];
-  const fa = upgrades.map((u) => {
-    const p = model.players.get(eng.ids[u.fa]);
-    const d = model.players.get(eng.ids[u.drop]);
-    return `<tr>
-      <td style="font-weight:600">${esc(p.name)}</td>
+    ? eng.freeAgentUpgrades(mineOnly ? viewing : myTeam, { minGain: 0.05, limit: 25 }) : [];
+  const faGrid = grid("faGrid", [
+    { key: "add", label: "Add", value: (u) => nm(u.fa) },
+    { key: "pos", label: "Pos", value: (u) => posOf(u.fa) },
+    { key: "nfl", label: "NFL", value: (u) => model.players.get(eng.ids[u.fa]).nfl },
+    { key: "drop", label: "Drop", value: (u) => nm(u.drop) },
+    { key: "gain", label: "Gain", num: true, value: (u) => u.gain, hint: HINT.fagain },
+    { key: "reg", label: "Reg. season", num: true, value: (u) => u.reg, hint: HINT.reg },
+    { key: "po", label: "Playoffs", num: true, value: (u) => u.playoff, hint: HINT.po },
+    { key: "own", label: "Owned", num: true,
+      value: (u) => model.players.get(eng.ids[u.fa]).owned ?? 0, hint: HINT.owned },
+  ], upgrades, {
+    sort: "gain", dir: -1,
+    empty: '<div class="empty"><b>Nothing on waivers helps</b>Your worst starter '
+         + 'already beats everything available.</div>',
+    row: (u) => `<tr>
+      <td style="font-weight:600">${esc(nm(u.fa))}</td>
       <td>${tag(u.fa)}</td>
-      <td class="nfl">${esc(p.nfl)}</td>
-      <td style="color:var(--dim)">${esc(d.name)}</td>
+      <td class="nfl">${esc(model.players.get(eng.ids[u.fa]).nfl)}</td>
+      <td style="color:var(--dim)">${esc(nm(u.drop))}</td>
       <td class="num ${cls(u.gain)}">${f2(u.gain)}</td>
       <td class="num ${cls(u.reg)}">${f2(u.reg)}</td>
       <td class="num ${cls(u.playoff)}">${f2(u.playoff)}</td>
-      <td class="num" style="color:var(--faint)">${p.owned != null ? p.owned + "%" : "—"}</td>
-    </tr>`;
-  }).join("");
+      <td class="num" style="color:var(--faint)">${
+        model.players.get(eng.ids[u.fa]).owned ?? "—"}%</td>
+    </tr>`,
+  });
+
+  const strength = eng.teams.map((t) => ({
+    t, avg: eng.baseline.get(t).reduce((a, b) => a + b, 0) / eng.NW,
+  }));
+  const hi = Math.max(...strength.map((x) => x.avg));
+  const lo = Math.min(...strength.map((x) => x.avg));
+  const leagueGrid = grid("leagueGrid", [
+    { key: "name", label: "Team", value: (r) => r.t },
+    { key: "avg", label: "Optimal pts/wk", num: true, value: (r) => r.avg, hint: HINT.optimal },
+    { key: "gap", label: "Behind leader", num: true, value: (r) => r.avg - hi, hint: HINT.gap },
+    { key: "bar", label: "", sortable: false },
+  ], strength, {
+    sort: "avg", dir: -1,
+    row: (r) => `<tr${r.t === myTeam ? ' class="mine"' : ""}>
+      <td${r.t === myTeam ? ' style="font-weight:700"' : ""}>${esc(r.t)}</td>
+      <td class="num" style="font-size:14px">${r.avg.toFixed(2)}</td>
+      <td class="num ${r.avg < hi - 0.005 ? "down" : "zero"}">${
+        r.avg < hi - 0.005 ? (r.avg - hi).toFixed(2) : "—"}</td>
+      <td><div class="meter" style="min-width:120px"><i style="width:${
+        (8 + 92 * (r.avg - lo) / Math.max(hi - lo, 1e-9)).toFixed(0)}%"></i></div></td>
+    </tr>`,
+  });
 
   const SIMS = 20000, SIGMA = 25;
   const hasSched = schedule.size > 0;
   const measured = eng.volatility?.measured ?? 0;
   const divCount = model.settings.divisionCount ?? 0;
-  const divisionOf = new Map([...model.teams.values()].map(t => [t.name, t.divisionId]));
+  const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
   const divSeed = divCount > 1 && (window.__divSeed ?? false);
   const proj = projectSeason(eng, schedule, model.settings,
     { sims: SIMS, sigma: SIGMA, divisionSeeding: divSeed, divisionOf });
-  const pct = (v) => `${(v * 100).toFixed(1)}%`;
-  const season = proj.map((r, i) => `<tr${r.team === myTeam ? ' class="mine"' : ""}>
-      <td class="rank">${i + 1}</td>
+  const maxTitle = Math.max(...proj.map((x) => x.titlePct), 1e-9);
+  const seasonGrid = grid("seasonGrid", [
+    { key: "name", label: "Team", value: (r) => r.team },
+    { key: "wins", label: "Record", num: true, value: (r) => r.wins, hint: HINT.record },
+    { key: "pf", label: "Points for", num: true, value: (r) => r.pointsFor, hint: HINT.pf },
+    { key: "po", label: "Playoffs", num: true, value: (r) => r.playoffPct, hint: HINT.podds },
+    { key: "bye", label: "First-round bye", num: true, value: (r) => r.byePct, hint: HINT.byeodds },
+    { key: "title", label: "Title", num: true, value: (r) => r.titlePct, hint: HINT.title },
+    { key: "swing", label: "Weekly swing", num: true, value: (r) => r.sigma ?? SIGMA, hint: HINT.swing },
+    { key: "bar", label: "", sortable: false },
+  ], proj, {
+    sort: "title", dir: -1,
+    row: (r) => `<tr${r.team === myTeam ? ' class="mine"' : ""}>
       <td${r.team === myTeam ? ' style="font-weight:700"' : ""}>${esc(r.team)}</td>
       <td class="num">${r.wins.toFixed(1)}&#8202;–&#8202;${r.losses.toFixed(1)}</td>
       <td class="num" style="color:var(--dim)">${r.pointsFor.toFixed(0)}</td>
-      <td class="num ${r.playoffPct > .5 ? "up" : ""}">${pct(r.playoffPct)}</td>
+      <td class="num ${r.playoffPct > 0.5 ? "up" : ""}">${pct(r.playoffPct)}</td>
       <td class="num" style="color:var(--dim)">${pct(r.byePct)}</td>
-      <td class="num ${r.titlePct > .15 ? "up" : ""}">${pct(r.titlePct)}</td>
+      <td class="num ${r.titlePct > 0.15 ? "up" : ""}">${pct(r.titlePct)}</td>
       <td class="num" style="color:var(--faint)">±${(r.sigma ?? SIGMA).toFixed(1)}</td>
       <td><div class="meter" style="min-width:90px"><i style="width:${
-        (r.titlePct / Math.max(...proj.map(x => x.titlePct)) * 100).toFixed(0)}%"></i></div></td>
-    </tr>`).join("");
+        (r.titlePct / maxTitle * 100).toFixed(0)}%"></i></div></td>
+    </tr>`,
+  });
 
-  const table = eng.teams
-    .map(t => ({ t, avg: eng.baseline.get(t).reduce((a, b) => a + b, 0) / eng.NW }))
-    .sort((a, b) => b.avg - a.avg);
-  const hi = table[0].avg, lo = table.at(-1).avg;
-  const standings = table.map((s, i) => `<tr${s.t === myTeam ? ' class="mine"' : ""}>
-      <td class="rank">${i + 1}</td>
-      <td${s.t === myTeam ? ' style="font-weight:700"' : ""}>${esc(s.t)}</td>
-      <td class="num">${s.avg.toFixed(2)}</td>
-      <td><div class="meter"><i style="width:${(8 + 92 * (s.avg - lo) / Math.max(hi - lo, 1e-9)).toFixed(0)}%"></i></div></td>
-    </tr>`).join("");
+  /* ---------- page ---------- */
+  const me = proj.find((r) => r.team === myTeam);
+  const myOffers = trades.filter((t) => t.sides.some((s) => s.team === myTeam));
+  const best = myOffers.reduce((a, t) => {
+    const g = t.sides.find((s) => s.team === myTeam).gain;
+    return g > (a?.g ?? -1e9) ? { g, t } : a;
+  }, null);
+  const benchCount = eng.roster.get(myTeam).filter((i) => (rates.get(i) ?? 0) < 0.25).length;
 
   $("#boot").hidden = true;
   const app = $("#app");
   app.hidden = false;
   app.innerHTML = `
-    <div class="wrap" style="padding-top:26px">
-      <h1 style="font-family:var(--serif);font-weight:400;font-size:42px;margin:0 0 4px">
-        FF Slot <em style="font-style:italic;color:var(--accent)">Machine</em></h1>
-      <p class="mast-meta">${esc(model.settings.name.toUpperCase())} ·
-        ${esc(myTeam.toUpperCase())} · ${model.teams.size} TEAMS ·
-        ${eng.starters} STARTERS · LIVE FROM ESPN</p>
+  <header class="masthead"><div class="wrap"><div class="mast-in">
+    <div>
+      <div class="eyebrow"><b>${esc(model.settings.name)}</b><span>·</span>
+        <span>${model.teams.size} teams · ${eng.starters} starters ·
+        weeks ${W[0]}–${W.at(-1)}</span></div>
+      <h1>FF Slot <em>Machine</em></h1>
+      <div class="mast-meta">${esc(myTeam.toUpperCase())} · LIVE FROM ESPN</div>
+    </div>
+    <div class="mast-right"><button class="ghost" id="theme">Light</button></div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="k">Projected record</div>
+      <div class="v">${me ? `${me.wins.toFixed(1)}–${me.losses.toFixed(1)}` : "—"}</div>
+      <div class="s">${me ? pct(me.playoffPct) + " to make the playoffs" : ""}</div></div>
+    <div class="tile hot"><div class="k">Offers for you</div>
+      <div class="v">${myOffers.length}</div>
+      <div class="s">${trades.length} league-wide</div></div>
+    <div class="tile hot"><div class="k">Best available</div>
+      <div class="v">${best ? f2(best.g) : "—"}</div>
+      <div class="s">${best ? "via " + esc(best.t.sides.find((s) => s.team !== myTeam).team) : "none found"}</div></div>
+    <div class="tile"><div class="k">Trade chips</div>
+      <div class="v">${benchCount}</div>
+      <div class="s">players under 25% usage</div></div>
+  </div></div></header>
 
+  <div class="wrap">
+    <section>
       <h2 class="secttl">${mineOnly ? "Offers for you" : "Every trade in the league"}</h2>
-      <p class="sectsub">${shown.length} offer${shown.length === 1 ? "" : "s"},
-        ranked by gain; every side has to come out ahead.
-        <b>Click any row</b> for the week-by-week detail and the case to make to your
-        partner. Hover a column heading to see what it measures.</p>
+      <p class="sectsub">${shown.length} of ${trades.length} offers. Every side has to
+        come out ahead. <b>Click a row</b> for the week-by-week detail and a pitch you
+        can send. <b>Click a column heading</b> to sort; hover one to see what it means.</p>
       <div class="panel">
-        <div class="meter">
-          <div class="fld"><label for="who">Viewing as</label>
-            <select id="who">
-              ${eng.teams.map(t => `<option${t === viewing ? " selected" : ""}>${esc(t)}</option>`).join("")}
-              <option value="__all__"${viewing === "__all__" ? " selected" : ""}>All teams</option>
-            </select></div>
-          <span class="readout" style="color:var(--faint)">${
-            mineOnly ? "showing only trades involving " + esc(viewing) : "showing the whole league"}</span>
+        <div class="bar">
+          <div class="fld"><label for="who">Team</label><select id="who">
+            ${eng.teams.map((t) => `<option${t === viewing ? " selected" : ""}>${esc(t)}</option>`).join("")}
+            <option value="__all__"${viewing === "__all__" ? " selected" : ""}>All teams</option>
+          </select></div>
+          <div class="fld"><label>Shape</label><div class="chips" id="shapes">
+            ${["1-for-1", "2-for-2", "three-way"].map((sh) =>
+              `<button data-v="${sh}" aria-pressed="${F.shapes.has(sh)}">${
+                sh === "three-way" ? "3-team" : sh}</button>`).join("")}
+          </div></div>
+          <div class="fld"><label for="mg">Min gain</label>
+            <input type="range" id="mg" min="0" max="150" step="5" value="${F.minGain * 100}">
+            <span class="readout" id="mgv">${F.minGain.toFixed(2)}</span></div>
+          <div class="fld"><label>Only</label><div class="chips" id="only">
+            <button data-v="bye" aria-pressed="${F.only.has("bye")}">Bye-driven</button>
+            <button data-v="even" aria-pressed="${F.only.has("even")}">Even splits</button>
+          </div></div>
+          <div class="fld"><label for="q">Player</label>
+            <input type="search" id="q" value="${esc(F.q)}" placeholder="filter by name…"
+                   spellcheck="false"></div>
+          <button class="ghost" id="reset">Reset</button>
         </div>
-        <div class="scroll"><table id="trades">
-        <thead><tr><th></th>${th("Shape", "shape", "num")}
-          ${th(mineOnly ? "You receive" : "Receives", "recv")}
-          ${th(mineOnly ? "You send" : "Sends", "send")}${th("Partner", "partner")}
-          ${th("Weeks helped", "weeks", "num")}
-          ${th(mineOnly ? "Your gain" : "Gain", "gain", "num")}
-          ${th("Partner gain", "theirs", "num")}${th("Combined", "combined", "num")}
-          ${th("Reg. season", "reg", "num")}${th("Playoffs", "po", "num")}
-          ${th("Partner bye help", "byehelp", "num")}${th("Balance", "balance", "num")}</tr></thead>
-        <tbody>${body || '<tr><td colspan="12"><div class="empty"><b>No trades found</b>Nothing helps both sides right now.</div></td></tr>'}</tbody>
-      </table></div></div>
+        ${tradeGrid}
+      </div>
+    </section>
 
-      <h2 class="secttl">${mineOnly ? "Your least-used players" : "Least-used players"}</h2>
-      <p class="sectsub">Points parked on your bench are what another roster would
-        actually start.</p>
-      <div class="panel"><div class="scroll"><table>
-        <thead><tr><th>Player</th><th>Pos</th><th>NFL</th>${th("Bye", "bye", "num")}
-          ${th("Starts", "starts", "num")}<th></th></tr></thead>
-        <tbody>${chips}</tbody></table></div></div>
+    <section>
+      <h2 class="secttl">${mineOnly && viewing !== myTeam
+        ? esc(viewing) + "'s usage" : "Your least-used players"}</h2>
+      <p class="sectsub">How often each player cracks the optimal lineup. Points parked
+        on a bench are what another roster would actually start.</p>
+      <div class="panel">${rosterGrid}</div>
+    </section>
 
+    <section>
       <h2 class="secttl">Free agents worth adding</h2>
-      <p class="sectsub">A full roster means a pickup is really a swap, so each row
-        shows who to drop. Gains are measured the same way as trades: the change in
-        your best possible starting lineup.</p>
-      <div class="panel"><div class="scroll"><table>
-        <thead><tr><th>Add</th><th>Pos</th><th>NFL</th><th>Drop</th>
-          ${th("Gain", "fagain", "num")}${th("Reg. season", "reg", "num")}
-          ${th("Playoffs", "po", "num")}${th("Owned", "owned", "num")}</tr></thead>
-        <tbody>${fa || '<tr><td colspan="8"><div class="empty"><b>Nothing on waivers helps</b>Your worst starter already beats the pool.</div></td></tr>'}</tbody>
-      </table></div></div>
+      <p class="sectsub">A full roster makes a pickup a swap, so every row names the drop.
+        Gains are measured exactly like trades: the change in the best lineup you could
+        field.</p>
+      <div class="panel">${faGrid}</div>
+    </section>
 
+    <section>
       <h2 class="secttl">League strength</h2>
-      <div class="panel"><div class="scroll"><table>
-        <thead><tr><th>#</th><th>Team</th>${th("Optimal pts/wk", "optimal", "num")}<th></th></tr></thead>
-        <tbody>${standings}</tbody></table></div></div>
+      <p class="sectsub">Each roster's ceiling — what it scores with its best lineup every
+        week. Bench depth is excluded, so this is usable strength, not raw talent.</p>
+      <div class="panel">${leagueGrid}</div>
+    </section>
 
+    <section>
       <h2 class="secttl">Projected season</h2>
-      <p class="sectsub">If today's rosters played the whole season out. Each week is
-        drawn ${SIMS.toLocaleString()} times as a random result around its projection
-        rather than awarding the win to whoever projects higher, so a narrow edge buys
-        a small share of a win rather than a certain one.
+      <p class="sectsub">If today's rosters played the season out, ${SIMS.toLocaleString()}
+        times. Weekly scores are drawn around their projection rather than handed to
+        whoever projects higher, so a narrow edge buys a fraction of a win.
         ${hasSched ? "Uses your real schedule."
-          : "<b>No schedule available</b>, so records are an all-play share of the league rather than your actual matchups."}
+          : "<b>No schedule available</b>, so records are an all-play share of the league."}
         ${measured >= 20
-          ? `How far a week lands from its projection is <b>measured</b> from last
-             season's results for ${measured} players, not assumed, so a roster of
-             steady players is correctly less swingy than a boom-or-bust one.`
-          : "Too little prior-season history, so weekly spread falls back to an assumed ±25 points."}</p>
+          ? `Weekly swing is <b>measured</b> from last season for ${measured} players.`
+          : "Weekly swing falls back to an assumed ±25 points."}</p>
       <div class="panel">
         ${divCount > 1 ? `<div class="bar">
           <div class="fld"><label>Seeding</label><div class="chips" id="divseed">
             <button data-v="0" aria-pressed="${!divSeed}">By record</button>
             <button data-v="1" aria-pressed="${divSeed}">Division winners first</button>
           </div></div>
-          <span class="readout" style="color:var(--faint)">Your league has
-            ${divCount} divisions. ESPN does not report which rule it uses, so pick
-            the one your league actually applies &mdash; it moves the bye odds.</span>
+          <span class="readout" style="color:var(--faint)">${divCount} divisions. ESPN does
+            not say which rule applies — pick yours; it moves the bye odds.</span>
         </div>` : ""}
-        <div class="scroll"><table>
-        <thead><tr><th>#</th><th>Team</th>${th("Record", "record", "num")}
-          ${th("Points for", "pf", "num")}${th("Playoffs", "podds", "num")}
-          ${th("First-round bye", "byeodds", "num")}${th("Title", "title", "num")}
-          ${th("Weekly swing", "swing", "num")}<th></th></tr></thead>
-        <tbody>${season}</tbody></table></div>
-        <div class="note"><b>What this is not.</b> Rosters are frozen: no waiver
-          moves, injuries or trades. ${measured >= 20
-            ? `Weekly swing is measured per player from last season and assumes their
-               results are independent - real correlation, like a quarterback and
-               receiver from the same NFL team, would make a roster swingier than
-               shown.`
-            : `Weekly scatter is assumed at ±${SIGMA} points, the single biggest lever
-               on every number here.`}
-          Odds are shown to the nearest tenth because the simulation's own error is
-          about ±${(100 * (proj[0]?.mcError ?? 0)).toFixed(2)} points.</div>
+        ${seasonGrid}
+        <div class="note"><b>What this is not.</b> Rosters are frozen: no waivers,
+          injuries or trades. ${measured >= 20
+            ? `Swing is measured per player and assumes independence — a stack of players
+               from one NFL team is swingier than shown.`
+            : `±25 is assumed and is the biggest lever on every number here.`}
+          Odds are to the nearest tenth; the simulation's own error is about
+          ±${(100 * (proj[0]?.mcError ?? 0)).toFixed(2)} points.</div>
       </div>
+    </section>
 
-      <footer style="padding:34px 0 60px;color:var(--faint);font-family:var(--mono);font-size:11px">
-        Live from ESPN. Nothing leaves your machine.
-        <button class="btn ghost2" id="refresh" style="margin-left:14px">Refresh data</button>
-      </footer>
-    </div>`;
+    <footer>Live from ESPN. Nothing leaves your machine.
+      <button class="ghost" id="refresh">Refresh data</button></footer>
+  </div>`;
 
-  // Accordion: build the detail only when a row is first opened - explain() re-solves
-  // lineups, and doing it for 60 rows up front would stall the page.
-  app.querySelectorAll("#trades tr.tr-row").forEach((row) => {
+  /* ---------- behaviour ---------- */
+  const rerender = () => render(eng, model, trades, myTeam, schedule);
+  bindSort(app, rerender);
+  initTooltips(app);
+
+  app.querySelectorAll("#tradeGrid tr.tr-row").forEach((row) => {
     row.onclick = () => {
       const n = row.dataset.i;
       const det = app.querySelector(`tr.detail[data-for="${n}"]`);
       const wasOpen = row.classList.contains("open");
-      // Only one detail at a time - several open at once buries the table.
-      app.querySelectorAll("#trades tr.tr-row.open").forEach((r) => {
+      app.querySelectorAll("#tradeGrid tr.tr-row.open").forEach((r) => {
         r.classList.remove("open");
         app.querySelector(`tr.detail[data-for="${r.dataset.i}"]`).hidden = true;
       });
       if (wasOpen) return;
       row.classList.add("open");
+      const t = trades[Number(n)];
       if (!det.dataset.built) {
-        det.firstElementChild.innerHTML = detailFor(trades[Number(n)]);
+        det.firstElementChild.innerHTML = detailFor(t);
         det.dataset.built = "1";
         initTooltips(det);
+        det.querySelectorAll(".copy").forEach((btn) => {
+          btn.onclick = (ev) => {
+            ev.stopPropagation();
+            const other = t.sides.find((s) => s.team === btn.dataset.team);
+            copy(pitchText(t, other), btn);
+          };
+        });
       }
       det.hidden = false;
       row.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
   });
-  initTooltips(app);
-  const rerender = () => render(eng, model, trades, myTeam, schedule);
-  document.querySelectorAll("#shapes button").forEach((b) => {
+
+  app.querySelectorAll("#shapes button").forEach((b) => {
     b.onclick = () => {
-      const v = b.dataset.v;
-      F.shapes.has(v) ? F.shapes.delete(v) : F.shapes.add(v);
+      F.shapes.has(b.dataset.v) ? F.shapes.delete(b.dataset.v) : F.shapes.add(b.dataset.v);
       rerender();
     };
   });
-  document.querySelectorAll("#only button").forEach((b) => {
+  app.querySelectorAll("#only button").forEach((b) => {
     b.onclick = () => {
-      const v = b.dataset.v;
-      F.only.has(v) ? F.only.delete(v) : F.only.add(v);
+      F.only.has(b.dataset.v) ? F.only.delete(b.dataset.v) : F.only.add(b.dataset.v);
       rerender();
     };
+  });
+  app.querySelectorAll("#divseed button").forEach((b) => {
+    b.onclick = () => { window.__divSeed = b.dataset.v === "1"; rerender(); };
   });
   $("#mg").oninput = (e) => {
     F.minGain = +e.target.value / 100;
@@ -620,17 +940,19 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     const v = e.target.value.trim().toLowerCase();
     qt = setTimeout(() => { F.q = v; rerender(); }, 180);
   };
-  document.querySelectorAll("#divseed button").forEach((b) => {
-    b.onclick = () => {
-      window.__divSeed = b.dataset.v === "1";
-      render(eng, model, trades, myTeam, schedule);
-    };
-  });
   $("#who").onchange = (e) => {
     window.__view = e.target.value;
-    if (e.target.value !== "__all__") chrome.storage.local.set({ "ffsm.myTeam": e.target.value });
-    render(eng, model, trades, e.target.value === "__all__" ? myTeam : e.target.value, schedule);
+    if (e.target.value !== "__all__")
+      chrome.storage.local.set({ "ffsm.myTeam": e.target.value });
+    rerender();
   };
+  $("#reset").onclick = () => {
+    window.__filters = null;
+    window.__view = myTeam;
+    rerender();
+  };
+  $("#theme").onclick = () =>
+    theme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
   $("#refresh").onclick = async () => {
     const keep = (await chrome.storage.local.get("ffsm.myTeam"))["ffsm.myTeam"];
     await chrome.storage.local.clear();

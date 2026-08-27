@@ -7,32 +7,75 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="panel.css">
 <style>
-  .boot{max-width:640px;margin:14vh auto;padding:0 24px;text-align:center}
-  .boot h1{font-family:var(--serif,serif);font-size:44px;margin:0 0 8px}
-  .boot p{color:var(--dim);font-size:14px;margin:0 0 22px}
-  .steps{text-align:left;background:var(--panel);border:1px solid var(--line);
-    border-radius:3px;padding:16px 18px;font-family:var(--mono);font-size:12px;
-    color:var(--dim);max-height:220px;overflow:auto}
-  .steps div{padding:2px 0}
-  .steps .ok{color:var(--accent)}
-  .steps .err{color:var(--danger)}
-  .bar2{height:3px;background:var(--sunken);border-radius:2px;overflow:hidden;margin:18px 0}
-  .bar2 i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+  .boot{max-width:560px;margin:11vh auto;padding:0 24px}
+  .boot-head{text-align:center;margin-bottom:30px}
+  .boot h1{font-family:var(--serif);font-weight:400;font-size:46px;margin:0 0 6px;
+    letter-spacing:-.02em}
+  .boot h1 em{font-style:italic;color:var(--accent)}
+  .boot-head p{color:var(--dim);font-size:14px;margin:0}
+
+  .steps{list-style:none;margin:0;padding:0;display:grid;gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .steps li{background:var(--panel);padding:11px 15px;display:grid;
+    grid-template-columns:20px 1fr auto;gap:12px;align-items:center;
+    font-size:13px;color:var(--faint);transition:color .2s,background .2s}
+  .steps li .ic{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--line-hi);
+    position:relative}
+  .steps li .note{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .steps li[data-s="run"]{color:var(--ink);background:var(--raised)}
+  .steps li[data-s="run"] .ic{border-color:var(--accent);border-right-color:transparent;
+    animation:spin .7s linear infinite}
+  .steps li[data-s="done"]{color:var(--dim)}
+  .steps li[data-s="done"] .ic{border-color:var(--accent);background:var(--accent)}
+  .steps li[data-s="done"] .ic::after{content:"";position:absolute;left:4px;top:1px;
+    width:4px;height:8px;border:solid var(--ground);border-width:0 1.5px 1.5px 0;
+    transform:rotate(42deg)}
+  .steps li[data-s="skip"] .ic{border-style:dashed}
+  .steps li[data-s="warn"]{color:var(--warn)}
+  .steps li[data-s="warn"] .ic{border-color:var(--warn)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .boot-foot{margin-top:20px}
+  .bar2{height:3px;background:var(--sunken);border-radius:2px;overflow:hidden}
+  .bar2 i{display:block;height:100%;width:0;border-radius:2px;
+    background:linear-gradient(90deg,var(--accent),#8ef0bd);
+    transition:width .35s cubic-bezier(.22,1,.36,1)}
+  .boot-meta{display:flex;justify-content:space-between;margin-top:8px;
+    font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+  .boot-log{margin-top:22px;font-size:12px}
+  .boot-log summary{color:var(--faint);cursor:pointer;font-size:11px;
+    letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+  .boot-log summary:hover{color:var(--dim)}
+  #log{margin-top:10px;max-height:200px;overflow:auto;background:var(--sunken);
+    border:1px solid var(--line);border-radius:5px;padding:12px 14px;
+    font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.65}
+  #log div{padding:1px 0}
+  #log .ok{color:var(--accent)}
+  #log .err{color:var(--danger)}
+
+  #bootact{margin-top:22px;text-align:center}
   .btn{font:inherit;font-size:13px;font-weight:600;letter-spacing:.06em;
     text-transform:uppercase;background:var(--accent);color:#08120d;border:0;
-    border-radius:3px;padding:11px 20px;cursor:pointer}
+    border-radius:4px;padding:11px 20px;cursor:pointer}
   .btn.ghost2{background:none;color:var(--dim);border:1px solid var(--line-hi)}
   input.lg{font:inherit;font-family:var(--mono);font-size:14px;padding:9px 12px;
     border:1px solid var(--line-hi);background:var(--panel);color:var(--ink);
-    border-radius:3px;width:180px;text-align:center}
-</style>
+    border-radius:4px;width:190px;text-align:center}
+</style></style>
 
 <div id="boot" class="boot">
-  <h1>FF Slot <em style="font-style:italic;color:var(--accent)">Machine</em></h1>
-  <p id="bootmsg">Reading your league from ESPN…</p>
-  <div class="bar2"><i id="bootbar"></i></div>
-  <div class="steps" id="steps"></div>
-  <div id="bootact" style="margin-top:20px"></div>
+  <div class="boot-head">
+    <h1>FF Slot <em>Machine</em></h1>
+    <p id="bootmsg">Reading your league from ESPN</p>
+  </div>
+  <ol class="steps" id="steps"></ol>
+  <div class="boot-foot">
+    <div class="bar2"><i id="bootbar"></i></div>
+    <div class="boot-meta"><span id="bootnow">Starting…</span><span id="bootclock">0s</span></div>
+  </div>
+  <div id="bootact"></div>
+  <details class="boot-log"><summary>Details</summary><div id="log"></div></details>
 </div>
 
 <div id="app" hidden></div>

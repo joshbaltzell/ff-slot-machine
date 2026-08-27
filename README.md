@@ -27,6 +27,22 @@ a transversal matroid, where greedy by descending value is provably optimal — 
 older "fill dedicated slots, then flex" shortcut is wrong about 8% of the time when
 `RB/WR` and `WR/TE` both exist.
 
+## Using it
+
+Every grid sorts — click a column heading, click again to reverse. Hover any heading
+to see what it measures, which matters more than it sounds: "gain" is not points
+scored, it is how much your *best possible lineup* improves.
+
+Filter trades by team, shape (1-for-1, 2-for-2, three-team), minimum gain, or player
+name. **Bye-driven** finds offers that are near-worthless to your partner at full
+strength but valuable once byes thin them out. **Even splits** hides the lopsided
+ones nobody accepts.
+
+Click any trade for the detail: a panel per side with the gain broken into regular
+season, playoffs and bye weeks, who starts more, who gets benched, a per-week bar
+chart, and a **Copy pitch** button that puts a plain-language case on your clipboard,
+written from your partner's side.
+
 ## The daily reminder
 
 Once installed, a small notice can appear on your ESPN league page — "3 trade
