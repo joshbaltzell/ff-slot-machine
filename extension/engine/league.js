@@ -293,7 +293,8 @@ export async function loadFreeAgents({ leagueId, seasonId }, weeks, limit = 400)
     if (!weeks.some((w) => proj[w] > 0)) continue;      // nothing projected at all
     out.push({
       id: p.id, name: p.fullName, eligibleSlots: p.eligibleSlots ?? [],
-      pos: positionLabel(p), nfl: PRO_TEAM[p.proTeamId] ?? "?",
+      pos: positionLabel(p), posId: p.defaultPositionId ?? 0,
+      nfl: PRO_TEAM[p.proTeamId] ?? "?",
       teamId: null, proj, rawStats: p.stats ?? [],
       owned: Math.round((p.ownership?.percentOwned ?? 0) * 10) / 10,
     });
@@ -336,6 +337,7 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
           id: p.id, name: p.fullName,
           eligibleSlots: p.eligibleSlots ?? [],
           pos: positionLabel(p),
+          posId: p.defaultPositionId ?? 0,
           nfl: PRO_TEAM[p.proTeamId] ?? "?",
           teamId: t.id, proj: {}, rawStats: p.stats ?? [],
         };

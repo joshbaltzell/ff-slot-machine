@@ -110,6 +110,53 @@ ok(Math.abs(sum("playoffPct") - 6) < 1e-6, "playoff odds sum to the bracket size
 ok(Math.abs(sum("byePct") - 2) < 1e-6, "bye odds sum to the number of byes");
 ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
 
+/* ---- 4. positionLimits: an ESPN setting, applied as a filter on results ---- */
+{
+  // Give every fixture position an integer id, the way ESPN's defaultPositionId works.
+  const POS_ID = Object.fromEntries([...new Set(F.pos)].map((p, i) => [p, i + 1]));
+  const withIds = (limits) => ({
+    ...model,
+    settings: { ...model.settings, positionLimits: limits },
+    players: new Map([...model.players].map(([id, p]) => [id, { ...p, posId: POS_ID[p.pos] }])),
+  });
+  const mk = (limits) => new Engine(withIds(limits), { starters },
+    new Map(F.pos.map((p, i) => [i, masks[i]])));
+
+  const free = mk(null);
+  ok(free.legal(free.roster.get(F.teams[0])), "no limits: every roster is legal");
+
+  // Cap RBs at exactly what the first team carries today. Any trade that hands
+  // them one more RB without taking one away must vanish; nothing else may change.
+  const team0 = F.teams[0];
+  const rbCount = F.rosters[team0].filter((i) => F.pos[i] === "RB").length;
+  const capped = mk({ [POS_ID.RB]: rbCount });
+  ok(capped.legal(capped.roster.get(team0)), "a roster at the cap is legal");
+  const rbIdx = F.rosters[team0].find((i) => F.pos[i] === "RB");
+  const wrIdx = F.rosters[team0].find((i) => F.pos[i] === "WR");
+  const extraRb = F.rosters[F.teams[1]].find((i) => F.pos[i] === "RB");
+  ok(!capped.legal(capped.swap(capped.roster.get(team0), [wrIdx], [extraRb])),
+     "WR out, RB in over the cap is illegal");
+  ok(capped.legal(capped.swap(capped.roster.get(team0), [rbIdx], [extraRb])),
+     "RB out, RB in stays legal");
+  ok(capped.score([[team0, F.teams[1], [wrIdx]], [F.teams[1], team0, [extraRb]]], "1-for-1") === null,
+     "score() returns null for an illegal trade");
+  ok(capped.score([[team0, F.teams[1], [rbIdx]], [F.teams[1], team0, [extraRb]]], "1-for-1") !== null,
+     "score() still scores a legal trade");
+
+  const allFree = await free.findTwoTeam(1, 0.05);
+  const allCapped = await capped.findTwoTeam(1, 0.05);
+  ok(allFree.length === GOLDEN.length, "posId on players does not change the golden set");
+  ok(allCapped.length < allFree.length, "the cap removes at least one trade");
+  ok(allCapped.every((t) => t.sides.every((s) =>
+       capped.legal(capped.swap(capped.roster.get(s.team), s.sent, s.received)))),
+     "every surviving trade is legal for every side");
+  const keyOf = (t) => JSON.stringify(t.sides.map((s) => [s.team, s.sent, s.received]));
+  const kept = new Set(allCapped.map(keyOf));
+  ok(allFree.filter((t) => !kept.has(keyOf(t))).every((t) => t.sides.some((s) =>
+       !capped.legal(capped.swap(capped.roster.get(s.team), s.sent, s.received)))),
+     "every removed trade was illegal for some side");
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("ENGINE OK — reproduces the verified baseline exactly");

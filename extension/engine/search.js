@@ -49,6 +49,18 @@ export class Engine {
       for (let w = 0; w < this.NW; w++) this.proj[i * this.NW + w] = p.proj[this.weeks[w]] ?? 0;
     }
 
+    // ESPN's positionLimits is a roster-composition rule keyed on its own
+    // defaultPositionId. It is read verbatim and used only to reject rosters ESPN
+    // itself would refuse - never for lineup logic, which stays on slots.
+    // A value <= 0 means unlimited (ESPN sends -1; 0 appears for positions no
+    // roster can hold).
+    this.posId = new Int32Array(this.n);
+    for (const [id, p] of model.players) this.posId[this.index.get(id)] = Math.max(0, Math.min(63, p.posId ?? 0));
+    this.limits = Object.entries(this.settings.positionLimits ?? {})
+      .map(([k, v]) => [Number(k), Number(v)])
+      .filter(([k, v]) => k >= 0 && k <= 63 && v > 0);
+    this._limitCount = new Int32Array(64);
+
     this._posOf = new Map();
     for (const [id, p] of model.players) this._posOf.set(this.index.get(id), p.pos);
     this.teams = [...model.teams.values()].map(t => t.name);
@@ -90,6 +102,16 @@ export class Engine {
     const drop = new Set(out);
     const kept = ids.filter(i => !drop.has(i));
     return kept.concat(inn);
+  }
+
+  /** Would ESPN allow this roster? False when any limited position exceeds its cap. */
+  legal(ids) {
+    if (!this.limits.length) return true;
+    const c = this._limitCount;
+    c.fill(0);
+    for (const i of ids) c[this.posId[i]]++;
+    for (const [pid, max] of this.limits) if (c[pid] > max) return false;
+    return true;
   }
 
   /** Per-team swap table: value after (out -> in). Makes three-way a lookup. */
@@ -145,6 +167,9 @@ export class Engine {
       sent.get(src).push(...players);
       recv.get(dst).push(...players);
     }
+    // Legality first: it is cheap, and an illegal roster has no lineup worth solving.
+    for (const t of sent.keys())
+      if (!this.legal(this.swap(this.roster.get(t), sent.get(t), recv.get(t)))) return null;
     const sides = [...sent.keys()].map(t => this.sideMetrics(t, sent.get(t), recv.get(t)));
     return { shape, sides, total: sides.reduce((a, s) => a + s.gain, 0),
              balance: Math.min(...sides.map(s => s.gain)) / Math.max(...sides.map(s => s.gain)) };
@@ -161,7 +186,7 @@ export class Engine {
       for (const sa of combos(this.roster.get(A), depth))
         for (const sb of combos(this.roster.get(B), depth)) {
           const t = this.score([[A, B, sa], [B, A, sb]], `${depth}-for-${depth}`);
-          if (t.sides.every(s => s.gain >= minGain)) out.push(t);
+          if (t && t.sides.every(s => s.gain >= minGain)) out.push(t);
         }
       onProgress(n + 1, pairs.length, out.length);
       await yieldToBrowser();
@@ -198,7 +223,8 @@ export class Engine {
             if (!vc || mean(vc, this.baseline.get(C)) < minGain) continue;
             const va = tab.get(A).get(pa)?.get(pc);
             if (!va || mean(va, this.baseline.get(A)) < minGain) continue;
-            out.push(this.score([[A, B, [pa]], [B, C, [pb]], [C, A, [pc]]], "three-way"));
+            const t = this.score([[A, B, [pa]], [B, C, [pb]], [C, A, [pc]]], "three-way");
+            if (t) out.push(t);
           }
         }
       }
@@ -274,7 +300,9 @@ export class Engine {
     for (const fa of this.freeAgents) {
       let best = null;
       for (const drop of ids) {
-        const w = this.weekly(this.swap(ids, [drop], [fa]));
+        const after = this.swap(ids, [drop], [fa]);
+        if (!this.legal(after)) continue;
+        const w = this.weekly(after);
         const g = mean(w);
         if (!best || g > best.gain) best = { drop, gain: g, after: Float64Array.from(w) };
       }
