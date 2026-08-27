@@ -27,6 +27,24 @@ a transversal matroid, where greedy by descending value is provably optimal — 
 older "fill dedicated slots, then flex" shortcut is wrong about 8% of the time when
 `RB/WR` and `WR/TE` both exist.
 
+## The daily reminder
+
+Once installed, a small notice can appear on your ESPN league page — "3 trade
+options for you", "Rosters have changed", "Your analysis is out of date". Click
+**Open** to run the analysis, or dismiss it and it stays quiet for a day.
+
+The bar for showing it is deliberately high: at most once per league per day, and
+only when rosters have actually changed, the last run has gone stale, or there are
+offers you have not looked at today. The toolbar icon carries a small badge as the
+persistent cue, so the on-page notice never has to nag.
+
+It does **not** run the trade search in the background. Manifest V3 stops a service
+worker after five minutes and a full league pull is eighteen API calls before any
+searching begins, so a background search would be unreliable at best and dishonest
+at worst. The daily job makes a single request for the current week's rosters and
+compares them to the rosters the last analysis was built on — which answers the only
+question worth interrupting you about: has anything actually changed?
+
 ## Privacy
 
 Everything runs locally. The only network calls are to ESPN's own read API using the

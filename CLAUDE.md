@@ -87,6 +87,19 @@ verified line for line before it was retired, so they are now the contract rathe
 than a convenience. A mismatch means the engine changed — regenerate them only on a
 deliberate decision that the new behaviour is right.
 
+## The daily reminder
+
+`content.js` injects a notice on `fantasy.espn.com/football/*`; `background.js` runs
+a 12-hourly alarm. **The alarm does not run the trade search.** MV3 kills a service
+worker at five minutes and a league pull is eighteen calls, so the job makes one
+`mRoster` request and compares a roster fingerprint against the one `panel.js` stored
+on its last run. `rosterFingerprint` in `panel.js` and `rosterHash` in `background.js`
+must stay in step — they hash the same thing in two places.
+
+Showing the notice is rate-limited to once per league per day and honours a dismissal
+for 24 hours. Keep that bar high; an extension that announces itself every visit gets
+uninstalled.
+
 ## Privacy
 
 Everything runs locally against ESPN's read API using the browser's own session. No

@@ -1,0 +1,39 @@
+/* Injected into ESPN's page, so every rule is namespaced and nothing is inherited.
+   Deliberately quiet: bottom-right, self-dismissing, never a modal. */
+.ffsm-pill {
+  position: fixed; right: 20px; bottom: 20px; z-index: 2147483000;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; max-width: 380px;
+  background: #10151b; border: 1px solid #2b3743; border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .45);
+  font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  color: #e9eff5;
+  opacity: 0; transform: translateY(10px);
+  transition: opacity .24s ease, transform .24s cubic-bezier(.22, 1, .36, 1);
+}
+.ffsm-pill.ffsm-in { opacity: 1; transform: none; }
+.ffsm-mark {
+  flex: 0 0 auto; width: 30px; height: 30px; border-radius: 7px;
+  background: #3ddc84; color: #08120d;
+  font: 700 12px/30px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center; letter-spacing: .02em;
+}
+.ffsm-body { min-width: 0; }
+.ffsm-title { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+.ffsm-sub { font-size: 12px; color: #8496a6; line-height: 1.4; margin-top: 2px; }
+.ffsm-go {
+  flex: 0 0 auto; font: 600 11px ui-sans-serif, -apple-system, sans-serif;
+  letter-spacing: .07em; text-transform: uppercase;
+  background: rgba(61, 220, 132, .14); color: #3ddc84;
+  border: 1px solid rgba(61, 220, 132, .35); border-radius: 5px;
+  padding: 7px 12px; cursor: pointer; transition: background .15s, color .15s;
+}
+.ffsm-go:hover { background: #3ddc84; color: #08120d; }
+.ffsm-x {
+  flex: 0 0 auto; background: none; border: 0; color: #57697a;
+  font-size: 17px; line-height: 1; padding: 4px 2px; cursor: pointer;
+}
+.ffsm-x:hover { color: #e9eff5; }
+@media (prefers-reduced-motion: reduce) {
+  .ffsm-pill { transition: none; opacity: 1; transform: none; }
+}

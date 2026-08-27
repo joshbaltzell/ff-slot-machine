@@ -23,6 +23,16 @@ const progress = (frac) => { $("#bootbar").style.width = `${Math.round(frac * 10
 
 const CACHE_HOURS = 12;
 
+/** Must match the fingerprint the background check computes. */
+function rosterFingerprint(model) {
+  const parts = [...model.teams.values()]
+    .map(t => `${t.id}:${[...t.roster].sort((a, b) => a - b).join(",")}`).sort();
+  let h = 0;
+  const s = parts.join("|");
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return String(h);
+}
+
 function pickTeam(teams) {
   return new Promise((resolve) => {
     $("#bootmsg").textContent = "Which team is yours?";
@@ -152,13 +162,29 @@ async function start(ref) {
     const one = eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
 
+    say("searching 2-for-2… (the slow one)");
+    const two = eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot));
+    say(`  ${two.length} mutually beneficial`, "ok");
+
     say("searching three-way…");
     const three = eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
     say(`  ${three.length} cycles`, "ok");
 
-    const trades = [...dedupe(one, 3), ...dedupe(three, 3)]
+    const trades = [...dedupe(one, 3), ...dedupe(two, 3), ...dedupe(three, 3)]
       .sort((a, b) => b.total - a.total);
     say(`${trades.length} offers after dedupe`, "ok");
+
+    // Record what this run found, so the daily check and the on-page notice have
+    // something real to report rather than a generic nag.
+    try {
+      const mine = trades.filter(t => t.sides.some(x => x.team === myTeam)).length;
+      const key = `ffsm.league.${ref.leagueId}.${ref.seasonId}`;
+      await chrome.storage.local.set({ [key]: {
+        at: Date.now(), offers: mine, team: myTeam,
+        rosterHash: rosterFingerprint(model), changed: false,
+      } });
+      chrome.runtime.sendMessage({ type: "ffsm.analysed" });
+    } catch { /* storage unavailable; the report still works */ }
 
     render(eng, model, trades, myTeam, schedule);
   } catch (err) {
@@ -197,6 +223,10 @@ const HINT = {
   podds:  "Share of simulated seasons where this team qualifies for the playoffs.",
   byeodds:"Share of simulated seasons where this team earns a first-round bye. Worth far more than it looks: it skips an elimination game.",
   title:  "Share of simulated seasons where this team wins the league.",
+  weeks:  "How many weeks the trade is a net positive for you. A gain spread across every week is more dependable than the same average earned in three big ones.",
+  combined:"Both sides' gains added together. High combined value means the trade creates the most points league-wide, which is not the same as being good for you.",
+  byehelp:"What the trade is worth to your partner during their bye-thinned weeks. A big number here with little full-strength value means you are selling them a bye fix, not talent.",
+  balance:"How evenly the gain splits. Lopsided offers are the ones that get declined, however good the total looks.",
   swing:  "How far this roster's weekly score typically lands from its projection, measured from last season's results for the players it starts. A lower number means a more predictable team - which helps a favourite and hurts an underdog.",
 };
 const th = (label, key, cls = "") =>
@@ -320,9 +350,27 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
 
   const viewing = window.__view ?? myTeam;
   const mineOnly = viewing !== "__all__";
+  const F = window.__filters ??= {
+    shapes: new Set(["1-for-1", "2-for-2", "three-way"]),
+    minGain: 0.10, only: new Set(), q: "",
+  };
+  const nameOf = (i) => model.players.get(eng.ids[i]).name.toLowerCase();
+  // A bye play rather than a talent upgrade: neutral at full strength, but worth
+  // real points once byes force a partner to start players he would rather bench.
+  const byeDriven = (t) => t.sides.some(s => s.team !== viewing && s.full <= .15 && s.bye >= 1.5);
+  const balance = (t) => {
+    const g = t.sides.map(s => s.gain);
+    return Math.min(...g) / Math.max(...g);
+  };
   const shown = trades
     .map((t, i) => ({ t, i }))
-    .filter(({ t }) => !mineOnly || t.sides.some(s => s.team === viewing));
+    .filter(({ t }) => !mineOnly || t.sides.some(s => s.team === viewing))
+    .filter(({ t }) => F.shapes.has(t.shape))
+    .filter(({ t }) => Math.min(...t.sides.map(s => s.gain)) >= F.minGain)
+    .filter(({ t }) => !F.only.has("bye") || byeDriven(t))
+    .filter(({ t }) => !F.only.has("even") || balance(t) >= .6)
+    .filter(({ t }) => !F.q || t.sides.some(s =>
+      [...s.sent, ...s.received].some(i => nameOf(i).includes(F.q))));
 
   const body = shown.slice(0, 60).map(({ t, i: n }) => {
     // With a team selected the row is always written from that team's side. With
@@ -335,13 +383,22 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td>${mineOnly ? "" : `<div class="side-l">${esc(me.team)}</div>`}
           <div class="pkg">${pkg(me.received)}</div></td>
       <td><div class="pkg">${pkg(me.sent)}</div></td>
-      <td style="color:var(--dim)">${others.map(o => esc(o.team)).join(" + ")}</td>
+      <td style="color:var(--dim);white-space:nowrap">${
+        others.map(o => esc(o.team)).join(" + ")}</td>
+      <td class="num">${me.weekly.filter(x => x > .005).length}<span
+        style="color:var(--faint)">/${W.length}</span></td>
       <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
+      <td class="num" style="color:var(--dim)">${others.map(o => f2(o.gain)).join(" / ")}</td>
+      <td class="num">${t.sides.reduce((a, s) => a + s.gain, 0).toFixed(2)}</td>
       <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
       <td class="num ${cls(me.playoff)}">${f2(me.playoff)}</td>
-      <td class="num" style="color:var(--dim)">${others.map(o => f2(o.gain)).join(" / ")}</td>
+      <td class="num ${cls(others[0].bye)}">${f2(others[0].bye)}${
+        byeDriven(t) ? ' <span class="tag">bye</span>' : ""}</td>
+      <td><div class="bal"><div class="track"><i style="width:${
+        (balance(t) * 100).toFixed(0)}%"></i></div><span style="font-family:var(--mono);
+        font-size:10.5px;color:var(--faint)">${(balance(t) * 100).toFixed(0)}%</span></div></td>
     </tr>
-    <tr class="detail" data-for="${n}" hidden><td colspan="9"></td></tr>`;
+    <tr class="detail" data-for="${n}" hidden><td colspan="12"></td></tr>`;
   }).join("");
 
   const chips = eng.roster.get(myTeam)
@@ -435,10 +492,12 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <thead><tr><th></th>${th("Shape", "shape", "num")}
           ${th(mineOnly ? "You receive" : "Receives", "recv")}
           ${th(mineOnly ? "You send" : "Sends", "send")}${th("Partner", "partner")}
+          ${th("Weeks helped", "weeks", "num")}
           ${th(mineOnly ? "Your gain" : "Gain", "gain", "num")}
-          ${th("Reg. season", "reg", "num")}
-          ${th("Playoffs", "po", "num")}${th("Partner gain", "theirs", "num")}</tr></thead>
-        <tbody>${body || '<tr><td colspan="9"><div class="empty"><b>No trades found</b>Nothing helps both sides right now.</div></td></tr>'}</tbody>
+          ${th("Partner gain", "theirs", "num")}${th("Combined", "combined", "num")}
+          ${th("Reg. season", "reg", "num")}${th("Playoffs", "po", "num")}
+          ${th("Partner bye help", "byehelp", "num")}${th("Balance", "balance", "num")}</tr></thead>
+        <tbody>${body || '<tr><td colspan="12"><div class="empty"><b>No trades found</b>Nothing helps both sides right now.</div></td></tr>'}</tbody>
       </table></div></div>
 
       <h2 class="secttl">${mineOnly ? "Your least-used players" : "Least-used players"}</h2>
@@ -535,6 +594,32 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     };
   });
   initTooltips(app);
+  const rerender = () => render(eng, model, trades, myTeam, schedule);
+  document.querySelectorAll("#shapes button").forEach((b) => {
+    b.onclick = () => {
+      const v = b.dataset.v;
+      F.shapes.has(v) ? F.shapes.delete(v) : F.shapes.add(v);
+      rerender();
+    };
+  });
+  document.querySelectorAll("#only button").forEach((b) => {
+    b.onclick = () => {
+      const v = b.dataset.v;
+      F.only.has(v) ? F.only.delete(v) : F.only.add(v);
+      rerender();
+    };
+  });
+  $("#mg").oninput = (e) => {
+    F.minGain = +e.target.value / 100;
+    $("#mgv").textContent = F.minGain.toFixed(2);
+    rerender();
+  };
+  let qt;
+  $("#q").oninput = (e) => {
+    clearTimeout(qt);
+    const v = e.target.value.trim().toLowerCase();
+    qt = setTimeout(() => { F.q = v; rerender(); }, 180);
+  };
   document.querySelectorAll("#divseed button").forEach((b) => {
     b.onclick = () => {
       window.__divSeed = b.dataset.v === "1";
