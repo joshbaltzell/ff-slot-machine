@@ -22,3 +22,15 @@ Phases 2, 3 and 5 are built at the same time on separate branches from `main`
 6. **`search.js` and `season.js` are Phase 2's to change** (availability enters the
    lineup solve). Phases 3 and 5 must not modify them.
 7. **Commit trailers** as in the repo's recent history.
+
+## Wave 2 (Phases 4, 7, 8) — file ownership
+
+Branch from `main` after wave 1 (2, 3, 5) has merged.
+
+| File | Owner | Others may |
+|---|---|---|
+| `extension/engine/search.js` | Phase 4 (shapes, backfill, trim) | Phase 8 may edit only `rosterSigma`/`teamSigma` to add covariance |
+| `extension/engine/season.js` | nobody this wave | — |
+| `extension/engine/league.js` | Phase 8 (`measureVolatility` keeps residuals) | Phase 7 may add `PRO_TEAM`-adjacent lookups in a new file instead |
+| `extension/engine/availability.js` | Phase 2 (merged) | read-only |
+| `extension/panel.js` | shared hook points only | — |
