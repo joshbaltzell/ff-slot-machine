@@ -18,7 +18,11 @@
   "weeks": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],
 
   "playoff_weeks": [15, 16, 17],
-  "_playoff_note": "ASSUMPTION - not in the ESPN export. Correct these if your league differs.",
+  "_playoff_note": "Weeks confirmed as 3 rounds, one per week. Week 18 is unused.",
+
+  "playoff_teams": 6,
+  "playoff_first_round_byes": 2,
+  "_bracket_note": "Confirmed by the league owner: 6 of 10 qualify, seeds 1-2 bye the first round, then 3v6 and 4v5; semifinals; final. Three rounds.",
 
   "thin_week_byes": 2,
   "_thin_note": "A week where this many rostered players are on bye counts as 'thin'.",

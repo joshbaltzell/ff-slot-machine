@@ -72,10 +72,13 @@ def cookies(args) -> dict[str, str]:
     return {"SWID": swid, "espn_s2": s2}
 
 
-def get(url: str, jar: dict, tries: int = 3) -> dict:
+def get(url: str, jar: dict, tries: int = 3,
+        extra_headers: dict | None = None) -> dict:
     cookie = "; ".join(f"{k}={v}" for k, v in jar.items())
-    req = Request(url, headers={"Cookie": cookie, "User-Agent": "Mozilla/5.0",
-                                "Accept": "application/json"})
+    headers = {"Cookie": cookie, "User-Agent": "Mozilla/5.0",
+               "Accept": "application/json"}
+    headers.update(extra_headers or {})
+    req = Request(url, headers=headers)
     for attempt in range(tries):
         try:
             with urlopen(req, timeout=30) as r:
@@ -88,6 +91,44 @@ def get(url: str, jar: dict, tries: int = 3) -> dict:
                 raise
             time.sleep(1.5 * (attempt + 1))
     raise RuntimeError("unreachable")
+
+
+def free_agents(season: int, league: int, jar: dict, weeks: range,
+                limit: int = 600) -> pd.DataFrame:
+    """Everyone not on a roster, scored under THIS league's settings.
+
+    The public pool (leaguedefaults) is not a substitute: it carries no TQB
+    entities at all - this league's whole quarterback slot - and its D/ST
+    projections run about 2.5 pts/wk below this league's scoring, consistently
+    across every defense. Measured, not assumed. Mixing that with league-scored
+    rosters would bias replacement level position by position.
+    """
+    base = BASE.format(season=season, league=league)
+    flt = json.dumps({"players": {
+        "filterStatus": {"value": ["FREEAGENT", "WAIVERS"]},
+        "limit": limit,
+        "sortPercOwned": {"sortPriority": 1, "sortAsc": False},
+    }})
+    rows: dict[int, dict] = {}
+    for wk in weeks:
+        print(f"  free agents, week {wk:>2} ...", end="", flush=True)
+        blob = get(f"{base}?view=kona_player_info&scoringPeriodId={wk}", jar,
+                   extra_headers={"x-fantasy-filter": flt})
+        for entry in blob.get("players", []):
+            p = entry["player"]
+            slots = {SLOT.get(s, str(s)) for s in p.get("eligibleSlots", [])}
+            pos = "TQB" if "TQB" in slots else POS.get(p.get("defaultPositionId"), "?")
+            rec = rows.setdefault(p["id"], {
+                "Player": p["fullName"], "Position": pos,
+                "NFL Team": PRO_TEAM.get(p.get("proTeamId"), "?"),
+                "Fantasy Team": "(free agent)", "Bye": None})
+            proj = next((st["appliedTotal"] for st in p.get("stats", [])
+                         if st.get("statSourceId") == 1
+                         and st.get("statSplitTypeId") == 1
+                         and st.get("scoringPeriodId") == wk), 0.0)
+            rec[f"Wk {wk}"] = round(float(proj or 0.0), 2)
+        print(f" {len(rows)} known")
+    return pd.DataFrame(rows.values())
 
 
 def pull(season: int, league: int, jar: dict, weeks: range) -> tuple[pd.DataFrame, dict]:
@@ -174,6 +215,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="big_money_projections.xlsx")
     ap.add_argument("--swid"), ap.add_argument("--s2")
     ap.add_argument("--cookie-file", default=".espn_cookies")
+    ap.add_argument("--free-agents", action="store_true",
+                    help="also pull the free-agent pool into a second sheet")
     ap.add_argument("--print-settings", action="store_true",
                     help="show the lineup slots and playoff weeks ESPN reports")
     args = ap.parse_args(argv)
@@ -190,9 +233,27 @@ def main(argv=None) -> int:
         backup = out.with_suffix(".bak.xlsx")
         out.replace(backup)
         print(f"  existing workbook moved to {backup}")
+    fa = None
+    if args.free_agents:
+        fa = free_agents(args.season, args.league, jar, weeks)
+        wc = [f"Wk {w}" for w in weeks]
+        for c in wc:
+            if c not in fa:
+                fa[c] = 0.0
+        fa[wc] = fa[wc].fillna(0.0)
+        byes = dict(zip(df["NFL Team"], df["Bye"]))
+        fa["Bye"] = fa["NFL Team"].map(byes).fillna(0).astype(int)
+        fa["Season Total"] = fa[wc].sum(axis=1)
+        fa["Avg/Wk (excl. bye)"] = fa[wc].replace(0, pd.NA).mean(axis=1)
+        fa = fa[list(df.columns)]
+
     with pd.ExcelWriter(out, engine="openpyxl") as xl:
         df.to_excel(xl, sheet_name="Weekly Projections", index=False)
-    print(f"Wrote {out}  ({len(df)} players, {df['Fantasy Team'].nunique()} teams)")
+        if fa is not None:
+            fa.to_excel(xl, sheet_name="Free Agents", index=False)
+    print(f"Wrote {out}  ({len(df)} rostered"
+          + (f", {len(fa)} free agents" if fa is not None else "")
+          + f", {df['Fantasy Team'].nunique()} teams)")
 
     derived = config_from_settings(settings)
     print("\nLeague settings ESPN reports:")
