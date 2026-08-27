@@ -178,8 +178,20 @@ export function readSettings(raw) {
   const playoffWeeks = [...new Set(playoffRoundWeeks.flat())];
 
   const divisions = (sched.divisions ?? []).filter((d) => (d?.size ?? 0) > 0);
+
+  // Points per reception (statId 53) tells external sources which of their
+  // PPR / half / standard columns is closest to this league. 0 when absent.
+  const items = s.scoringSettings?.scoringItems ?? [];
+  const rec = items.find((it) => it.statId === 53);
+  const pprValue = rec ? Number(rec.points ?? 0) : 0;
+  // The week ESPN considers current. Weeks before it have been played; the engine
+  // must not count them toward a trade's value, and the season sim must start from
+  // the standings as they are. `status` rides along with every league view.
+  const currentWeek = raw.status?.currentMatchupPeriod ?? raw.scoringPeriodId ?? 1;
   return {
     name: s.name ?? "League",
+    pprValue,
+    currentWeek,
     lineupSlotCounts: counts,
     starters,
     benchSlots: bench,

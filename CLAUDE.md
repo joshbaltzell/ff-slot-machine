@@ -14,7 +14,8 @@ lineup **slots** through ESPN's `eligibleSlots` and never models positions at al
 ## Commands
 
 ```bash
-node extension/test/parity.mjs     # the whole test suite, ~2s
+node extension/test/run-all.mjs    # every test file under extension/test, ~5s
+node extension/test/parity.mjs     # the engine contract alone, ~2s
 ```
 
 Load the extension with `chrome://extensions` → Developer mode → Load unpacked →
@@ -29,6 +30,7 @@ extension/
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
   engine/
+    sources/         one module per external feed (cache.js, sleeper.js, ...)
     league.js        ESPN API -> normalized model; settings; volatility
     lineup.js        optimal lineup for any slot configuration
     search.js        swap table, shapes, N-sided trades, three-way, free agents
