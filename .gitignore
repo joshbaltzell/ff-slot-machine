@@ -1,0 +1,7 @@
+.espn_cookies
+trade_report.html
+trade_report.xlsx
+*.bak.xlsx
+~$*.xlsx
+__pycache__/
+.pytest_cache/
