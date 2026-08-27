@@ -108,6 +108,9 @@ function pairsFor(log, column, pos) {
       if (pos != null && (r.pos ?? "") !== pos) continue;
       if (!Number.isFinite(r.actual)) continue;
       const x = r[column];
+      // The `x > 0` test conditions on the REGRESSOR, which does not bias an OLS
+      // slope. It drops byes and inactives, whose (0, 0) pairs would otherwise pile
+      // a mass point on the origin and drag the fitted slope toward 1.
       if (!Number.isFinite(x) || !(x > 0)) continue;
       out.push([x, r.actual]);
     }
@@ -117,6 +120,10 @@ function pairsFor(log, column, pos) {
 /**
  * One row per source × position: how wrong it has been, which way, and by how much
  * it is over-spread. `slope` is null when the projections in that cell do not vary.
+ *
+ * `bias` is `mean(actual - projected)`, so a POSITIVE bias means the source projects
+ * LOW. The UI renders this number; an inverted label is easy to introduce and hard
+ * to notice, so the convention is written down rather than inferred.
  */
 export function summary(log) {
   const rows = [];
@@ -150,6 +157,12 @@ export function summary(log) {
  *          fewer than `minWeeks` weeks carry actuals. Slopes are clamped: a fit
  *          outside [0.3, 1.2] is measurement noise or a scoring change, not a real
  *          slope, and applying it would be worse than the literature constant.
+ *
+ * Only the slope is applied; the intercept is fitted and then deliberately thrown
+ * away, because `shrinkProjections` re-centres on the projected positional mean —
+ * which is what `CALIBRATION_K` means. A level bias is measured and displayed by
+ * `summary`, but applying it here would double-count the re-centring. That is a
+ * decision, not an oversight.
  */
 export function fitSlopes(log, { column = "agg", minWeeks = MIN_WEEKS, minN = MIN_N } = {}) {
   if (weeksWithActuals(log) < minWeeks) return null;

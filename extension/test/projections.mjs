@@ -12,7 +12,8 @@ import { loadSleeperProjections, pprColumn, trimWeek, weekUrl } from "../engine/
 import { IDS_URL, WEEKLY_URL, loadFantasyProsWeek, trimIds, trimWeekly } from "../engine/sources/fantasypros.js";
 import { aggregateProjections } from "../engine/aggregate.js";
 import { FIT_POS, MIN_N, MIN_WEEKS, attachActuals, fitSlopes, loadLog, logKey, logWeek,
-         summary, weeksStored, weeksWithActuals } from "../engine/calibration.js";
+         mergeSlopes, summary, weeksStored, weeksWithActuals } from "../engine/calibration.js";
+import { CALIBRATION_K } from "../engine/calibrate.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -360,11 +361,17 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
       { id: 101, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10 },
       { id: 999, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10 },
     ] } } };
+    // The decoys come FIRST on purpose. `attachActuals` uses `.find()`, so with the
+    // true row leading, dropping any predicate from the filter would still pass and
+    // the test would advertise a guarantee it does not provide. In this order every
+    // predicate is load-bearing: remove `seasonId` and 2025's 99 wins, remove
+    // `statSourceId` and the projection's 88 wins, remove `statSplitTypeId` and the
+    // season-total 77 wins. Reading last season's numbers measures ~15% low.
     const players = new Map([[101, { id: 101, rawStats: [
-      { statSourceId: 0, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 13.456 },
       { statSourceId: 0, statSplitTypeId: 1, seasonId: 2025, scoringPeriodId: 5, appliedTotal: 99 },
       { statSourceId: 1, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 88 },
       { statSourceId: 0, statSplitTypeId: 0, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 77 },
+      { statSourceId: 0, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 13.456 },
     ] }]]);
     const r = attachActuals(log, players, 2026);
     ok(close(log.weeks["5"].rows[0].actual, 13.46), "the actual is read and rounded");
@@ -372,6 +379,15 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     ok(r.filled === 1, "filled counts the rows joined");
     ok(weeksWithActuals(log) === 1, "a week with any actual counts");
     ok(weeksWithActuals({ weeks: { 6: { rows: [{ id: 1, espn: 1 }] } } }) === 0, "a week with no actuals does not");
+
+    // `filled` means "rows now carrying an actual", not "rows newly joined this
+    // call": a row that arrived already filled counts, and is left as it was.
+    const pre = { weeks: { 5: { at: 0, rows: [
+      { id: 101, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10, actual: 7 },
+      { id: 777, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10 },
+    ] } } };
+    ok(attachActuals(pre, players, 2026).filled === 1, "filled counts a row that was already filled");
+    ok(close(pre.weeks["5"].rows[0].actual, 7), "an actual already present is not overwritten");
   }
 
   /* MAE, bias and slope on a hand-checkable log */
@@ -433,7 +449,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     ok(fitSlopes(wild).RB === 1.2, "a slope above the clamp is clamped");
     const flat = { weeks: Object.fromEntries(Object.entries(weeks).map(([w, e]) =>
       [w, { at: 0, rows: e.rows.map((r) => ({ ...r, actual: r.agg * 0.01 })) }])) };
-    ok(flat && fitSlopes(flat).RB === 0.3, "a slope below the clamp is clamped");
+    ok(fitSlopes(flat).RB === 0.3, "a slope below the clamp is clamped");
 
     ok(MIN_WEEKS === 6, "the week floor is six");
   }
@@ -445,6 +461,28 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     const log = { weeks: Object.fromEntries([1, 2, 3, 4, 5, 6].map((w) => [w, { at: 0, rows: rows.map((r) => ({ ...r })) }])) };
     ok(fitSlopes(log).RB === null, "no spread in the projections means no slope");
     ok(close(summary(log).find((r) => r.source === "agg" && r.pos === "RB").bias, 1), "bias still works");
+  }
+
+  /* mergeSlopes: fitted where measured, literature where not */
+  {
+    const none = mergeSlopes(null);
+    ok(Object.keys(none.k).length === Object.keys(CALIBRATION_K).length
+       && Object.keys(CALIBRATION_K).every((p) => none.k[p] === CALIBRATION_K[p]),
+       "no fit falls back to the literature constants");
+    ok(none.fitted === false && none.positions.length === 0, "no fit reports itself as unfitted");
+
+    const allNull = mergeSlopes({ QB: null, RB: null, WR: null, TE: null });
+    ok(FIT_POS.every((p) => allNull.k[p] === CALIBRATION_K[p]), "an all-null fit is the same fallback");
+    ok(allNull.fitted === false && allNull.positions.length === 0, "an all-null fit is not reported as fitted");
+
+    const part = mergeSlopes({ QB: null, RB: 0.9, WR: null, TE: null });
+    ok(part.k.RB === 0.9, "a measured position uses its fitted slope");
+    ok(part.k.QB === CALIBRATION_K.QB && part.k.WR === CALIBRATION_K.WR && part.k.TE === CALIBRATION_K.TE,
+       "the unmeasured positions keep the literature constants");
+    ok(part.fitted === true && part.positions.length === 1 && part.positions[0] === "RB",
+       "positions names exactly what was measured");
+    ok(CALIBRATION_K.QB === 0.67 && CALIBRATION_K.RB === 0.79 && CALIBRATION_K.WR === 0.85
+       && CALIBRATION_K.TE === 0.72, "merging does not mutate the imported constants");
   }
 }
 
