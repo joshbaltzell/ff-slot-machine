@@ -306,6 +306,8 @@ export async function loadFreeAgents({ leagueId, seasonId }, weeks, limit = 400)
     out.push({
       id: p.id, name: p.fullName, eligibleSlots: p.eligibleSlots ?? [],
       pos: positionLabel(p), posId: p.defaultPositionId ?? 0,
+      injuryStatus: p.injuryStatus ?? null,
+      injured: p.injured === true,
       nfl: PRO_TEAM[p.proTeamId] ?? "?",
       teamId: null, proj, rawStats: p.stats ?? [],
       owned: Math.round((p.ownership?.percentOwned ?? 0) * 10) / 10,
@@ -341,6 +343,14 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
       };
       rec.name = name;
       rec.divisionId = t.divisionId ?? rec.divisionId ?? 0;
+      // Games already played are decided; the season projection starts from them
+      // rather than from 0-0. ESPN sends this with every mTeam view.
+      if (t.record?.overall) rec.record = {
+        wins: t.record.overall.wins ?? 0,
+        losses: t.record.overall.losses ?? 0,
+        ties: t.record.overall.ties ?? 0,
+        pointsFor: t.record.overall.pointsFor ?? 0,
+      };
       teams.set(t.id, rec);
       for (const e of t.roster?.entries ?? []) {
         const p = e.playerPoolEntry.player;
@@ -350,10 +360,16 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
           eligibleSlots: p.eligibleSlots ?? [],
           pos: positionLabel(p),
           posId: p.defaultPositionId ?? 0,
+          // ESPN's own words, passed through rather than mapped: availability.js
+          // owns the vocabulary, and an unknown string there means "playing".
+          injuryStatus: p.injuryStatus ?? null,
+          injured: p.injured === true,
           nfl: PRO_TEAM[p.proTeamId] ?? "?",
           teamId: t.id, proj: {}, rawStats: p.stats ?? [],
         };
         pl.teamId = t.id;
+        if (p.injuryStatus != null) pl.injuryStatus = p.injuryStatus;
+        if (p.injured != null) pl.injured = p.injured === true;
         // seasonId matters: ESPN returns the prior season's projection for the same
         // week alongside this one, and taking the first match can silently use it.
         const stat = (p.stats ?? []).find(st =>
