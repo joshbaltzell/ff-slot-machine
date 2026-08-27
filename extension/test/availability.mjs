@@ -293,6 +293,54 @@ const mkEngine = (model) =>
   }
 }
 
+/* ---- 5. the season starts from the games already played ---- */
+{
+  const model = mkModel(9);
+  const h = restrictToRemaining(model);
+  const eng = mkEngine(model);
+  const opts = { sims: 4000 };
+  const remaining = model.settings.regularSeasonWeeks.length;
+  ok(remaining === 6, `six regular-season weeks remain (got ${remaining})`);
+
+  const cold = projectSeason(eng, new Map(), model.settings, opts);
+  ok(cold[0].games === remaining, "with no records, games are the remaining weeks");
+
+  // Seed the WEAKEST roster 5-0. A strong one can already be a near-lock for the
+  // playoffs at 0-0, which would leave the "a record is worth something" assertion
+  // comparing 100% with 100%.
+  const total = (t) => F.baseline[t].reduce((a, b) => a + b, 0);
+  const t0 = F.teams.slice().sort((a, b) => total(a) - total(b))[0];
+  const records = new Map(F.teams.map((t) => [t, { wins: 0, losses: 5, ties: 0, pointsFor: 400 }]));
+  records.set(t0, { wins: 5, losses: 0, ties: 0, pointsFor: 700 });
+  const warm = projectSeason(eng, new Map(), model.settings, { ...opts, records });
+  const row = (res, t) => res.find((r) => r.team === t);
+
+  ok(warm[0].games === 5 + remaining, `games are played + remaining (${warm[0].games})`);
+  ok(row(warm, t0).wins >= 5, `a 5-0 team never falls below five wins (${row(warm, t0).wins})`);
+  ok(row(warm, t0).wins <= 5 + remaining, "and never exceeds five plus what is left");
+  near(row(warm, t0).wins - 5, row(cold, t0).wins, 1e-9,
+       "the record is added to, not mixed into, the simulated wins");
+  near(row(warm, t0).pointsFor - 700, row(cold, t0).pointsFor, 1e-9,
+       "points-for carries the real total forward");
+  ok(row(warm, t0).losses <= remaining + 1e-9, "losses count only games that can be lost");
+  ok(row(warm, t0).playoffPct > row(cold, t0).playoffPct,
+     "5-0 is worth more than 0-0 for a playoff spot");
+  near(warm.reduce((s, r) => s + r.titlePct, 0), 1, 1e-9, "still one champion per season");
+
+  // A tie is half a win, exactly as the simulation scores one.
+  const tied = new Map([[t0, { wins: 2, losses: 2, ties: 2, pointsFor: 500 }]]);
+  const t = projectSeason(eng, new Map(), model.settings, { ...opts, records: tied });
+  near(row(t, t0).wins - 3, row(cold, t0).wins, 1e-9, "two ties are one win");
+  ok(row(t, t0).games === 6 + remaining, "and both count as games played");
+
+  // Common random numbers must survive: same records, bit-identical output.
+  const again = projectSeason(eng, new Map(), model.settings, { ...opts, records });
+  ok(JSON.stringify(warm) === JSON.stringify(again), "records keep the draw deterministic");
+  const noRec = projectSeason(eng, new Map(), model.settings, { ...opts, records: null });
+  ok(JSON.stringify(noRec) === JSON.stringify(cold),
+     "records: null is the same run as no records at all");
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("AVAILABILITY OK");

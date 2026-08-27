@@ -42,7 +42,7 @@ function gauss(rand) {
  */
 export function projectSeason(eng, schedule, settings,
     { sims = 20000, sigma = FALLBACK_SIGMA, divisionSeeding = false, divisionOf = null,
-      override = null, batches = 1 } = {}) {
+      override = null, batches = 1, records = null } = {}) {
   // Prefer measured volatility. The sum of independent normals is normal with the
   // summed variance, so one draw per team-week is exact - no need to draw each
   // player separately - while still letting roster composition set the spread.
@@ -97,9 +97,34 @@ export function projectSeason(eng, schedule, settings,
   const batchOf = (s) => Math.min(nb - 1, Math.floor(s * nb / sims));
   const score = new Float64Array(T);
 
+  /**
+   * Games already played are decided, so every simulation starts from them.
+   *
+   * Without this, a mid-season projection is a projection of the weeks that are
+   * left, presented as a projection of the season: a 5-0 team is shown fighting for
+   * a bye from 0-0, and the playoff odds are wrong for everybody, not only for it.
+   * A tie counts half a win, matching how the simulation itself scores one, and no
+   * call to gauss(rand) is added or moved - the paired runs in odds.js depend on the
+   * draw order being untouched.
+   */
+  const rec = (t) => records?.get(t) ?? null;
+  const startWins = teams.map((t) => {
+    const r = rec(t);
+    return r ? (r.wins ?? 0) + 0.5 * (r.ties ?? 0) : 0;
+  });
+  const startPf = teams.map((t) => rec(t)?.pointsFor ?? 0);
+  const played = records
+    ? teams.reduce((most, t) => {
+        const r = rec(t);
+        if (!r) return most;
+        return Math.max(most, (r.wins ?? 0) + (r.losses ?? 0) + (r.ties ?? 0));
+      }, 0)
+    : 0;
+
   for (let s = 0; s < sims; s++) {
     const wins = new Float64Array(T);
     const pf = new Float64Array(T);
+    for (let i = 0; i < T; i++) { wins[i] = startWins[i]; pf[i] = startPf[i]; }
 
     for (const w of reg) {
       for (let i = 0; i < T; i++) score[i] = mu[i].get(w) + gauss(rand) * sigFor(i, w);
@@ -186,7 +211,7 @@ export function projectSeason(eng, schedule, settings,
     }
   }
 
-  const games = reg.length;
+  const games = played + reg.length;
   return teams.map((t, i) => ({
     team: t,
     wins: acc[i].wins / sims,
