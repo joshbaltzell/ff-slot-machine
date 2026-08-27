@@ -5,7 +5,7 @@
  * machine. The only network calls are to ESPN's own read API, with the session the
  * browser already has.
  */
-import { parseLeagueUrl, loadLeague, mySwid, SLOT_LABEL } from "./engine/league.js";
+import { parseLeagueUrl, loadLeague, mySwid, identifyTeam, SLOT_LABEL } from "./engine/league.js";
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 
@@ -20,6 +20,22 @@ const say = (text, cls = "") => {
 const progress = (frac) => { $("#bootbar").style.width = `${Math.round(frac * 100)}%`; };
 
 const CACHE_HOURS = 12;
+
+function pickTeam(teams) {
+  return new Promise((resolve) => {
+    $("#bootmsg").textContent = "Which team is yours?";
+    $("#bootact").innerHTML =
+      `<select class="lg" id="whoami" style="width:auto">${
+        teams.map(t => `<option>${t.replace(/</g, "&lt;")}</option>`).join("")}</select>
+       <button class="btn" id="pick">That's me</button>`;
+    $("#pick").onclick = () => {
+      const t = $("#whoami").value;
+      chrome.storage.local.set({ myTeam: t });
+      $("#bootact").innerHTML = "";
+      resolve(t);
+    };
+  });
+}
 
 function askForLeague(message) {
   $("#bootmsg").textContent = message;
@@ -82,14 +98,16 @@ async function start(ref) {
     say(`baseline built for ${eng.teams.length} teams`, "ok");
 
     const swid = await mySwid();
-    let myTeam = null;
-    if (ref.teamId) myTeam = model.teams.get(ref.teamId)?.name ?? null;
-    if (!myTeam && swid) {
-      for (const t of model.teams.values())
-        if ((t.owners ?? []).some(o => o === swid)) myTeam = t.name;
+    const saved = (await chrome.storage.local.get("myTeam")).myTeam;
+    let { team: myTeam, how } = identifyTeam(model, { swid, teamId: ref.teamId });
+    if (saved && eng.teams.includes(saved)) { myTeam = saved; how = "your saved choice"; }
+    if (myTeam) say(`your team: ${myTeam} (from ${how})`, "ok");
+    else {
+      // Never guess. Picking whichever team ESPN returned first and captioning its
+      // trades "you" is worse than asking.
+      say("could not tell which team is yours - pick below", "err");
+      myTeam = await pickTeam(eng.teams);
     }
-    myTeam = myTeam ?? eng.teams[0];
-    say(`your team: ${myTeam}`, "ok");
 
     say("searching 1-for-1…");
     const one = eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
@@ -126,8 +144,8 @@ const HINT = {
   recv:   "Players who would join your roster.",
   send:   "Players who would leave your roster.",
   partner:"The other team or teams in the deal. Every side has to gain, or nobody accepts.",
-  gain:   "Average points per week your BEST POSSIBLE starting lineup improves, across the whole season. Bench depth counts for nothing - only players who would actually start.",
-  reg:    "The same gain, but counting only regular-season weeks: the ones that decide your seeding. A trade can be positive overall while making your record worse.",
+  gain:   "Average points per week this team's BEST POSSIBLE starting lineup improves, across the whole season. Bench depth counts for nothing - only players who would actually start.",
+  reg:    "The same gain, counting only regular-season weeks - the ones that decide seeding. A trade can be positive overall while making a record worse.",
   po:     "The same gain, but counting only playoff weeks.",
   theirs: "What the other side gains. They need this above zero or they will not say yes.",
   starts: "Share of weeks this player would crack your optimal lineup. Near zero means his points are sitting on your bench - that is a trade chip.",
@@ -135,7 +153,37 @@ const HINT = {
   optimal:"What this roster would score each week if it started its best possible lineup every week.",
 };
 const th = (label, key, cls = "") =>
-  `<th class="${cls}"><span class="hint" title="${esc(HINT[key])}">${esc(label)}</span></th>`;
+  `<th class="${cls}" data-hint="${esc(HINT[key])}"><span class="hint">${esc(label)}</span></th>`;
+
+/* A `title` attribute is slow to appear and easy to miss, and a CSS tooltip would be
+   clipped by the table's own overflow:auto. A fixed-position node dodges both. */
+function initTooltips(root) {
+  let tip = document.getElementById("tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "tip";
+    document.body.appendChild(tip);
+  }
+  const show = (el) => {
+    tip.textContent = el.dataset.hint;
+    tip.classList.add("on");
+    const r = el.getBoundingClientRect();
+    tip.style.visibility = "hidden";
+    tip.style.left = "0px";
+    const w = tip.offsetWidth;
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - w - 8);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${r.bottom + 8}px`;
+    tip.style.visibility = "visible";
+  };
+  root.querySelectorAll("[data-hint]").forEach((el) => {
+    el.addEventListener("mouseenter", () => show(el));
+    el.addEventListener("focus", () => show(el));
+    el.addEventListener("mouseleave", () => tip.classList.remove("on"));
+    el.addEventListener("blur", () => tip.classList.remove("on"));
+    el.tabIndex = 0;
+  });
+}
 
 const esc = (v) => String(v).replace(/[&<>"]/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -223,13 +271,22 @@ function render(eng, model, trades, myTeam) {
     return `<div class="det">${panels}${cases}</div>`;
   }
 
-  const body = trades.slice(0, 60).map((t, n) => {
-    const me = t.sides.find(s => s.team === myTeam) ?? t.sides[0];
+  const viewing = window.__view ?? myTeam;
+  const mineOnly = viewing !== "__all__";
+  const shown = trades
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) => !mineOnly || t.sides.some(s => s.team === viewing));
+
+  const body = shown.slice(0, 60).map(({ t, i: n }) => {
+    // With a team selected the row is always written from that team's side. With
+    // "all teams" there is no "you", so each side is labelled by name instead.
+    const me = t.sides.find(s => s.team === viewing) ?? t.sides[0];
     const others = t.sides.filter(s => s !== me);
     return `<tr class="tr-row${me.team === myTeam ? " mine" : ""}" data-i="${n}">
       <td class="rank"><span class="car">&#9656;</span></td>
       <td class="num" style="white-space:nowrap">${esc(t.shape)}</td>
-      <td><div class="pkg">${pkg(me.received)}</div></td>
+      <td>${mineOnly ? "" : `<div class="side-l">${esc(me.team)}</div>`}
+          <div class="pkg">${pkg(me.received)}</div></td>
       <td><div class="pkg">${pkg(me.sent)}</div></td>
       <td style="color:var(--dim)">${others.map(o => esc(o.team)).join(" + ")}</td>
       <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
@@ -273,19 +330,32 @@ function render(eng, model, trades, myTeam) {
         ${esc(myTeam.toUpperCase())} · ${model.teams.size} TEAMS ·
         ${eng.starters} STARTERS · LIVE FROM ESPN</p>
 
-      <h2 class="secttl">Offers for you</h2>
-      <p class="sectsub">Ranked by your gain; every side has to come out ahead.
+      <h2 class="secttl">${mineOnly ? "Offers for you" : "Every trade in the league"}</h2>
+      <p class="sectsub">${shown.length} offer${shown.length === 1 ? "" : "s"},
+        ranked by gain; every side has to come out ahead.
         <b>Click any row</b> for the week-by-week detail and the case to make to your
         partner. Hover a column heading to see what it measures.</p>
-      <div class="panel"><div class="scroll"><table id="trades">
-        <thead><tr><th></th>${th("Shape", "shape", "num")}${th("You receive", "recv")}
-          ${th("You send", "send")}${th("Partner", "partner")}
-          ${th("Your gain", "gain", "num")}${th("Reg. season", "reg", "num")}
+      <div class="panel">
+        <div class="bar">
+          <div class="fld"><label for="who">Viewing as</label>
+            <select id="who">
+              ${eng.teams.map(t => `<option${t === viewing ? " selected" : ""}>${esc(t)}</option>`).join("")}
+              <option value="__all__"${viewing === "__all__" ? " selected" : ""}>All teams</option>
+            </select></div>
+          <span class="readout" style="color:var(--faint)">${
+            mineOnly ? "showing only trades involving " + esc(viewing) : "showing the whole league"}</span>
+        </div>
+        <div class="scroll"><table id="trades">
+        <thead><tr><th></th>${th("Shape", "shape", "num")}
+          ${th(mineOnly ? "You receive" : "Receives", "recv")}
+          ${th(mineOnly ? "You send" : "Sends", "send")}${th("Partner", "partner")}
+          ${th(mineOnly ? "Your gain" : "Gain", "gain", "num")}
+          ${th("Reg. season", "reg", "num")}
           ${th("Playoffs", "po", "num")}${th("Partner gain", "theirs", "num")}</tr></thead>
         <tbody>${body || '<tr><td colspan="9"><div class="empty"><b>No trades found</b>Nothing helps both sides right now.</div></td></tr>'}</tbody>
       </table></div></div>
 
-      <h2 class="secttl">Your least-used players</h2>
+      <h2 class="secttl">${mineOnly ? "Your least-used players" : "Least-used players"}</h2>
       <p class="sectsub">Points parked on your bench are what another roster would
         actually start.</p>
       <div class="panel"><div class="scroll"><table>
@@ -310,16 +380,33 @@ function render(eng, model, trades, myTeam) {
     row.onclick = () => {
       const n = row.dataset.i;
       const det = app.querySelector(`tr.detail[data-for="${n}"]`);
-      const open = row.classList.toggle("open");
-      if (open && !det.dataset.built) {
+      const wasOpen = row.classList.contains("open");
+      // Only one detail at a time - several open at once buries the table.
+      app.querySelectorAll("#trades tr.tr-row.open").forEach((r) => {
+        r.classList.remove("open");
+        app.querySelector(`tr.detail[data-for="${r.dataset.i}"]`).hidden = true;
+      });
+      if (wasOpen) return;
+      row.classList.add("open");
+      if (!det.dataset.built) {
         det.firstElementChild.innerHTML = detailFor(trades[Number(n)]);
         det.dataset.built = "1";
+        initTooltips(det);
       }
-      det.hidden = !open;
+      det.hidden = false;
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
   });
+  initTooltips(app);
+  $("#who").onchange = (e) => {
+    window.__view = e.target.value;
+    if (e.target.value !== "__all__") chrome.storage.local.set({ myTeam: e.target.value });
+    render(eng, model, trades, e.target.value === "__all__" ? myTeam : e.target.value);
+  };
   $("#refresh").onclick = async () => {
+    const keep = (await chrome.storage.local.get("myTeam")).myTeam;
     await chrome.storage.local.clear();
+    if (keep) await chrome.storage.local.set({ myTeam: keep });
     location.reload();
   };
 }

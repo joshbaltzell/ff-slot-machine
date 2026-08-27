@@ -71,12 +71,45 @@ async function get(season, leagueId, params, filter) {
   return res.json();
 }
 
-/** The signed-in user's SWID, used to find which team is theirs. */
+/** Compare SWIDs without caring about braces, case, or URL encoding. */
+export function sameSwid(a, b) {
+  const norm = (v) => {
+    if (!v) return "";
+    let s = String(v);
+    try { s = decodeURIComponent(s); } catch { /* already decoded */ }
+    return s.replace(/[{}]/g, "").trim().toLowerCase();
+  };
+  const x = norm(a);
+  return x !== "" && x === norm(b);
+}
+
+/** The signed-in user's SWID. The cookie lives on .espn.com, so try both hosts. */
 export async function mySwid() {
-  try {
-    const c = await chrome.cookies.get({ url: "https://fantasy.espn.com", name: "SWID" });
-    return c?.value ?? null;
-  } catch { return null; }
+  for (const url of ["https://fantasy.espn.com", "https://www.espn.com"]) {
+    try {
+      const c = await chrome.cookies.get({ url, name: "SWID" });
+      if (c?.value) return c.value;
+    } catch { /* permission or host unavailable; try the next */ }
+  }
+  return null;
+}
+
+/**
+ * Which team belongs to this viewer.
+ *
+ * Returns {team, how} so the caller can tell a confident match from a guess -
+ * silently defaulting to whichever team ESPN happened to return first is worse
+ * than admitting we do not know.
+ */
+export function identifyTeam(model, { swid, teamId }) {
+  if (teamId != null && model.teams.has(teamId))
+    return { team: model.teams.get(teamId).name, how: "the team page you came from" };
+  if (swid) {
+    for (const t of model.teams.values())
+      if ((t.owners ?? []).some((o) => sameSwid(o, swid)))
+        return { team: t.name, how: "your ESPN sign-in" };
+  }
+  return { team: null, how: null };
 }
 
 /** Everything the engine needs, read rather than assumed. */
