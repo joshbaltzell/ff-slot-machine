@@ -246,6 +246,8 @@ ok(Math.abs(sum("titlePct") - 1) < 1e-6, "exactly one champion per season");
     const regSum = s.winWeekly.reduce((acc, x, w) => acc + (eng.regMask[w] ? x : 0), 0);
     ok(Math.abs(s.win - regSum) < 1e-9, "win is the regular-season sum of winWeekly");
     ok(Math.abs(s.win) < model.settings.regularSeasonWeeks.length, "win delta is bounded by games");
+    ok(Math.abs(s.win) > 1e-9, "a real trade moves expected wins");
+    ok(Math.sign(s.win) === Math.sign(s.reg), "win delta agrees in sign with the points gain");
   }
   eng.setSchedule(new Map());   // leave the shared engine as other sections expect
 }
