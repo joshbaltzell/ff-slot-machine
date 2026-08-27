@@ -8,6 +8,7 @@
  *   node extension/test/projections.mjs
  */
 import { parseCsv, parseCsvObjects } from "../engine/sources/csv.js";
+import { loadSleeperProjections, pprColumn, trimWeek, weekUrl } from "../engine/sources/sleeperproj.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -43,6 +44,61 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   ok(objs[1].r2p_pts === "", "csvObjects: empty field is an empty string");
   ok(parseCsvObjects("a,b\n1,2\n\n").length === 1, "csvObjects: blank trailing line ignored");
   ok(parseCsvObjects("").length === 0, "csvObjects: empty input");
+}
+
+/* ---- 2. Sleeper per-week projections ---- */
+{
+  ok(pprColumn(1) === "pts_ppr", "ppr 1.0 -> pts_ppr");
+  ok(pprColumn(0.5) === "pts_half_ppr", "ppr 0.5 -> pts_half_ppr");
+  ok(pprColumn(0) === "pts_std", "ppr 0 -> pts_std");
+  ok(pprColumn(0.9) === "pts_ppr", "ppr 0.9 rounds to full");
+  ok(pprColumn(0.4) === "pts_half_ppr", "ppr 0.4 rounds to half");
+  ok(pprColumn(0.2) === "pts_std", "ppr 0.2 rounds to standard");
+  ok(pprColumn(undefined) === "pts_std", "missing ppr value -> standard");
+
+  const u = weekUrl(2026, 7);
+  ok(u.startsWith("https://api.sleeper.app/projections/nfl/2026/7?"), "week url has no /v1 segment");
+  ok(u.includes("season_type=regular"), "week url asks for the regular season");
+  ok(["QB", "RB", "WR", "TE", "K", "DEF"].every((p) => u.includes(`position[]=${p}`)), "week url asks for six positions");
+
+  const rawWeek = (mult) => [
+    { player_id: "s1", stats: { pts_ppr: 20 * mult, pts_half_ppr: 18 * mult, pts_std: 16 * mult } },
+    { player_id: "s2", stats: { pts_ppr: 10 * mult, pts_half_ppr: 9 * mult, pts_std: 8 * mult } },
+    { player_id: "s3", stats: { pts_ppr: 5 * mult } },
+    { player_id: "s9", stats: { pts_ppr: 99 } },          // no espn id in the crosswalk
+    { player_id: "s4" },                                  // no stats at all
+    { stats: { pts_ppr: 1 } },                            // no id at all
+  ];
+  const trimmed = trimWeek(rawWeek(1));
+  ok(trimmed.length === 4, "trimWeek drops rows with no id and no stats");
+  ok(!trimmed.some((r) => "player" in r), "trimWeek keeps only the columns we read");
+  ok(trimmed[0].player_id === "s1" && trimmed[0].pts_std === 16, "trimWeek keeps all three columns");
+  ok(trimWeek(null).length === 0, "trimWeek tolerates a non-array payload");
+
+  const bySleeper = new Map([["s1", { espn_id: 101 }], ["s2", { espn_id: 102 }], ["s3", { espn_id: 103 }]]);
+  const storage = mkStorage();
+  const fetchImpl = mkFetch({ [weekUrl(2026, 5)]: rawWeek(1), [weekUrl(2026, 6)]: rawWeek(2) });
+  const seen = [];
+  const r = await loadSleeperProjections({ season: 2026, weeks: [5, 6, 7], pprValue: 0.5, bySleeper,
+    fetchImpl, storage, now: 0, onProgress: (d, t) => seen.push([d, t]) });
+  ok(r.byWeek.get(5).get(101) === 18, "half-ppr column is used");
+  ok(r.byWeek.get(6).get(102) === 18, "each week is fetched separately");
+  ok(r.byWeek.get(5).get(103) === 5, "a row missing the chosen column falls back rather than vanishing");
+  ok(!r.byWeek.get(5).has(99) && r.byWeek.get(5).size === 3, "a player with no espn id is dropped");
+  ok(!r.byWeek.has(7), "a week whose fetch 404s is simply absent");
+  ok(r.failed.length === 1 && r.failed[0] === 7, "the failed week is reported");
+  ok(r.covered === 3, "covered counts distinct espn ids");
+  ok(seen.length === 3 && seen[2][1] === 3, "progress is reported once per week");
+
+  const again = await loadSleeperProjections({ season: 2026, weeks: [5], pprValue: 0.5, bySleeper,
+    fetchImpl, storage, now: 1000 });
+  ok(again.byWeek.get(5).get(101) === 18 && fetchImpl.calls.length === 3, "a fresh week comes from the cache");
+  ok(JSON.stringify(storage._m.get("src.sleeperproj.2026.5").data).length
+     < JSON.stringify(rawWeek(1)).length, "the cached copy is trimmed");
+
+  const dead = await loadSleeperProjections({ season: 2026, weeks: [11, 12], pprValue: 1, bySleeper,
+    fetchImpl: mkFetch({}), storage: mkStorage(), now: 0 });
+  ok(dead.byWeek.size === 0 && dead.covered === 0 && dead.failed.length === 2, "a dead feed returns empty, not a throw");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
