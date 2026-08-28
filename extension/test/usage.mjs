@@ -10,6 +10,8 @@ import { weekUrl, trimStats, loadWeekStats, loadSeasonStats, STAT_FIELDS }
 import { USAGE_K, DRIVER, quantile, ptsKeyFor, usageTable,
          assetRows, breakouts, depthChanges, crowdSplit, bestOfferFor }
   from "../engine/usage.js";
+import { FAAB_K, offRound, faabBids } from "../engine/faab.js";
+import { readSettings } from "../engine/league.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -369,6 +371,71 @@ const OWNER = new Map([
      "a player coming the other way is reported as one I would receive");
   ok(bestOfferFor(42, trades, "Mine") === null, "a player in no trade has no offer");
   ok(bestOfferFor(7, [], "Mine") === null, "…and neither does anyone when there are no trades");
+}
+
+/* ---- 4. FAAB: what to bid, and the most it is worth ---- */
+{
+  // Every bid ends in 1 or 6 - the numbers are exactly 5k+1 - so a tie with a manager
+  // who bid a round number is one you win.
+  ok(offRound(0.2) === 1 && offRound(1) === 1 && offRound(3) === 1 && offRound(4) === 6,
+     "small raw bids round to the nearest off-round figure, never below 1");
+  ok(offRound(8) === 6 && offRound(9) === 11 && offRound(12) === 11 && offRound(14) === 16,
+     "…and larger ones round to the nearer of the two neighbours");
+  for (let x = 0; x < 200; x += 7.3) ok((offRound(x) - 1) % 5 === 0, `${x.toFixed(1)} rounds to 5k+1`);
+  ok([0.2, 4, 9, 76.19].map(offRound).join(",") === "1,6,11,76",
+     "offRound survives being handed to .map, which passes an index where K goes");
+
+  const upgrades = [
+    { fa: 1, gain: 2.0 }, { fa: 2, gain: 1.5 }, { fa: 3, gain: 1.0 },
+    { fa: 4, gain: 0.5 }, { fa: 5, gain: 0.25 }, { fa: 6, gain: 0.1 },
+  ];
+  const crowds = { 1: 1000, 2: 250 };
+  const crowdOf = (u) => crowds[u.fa] ?? 0;
+
+  // Top-five gains sum to 5.25. fa1 takes 2.0/5.25 of a 100 budget, doubled by a
+  // crowd of 1000 -> 76.19 -> 76. The median points-per-dollar across the top five
+  // is 0.416667, so the most fa1 is worth is 20/0.416667 = 48.
+  const p = faabBids(upgrades, { budget: 100, myRemaining: 100, weeksLeft: 10, crowdOf });
+  ok(p.mode === "faab", "a league with a budget gets bids");
+  ok(near(p.perDollar, 0.4166666667, 1e-6), "the field's rate is the top five's median");
+  const bid = (fa) => p.bids.get(fa).bid, max = (fa) => p.bids.get(fa).max;
+  ok(bid(1) === 76 && bid(2) === 41 && bid(3) === 21 && bid(4) === 11 && bid(5) === 6 && bid(6) === 1,
+     "each suggested bid is gain share x remaining budget x urgency, rounded off-round");
+  ok(max(1) === 48 && max(2) === 36 && max(3) === 24 && max(4) === 12 && max(5) === 6 && max(6) === 2,
+     "the most sensible bid is where the add's points per dollar meets the field's rate");
+  ok(max(1) < bid(1),
+     "a maximum below the suggestion is the signal that the crowd, not the points, is "
+     + "driving the price");
+  ok(p.bids.get(1).crowd === 1000 && p.bids.get(3).crowd === 0,
+     "each bid carries the crowd count that set its urgency");
+
+  // Urgency is capped: twice the base, never more, however loud the crowd gets.
+  const shout = faabBids(upgrades, { budget: 100, myRemaining: 100, weeksLeft: 10,
+                                     crowdOf: (u) => (u.fa === 1 ? 100000 : 0) });
+  ok(shout.bids.get(1).bid === 76, "an enormous crowd cannot push urgency past double");
+
+  const broke = faabBids(upgrades, { budget: 100, myRemaining: 5, weeksLeft: 10, crowdOf });
+  ok(broke.bids.get(1).bid === 5,
+     "a bid is clamped to what is left, even when that is not an off-round number");
+  ok([...broke.bids.values()].every((v) => v.bid <= 5), "…and so is every other bid");
+
+  const spent = faabBids(upgrades, { budget: 100, myRemaining: 0, weeksLeft: 10, crowdOf });
+  ok([...spent.bids.values()].every((v) => v.bid === 0),
+     "a team with nothing left bids nothing");
+
+  const none = faabBids(upgrades, { budget: 0, myRemaining: 0, weeksLeft: 10, crowdOf });
+  ok(none.mode === "priority" && none.bids.size === 0,
+     "a league with no budget is a waiver-priority league, and gets no bids at all");
+  ok(faabBids([], { budget: 100, myRemaining: 100, weeksLeft: 10, crowdOf }).bids.size === 0,
+     "no upgrades, no bids");
+
+  /* the two league.js fields */
+  const s = readSettings({ settings: { acquisitionSettings: { acquisitionBudget: 100 } } });
+  ok(s.faabBudget === 100, "the FAAB budget is read from the league settings");
+  ok(readSettings({ settings: {} }).faabBudget === 0,
+     "a league that does not bid reports a budget of zero rather than undefined");
+  ok(readSettings({ settings: { acquisitionSettings: { acquisitionBudget: "0" } } })
+       .faabBudget === 0, "…and a string zero is still zero");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
