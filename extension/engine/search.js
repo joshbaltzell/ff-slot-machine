@@ -10,6 +10,24 @@
  */
 import { bestLineup } from "./lineup.js";
 import { winProb, leverage, FALLBACK_SIGMA } from "./winprob.js";
+import { mulberry32 } from "./availability.js";
+
+/**
+ * How wide an exact enumeration is allowed to get.
+ *
+ * Optimal lineup value is a max over assignments, so it is convex in the projections
+ * and NOT linear in availability: E[L] is not L(E[proj]). Two players at 50% are not
+ * one certain starter, because a bench absorbs one absence far better than two.
+ * The only exact answer is to enumerate the 2^k availability outcomes and weight
+ * them, which is why nothing here averages probabilities into projections.
+ *
+ * 2^6 = 64 lineup solves for one week is affordable; beyond that the same 64 solves
+ * are spent on fixed-seed draws instead. That sampled branch is the one approximation
+ * in the engine, it is reached only when seven or more players on a single roster are
+ * genuinely uncertain in the same week, and it is deterministic.
+ */
+const ENUM_MAX = 6;
+const SAMPLES = 64;
 
 /**
  * Hand the browser a turn.
@@ -75,7 +93,14 @@ export class Engine {
     this.regMask = this.weeks.map(w => reg.has(w));
     this.poMask = this.weeks.map(w => po.has(w));
 
-    this._vals = new Float64Array(this.n);   // scratch; must exist before weekly()
+    // Scratch, all of it; every one of these must exist before the first weekly().
+    this._vals = new Float64Array(this.n);
+    this.avail = null;              // set by setAvailability(); null = everyone plays
+    this._play = [];                // this week's available players, reused
+    this._sub = [];                 // one enumeration outcome's player order, reused
+    this._unc = new Int32Array(this.n);      // indices of the uncertain players
+    this._uProb = new Float64Array(this.n);  // their probabilities
+    this._isOut = new Uint8Array(this.n);    // outcome flags, cleared after each use
     this.baseline = new Map();
     for (const t of this.teams) this.baseline.set(t, this.weekly(this.roster.get(t)));
 
@@ -87,16 +112,146 @@ export class Engine {
     }
   }
 
-  /** Best started points per week for a roster. */
+  /**
+   * Attach a per-player, per-week probability of playing.
+   *
+   * The default is 1 everywhere, so an engine that is never handed availability
+   * behaves exactly as it did before - which is what keeps the frozen golden set a
+   * valid contract. Baselines and every cache derived from them are rebuilt here,
+   * because the constructor computed them while assuming everyone plays.
+   *
+   * @param avail Map<playerId, Float64Array(NW)>; missing players are fully available
+   */
+  setAvailability(avail) {
+    const NW = this.NW;
+    const a = new Float64Array(this.n * NW).fill(1);
+    for (const [id, row] of avail ?? []) {
+      const i = this.index.get(id);
+      if (i === undefined) continue;
+      for (let w = 0; w < NW; w++) {
+        const p = row?.[w];
+        a[i * NW + w] = Number.isFinite(p) ? Math.max(0, Math.min(1, p)) : 1;
+      }
+    }
+    this.avail = a;
+    this._swaps = null;
+    this._teamSigma = null;
+    this._baseWins = null;
+    this.baseline = new Map();
+    for (const t of this.teams) this.baseline.set(t, this.weekly(this.roster.get(t)));
+  }
+
+  /**
+   * Best started points per week for a roster - in expectation, once anybody's
+   * availability is in doubt.
+   *
+   * With no availability attached this is the original path, character for
+   * character: one sort and one matroid solve per week. That matters twice over -
+   * the frozen golden set depends on it, and 2-for-2 calls this function millions of
+   * times, so the common case must not pay for the uncommon one.
+   *
+   * With availability attached, a player who cannot play is REMOVED from the pool
+   * rather than valued at zero. Those are not the same thing: bestLineup seats
+   * players in the order it is handed and never unseats one, so a high-projection
+   * player zeroed in place still sits early in that order, still takes a seat, and
+   * can block a lower-but-positive player who would otherwise have started.
+   * Filtering him out of the order is the only correct move.
+   *
+   * The genuinely uncertain players are enumerated (see ENUM_MAX). Only the current
+   * week can hold any - a Questionable tag is about this Sunday, not November - so
+   * the extra solves are confined to one week out of the horizon.
+   */
   weekly(ids, out) {
     const res = out ?? new Float64Array(this.NW);
     const vals = this._vals;
-    for (let w = 0; w < this.NW; w++) {
-      for (const i of ids) vals[i] = this.proj[i * this.NW + w];
-      const order = ids.slice().sort((a, b) => vals[b] - vals[a]);
-      res[w] = bestLineup(order, vals, this.mask, this.starters);
+    const av = this.avail;
+    const NW = this.NW;
+    if (!av) {
+      for (let w = 0; w < NW; w++) {
+        for (const i of ids) vals[i] = this.proj[i * NW + w];
+        const order = ids.slice().sort((a, b) => vals[b] - vals[a]);
+        res[w] = bestLineup(order, vals, this.mask, this.starters);
+      }
+      return res;
+    }
+    const play = this._play;
+    const unc = this._unc;
+    for (let w = 0; w < NW; w++) {
+      play.length = 0;
+      let k = 0;
+      for (const i of ids) {
+        const p = av[i * NW + w];
+        if (p <= 0) continue;                       // cannot play: not in the pool
+        vals[i] = this.proj[i * NW + w];
+        play.push(i);
+        if (p < 1) unc[k++] = i;
+      }
+      const order = play.slice().sort((a, b) => vals[b] - vals[a]);
+      if (k === 0) { res[w] = bestLineup(order, vals, this.mask, this.starters); continue; }
+      res[w] = k <= ENUM_MAX
+        ? this._enumerate(order, unc, k, av, w)
+        : this._sample(order, unc, k, av, w);
     }
     return res;
+  }
+
+  /** Exact expectation over the 2^k availability outcomes of one week. */
+  _enumerate(order, unc, k, av, w) {
+    const NW = this.NW, isOut = this._isOut, sub = this._sub, prob = this._uProb;
+    for (let j = 0; j < k; j++) prob[j] = av[unc[j] * NW + w];
+    let total = 0;
+    for (let m = 0; m < (1 << k); m++) {
+      let wt = 1;
+      for (let j = 0; j < k; j++) {
+        const inn = (m >> j) & 1;
+        isOut[unc[j]] = inn ? 0 : 1;
+        wt *= inn ? prob[j] : 1 - prob[j];
+      }
+      if (wt > 0) {
+        sub.length = 0;
+        for (let x = 0; x < order.length; x++) if (!isOut[order[x]]) sub.push(order[x]);
+        total += wt * bestLineup(sub, this._vals, this.mask, this.starters);
+      }
+    }
+    for (let j = 0; j < k; j++) isOut[unc[j]] = 0;
+    return total;
+  }
+
+  /**
+   * SAMPLES fixed-seed draws, for the rare week where enumeration would be too wide.
+   * The generator is created fresh from a seed that depends only on the week, so two
+   * calls with the same roster return the identical number - a search whose answer
+   * moved between passes would be worse than one that is slightly wrong.
+   */
+  _sample(order, unc, k, av, w) {
+    const NW = this.NW, isOut = this._isOut, sub = this._sub, prob = this._uProb;
+    for (let j = 0; j < k; j++) prob[j] = av[unc[j] * NW + w];
+    const rand = mulberry32(0x0A11AB1E ^ Math.imul(w, 0x9E3779B1));
+    let total = 0;
+    for (let s = 0; s < SAMPLES; s++) {
+      for (let j = 0; j < k; j++) isOut[unc[j]] = rand() < prob[j] ? 0 : 1;
+      sub.length = 0;
+      for (let x = 0; x < order.length; x++) if (!isOut[order[x]]) sub.push(order[x]);
+      total += bestLineup(sub, this._vals, this.mask, this.starters);
+    }
+    for (let j = 0; j < k; j++) isOut[unc[j]] = 0;
+    return total / SAMPLES;
+  }
+
+  /**
+   * The roster as the single most likely outcome has it: everyone at p >= 0.5.
+   *
+   * Usage strips and explanations have to name actual players, so they show the
+   * modal lineup rather than a probability-weighted blur - a row that says a man
+   * starts 0.71 of a week is not readable. Returns `ids` itself when no availability
+   * is attached, so the untouched path allocates nothing.
+   */
+  _likely(ids, w) {
+    const av = this.avail;
+    if (!av) return ids;
+    const out = [];
+    for (const i of ids) if (av[i * this.NW + w] >= 0.5) out.push(i);
+    return out;
   }
 
   swap(ids, out, inn) {
@@ -266,9 +421,14 @@ export class Engine {
     if (!this.sigmaOf) return null;
     const mask = this.starterMask(ids);
     const out = new Float64Array(this.NW);
+    // A man who may not play contributes his variance in proportion to his chance of
+    // playing, so an OUT starter adds none - the spread has to follow availability
+    // as well as roster composition, or a shelved team looks as swingy as a whole one.
+    const av = this.avail;
     for (let w = 0; w < this.NW; w++) {
       let v = 0;
-      for (const [i, m] of mask) if (m[w]) v += this.sigmaOf[i] ** 2;
+      for (const [i, m] of mask)
+        if (m[w]) v += (av ? av[i * this.NW + w] : 1) * this.sigmaOf[i] ** 2;
       out[w] = Math.sqrt(v);
     }
     return out;
@@ -438,8 +598,9 @@ export class Engine {
     const vals = this._vals;
     const out = new Map(ids.map(i => [i, new Uint8Array(this.NW)]));
     for (let w = 0; w < this.NW; w++) {
-      for (const i of ids) vals[i] = this.proj[i * this.NW + w];
-      const order = ids.slice().sort((a, b) => vals[b] - vals[a]);
+      const use = this._likely(ids, w);
+      for (const i of use) vals[i] = this.proj[i * this.NW + w];
+      const order = use.slice().sort((a, b) => vals[b] - vals[a]);
       for (const p of seatsOf(order, vals, this.mask, this.starters))
         if (p >= 0) out.get(p)[w] = 1;
     }
@@ -512,8 +673,9 @@ export class Engine {
       const vals = this._vals;
       const count = new Map(ids.map(i => [i, 0]));
       for (let w = 0; w < this.NW; w++) {
-        for (const i of ids) vals[i] = this.proj[i * this.NW + w];
-        const order = ids.slice().sort((a, b) => vals[b] - vals[a]);
+        const use = this._likely(ids, w);
+        for (const i of use) vals[i] = this.proj[i * this.NW + w];
+        const order = use.slice().sort((a, b) => vals[b] - vals[a]);
         const seats = seatsOf(order, vals, this.mask, this.starters);
         for (const p of seats) if (p >= 0) count.set(p, count.get(p) + 1);
       }

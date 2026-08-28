@@ -51,8 +51,11 @@ export function significant(odds, key) {
   return Math.abs(odds[key]) >= 2 * se ? odds[key] : null;
 }
 
-const simOpts = ({ sims = 5000, batches = 10, divisionSeeding = false, divisionOf = null } = {}) =>
-  ({ sims, batches: Math.max(2, batches), divisionSeeding, divisionOf });
+// `records` rides along so that both worlds of a paired run know the standings: a
+// trade's change in title odds depends on the record it is being added to.
+const simOpts = ({ sims = 5000, batches = 10, divisionSeeding = false, divisionOf = null,
+                   records = null } = {}) =>
+  ({ sims, batches: Math.max(2, batches), divisionSeeding, divisionOf, records });
 
 /** Δ odds for `team` from one trade. Runs the baseline itself; use attachOdds for many. */
 export function tradeOdds(eng, schedule, settings, trade, team, opts) {

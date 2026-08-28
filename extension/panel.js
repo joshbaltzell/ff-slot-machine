@@ -14,6 +14,10 @@ import { attachOdds, significant } from "./engine/odds.js";
 import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
 import { marketOrNull, marketView, marketFair, marketFairChip, marketCol, marketCell,
          marketDetail, marketPitchLine, arbitrageSection } from "./panel/market.js";
+import { restrictToRemaining, buildAvailability } from "./engine/availability.js";
+import { loadSleeperPlayers } from "./engine/sources/sleeper.js";
+import { AVAIL_HINT, statusRank, statusCell, statusBadge, seasonNote,
+         availabilityLines, horizonLine } from "./panel/availability.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -24,6 +28,7 @@ const PHASES = [
   ["settings", "League settings"],
   ["rosters",  "Rosters and projections"],
   ["agents",   "Free-agent pool"],
+  ["injuries", "Injury reports"],
   ["schedule", "Schedule"],
   ["vol",      "Player volatility"],
   ["market",   "Market values"],
@@ -254,6 +259,13 @@ async function start(ref) {
     });
     Steps.set("rosters", "done", `${model.players.size} players`);
 
+    // Weeks already played cannot be changed by a trade, and averaging them into a
+    // trade's value scores games nobody can affect. Everything downstream reads
+    // model.weeks, so trimming it here is the whole fix. Must happen before the
+    // settings are read below, and before anything builds the engine.
+    const horizon = restrictToRemaining(model);
+    say(horizonLine(horizon), horizon.complete ? "err" : "ok");
+
     const s = model.settings;
     say(`${s.name}: ${model.teams.size} teams, ${s.starters} starters, `
       + `${s.rosterSize}-player rosters`, "ok");
@@ -277,6 +289,33 @@ async function start(ref) {
       Steps.set("agents", "warn", "unavailable");
     }
 
+    // Injury reports. ESPN's own injuryStatus rides along with every player record
+    // we already fetched; Sleeper adds the practice report, which is the only public
+    // signal separating a Questionable who practised in full from one who did not
+    // practise at all. Sleeper is CORS-open and keyless, cached for a day by
+    // engine/sources/cache.js, and entirely optional: a dead feed costs the practice
+    // detail and nothing else.
+    let sleeperByEspn = null;
+    Steps.set("injuries", "run");
+    try {
+      const sl = await loadSleeperPlayers();
+      sleeperByEspn = sl.byEspn;
+      say(`  injury reports for ${sl.byEspn.size} players`
+        + `${sl.fromCache ? " (cached)" : ""}${sl.stale ? ", stale" : ""}`, "ok");
+      Steps.set("injuries", "done", `${sl.byEspn.size}`);
+    } catch (e) {
+      say(`  practice reports unavailable (${e.message}) - using ESPN status only`, "err");
+      Steps.set("injuries", "warn", "ESPN only");
+    }
+    const av = buildAvailability(model, sleeperByEspn, model.weeks, s.currentWeek);
+    for (const line of availabilityLines(av.summary)) say(line, "ok");
+    // `applied` is what the engine actually priced, not what the feeds reported. A
+    // badge stating a man is on IR is true either way; the season note makes a claim
+    // about the arithmetic, and on a finished season that claim would be false.
+    window.__avail = { statusOf: av.statusOf, summary: av.summary, horizon,
+                       applied: av.avail.size > 0 && !horizon.complete,
+                       feed: sleeperByEspn ? "sleeper" : "espn" };
+
     const { slots, starters } = buildSlots(s.lineupSlotCounts);
     const masks = new Map();
     for (const [id, p] of model.players) masks.set(id, seatMask(p.eligibleSlots, slots));
@@ -298,6 +337,36 @@ async function start(ref) {
 
     say("building engine…");
     const eng = new Engine(model, { starters }, masks);
+    // Only when somebody's availability is actually in doubt: an engine with an
+    // all-ones table takes a slower path through weekly() for no benefit, and
+    // 2-for-2 calls it millions of times. And never on a finished season:
+    // restrictToRemaining keeps every week when nothing remains, so this week's
+    // injury table would price games played in September — a currently-OUT
+    // player would score zero across the whole retrospective.
+    if (av.avail.size && !horizon.complete) {
+      eng.setAvailability(av.avail);
+      say(`availability applied to ${av.avail.size} players`, "ok");
+    }
+    // The standings so far. Every simulated season starts from them rather than 0-0.
+    const records = new Map([...model.teams.values()]
+      .filter((t) => t.record).map((t) => [t.name, t.record]));
+    // All or nothing. projectSeason takes games played from whichever team has
+    // played most, so a map missing one team would seed that team 0-and-N and
+    // quietly move everybody's seeding. Projecting from 0-0 and saying so is the
+    // honest failure.
+    window.__records = records.size === model.teams.size ? records : null;
+    if (window.__records) say(`standings seeded from ${records.size} team records`, "ok");
+    else if (records.size) say(`ESPN reported records for only ${records.size} of `
+      + `${model.teams.size} teams - projecting from 0-0`, "err");
+    // Seeding comes from the regular season, from the standings, or from nowhere.
+    // With no weeks left the simulation plays none, and with no records every team
+    // is 0-0 on 0 points, so the sort that decides the bracket collapses to the
+    // order ESPN happened to return the teams in and the first few would be shown
+    // 100% playoff odds. There is no answer here; do not invent one.
+    window.__noSeason = s.regularSeasonWeeks.length === 0 && !window.__records;
+    if (window.__noSeason)
+      say("the regular season has no weeks left and ESPN did not report a complete "
+        + "set of standings - no season projection can be made", "err");
     say(`baseline built for ${eng.teams.length} teams`, "ok");
 
     const swid = await mySwid();
@@ -382,30 +451,37 @@ async function start(ref) {
     await eng.enrich(trades, (n, tot) => progress(n / tot));
     Steps.set("win", "done", `${trades.length} trades`);
 
-    Steps.set("odds", "run");
-    const mine = trades.filter((t) => t.sides.some((s) => s.team === myTeam))
-      .sort((a, b) => b.sides.find((s) => s.team === myTeam).win - a.sides.find((s) => s.team === myTeam).win)
-      .slice(0, ODDS_CAP);
-    const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
-    const divSeedSaved = (await chrome.storage.local.get("ffsm.divSeed"))["ffsm.divSeed"] ?? false;
-    window.__divSeed = divSeedSaved;
-    const oddsOpts = { batches: 10, divisionOf,
-      divisionSeeding: divSeedSaved && (model.settings.divisionCount ?? 0) > 1 };
-    const { ms } = await attachOdds(eng, schedule, model.settings, mine, myTeam,
-      { ...oddsOpts, sims: ODDS_SIMS }, (n, tot) => progress(n / tot));
+    // A Δ odds figure is a difference between two simulated worlds. When neither
+    // world means anything the difference does not either, so the trades keep no
+    // odds at all and every reader of them falls back through significant().
+    if (window.__noSeason) {
+      Steps.set("odds", "warn", "no standings");
+    } else {
+      Steps.set("odds", "run");
+      const mine = trades.filter((t) => t.sides.some((s) => s.team === myTeam))
+        .sort((a, b) => b.sides.find((s) => s.team === myTeam).win - a.sides.find((s) => s.team === myTeam).win)
+        .slice(0, ODDS_CAP);
+      const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
+      const divSeedSaved = (await chrome.storage.local.get("ffsm.divSeed"))["ffsm.divSeed"] ?? false;
+      window.__divSeed = divSeedSaved;
+      const oddsOpts = { batches: 10, divisionOf, records: window.__records,
+        divisionSeeding: divSeedSaved && (model.settings.divisionCount ?? 0) > 1 };
+      const { ms } = await attachOdds(eng, schedule, model.settings, mine, myTeam,
+        { ...oddsOpts, sims: ODDS_SIMS }, (n, tot) => progress(n / tot));
 
-    // Δ bye resolves at 2500 sims where Δ title usually does not, so it picks the
-    // shortlist; the rest fall through to expected wins. Re-simulating those few at
-    // 20,000 seasons is what makes the Championship number readable at all.
-    const rank = (t) =>
-      significant(t.odds, "bye") ?? (-1e6 + t.sides.find((s) => s.team === myTeam).win);
-    const refine = mine.slice().sort((a, b) => rank(b) - rank(a)).slice(0, REFINE_TOP);
-    const fine = await attachOdds(eng, schedule, model.settings, refine, myTeam,
-      { ...oddsOpts, sims: REFINE_SIMS }, (n, tot) => progress(n / tot));
-    say(`season odds for ${mine.length} trades in ${(ms / 1000).toFixed(1)}s; `
-      + `top ${refine.length} re-run at ${REFINE_SIMS.toLocaleString()} seasons `
-      + `in ${(fine.ms / 1000).toFixed(1)}s`, "ok");
-    Steps.set("odds", "done", `${mine.length} trades · ${refine.length} refined`);
+      // Δ bye resolves at 2500 sims where Δ title usually does not, so it picks the
+      // shortlist; the rest fall through to expected wins. Re-simulating those few at
+      // 20,000 seasons is what makes the Championship number readable at all.
+      const rank = (t) =>
+        significant(t.odds, "bye") ?? (-1e6 + t.sides.find((s) => s.team === myTeam).win);
+      const refine = mine.slice().sort((a, b) => rank(b) - rank(a)).slice(0, REFINE_TOP);
+      const fine = await attachOdds(eng, schedule, model.settings, refine, myTeam,
+        { ...oddsOpts, sims: REFINE_SIMS }, (n, tot) => progress(n / tot));
+      say(`season odds for ${mine.length} trades in ${(ms / 1000).toFixed(1)}s; `
+        + `top ${refine.length} re-run at ${REFINE_SIMS.toLocaleString()} seasons `
+        + `in ${(fine.ms / 1000).toFixed(1)}s`, "ok");
+      Steps.set("odds", "done", `${mine.length} trades · ${refine.length} refined`);
+    }
 
     Steps.set("build", "run");
     say(`${trades.length} offers after dedupe`, "ok");
@@ -545,11 +621,16 @@ function usageBars(strip, proj, thin, weeks, outgoing = false) {
 
 function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new Map()) {
   const W = eng.weeks;
+  const AV = window.__avail ?? null;
   const rates = eng.startRates();
   const nm = (i) => model.players.get(eng.ids[i]).name;
   const posOf = (i) => model.players.get(eng.ids[i]).pos;
   const tag = (i) => `<span class="pos" data-p="${esc(posOf(i))}">${esc(posOf(i))}</span>`;
-  const pkg = (ids) => ids.map((i) => `${esc(nm(i))} ${tag(i)}`).join('<span class="plus">+</span>');
+  // A package that hands you a man on IR has to say so where the names are, not
+  // three sections further down.
+  const pkg = (ids) => ids
+    .map((i) => `${esc(nm(i))} ${tag(i)}${statusBadge(AV, eng.ids[i], esc)}`)
+    .join('<span class="plus">+</span>');
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   const avgProj = (i) => {
     const v = [];
@@ -797,6 +878,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "name", label: "Player", value: (r) => r.p.name },
     { key: "pos", label: "Pos", value: (r) => r.p.pos },
     { key: "nfl", label: "NFL", value: (r) => r.p.nfl },
+    { key: "status", label: "Status", num: true,
+      value: (r) => statusRank(AV, r.p.id), hint: AVAIL_HINT.status },
     { key: "bye", label: "Bye", num: true, value: (r) => r.p.bye || 99, hint: HINT.bye },
     { key: "avg", label: "Proj/wk", num: true, value: (r) => r.avg, hint: HINT.projwk },
     { key: "rate", label: "Starts", num: true, value: (r) => r.rate, hint: HINT.starts },
@@ -807,6 +890,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td style="font-weight:600">${esc(r.p.name)}</td>
       <td>${tag(r.i)}</td>
       <td class="nfl">${esc(r.p.nfl)}</td>
+      <td class="num">${statusCell(AV, r.p.id, esc)}</td>
       <td class="num" style="color:var(--faint)">${r.p.bye || "—"}</td>
       <td class="num">${r.avg.toFixed(1)}</td>
       <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
@@ -898,7 +982,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
   const divSeed = divCount > 1 && (window.__divSeed ?? false);
   const proj = projectSeason(eng, schedule, model.settings,
-    { sims: SIMS, sigma: SIGMA, divisionSeeding: divSeed, divisionOf });
+    { sims: SIMS, sigma: SIGMA, divisionSeeding: divSeed, divisionOf,
+      records: window.__records ?? null });
   const maxTitle = Math.max(...proj.map((x) => x.titlePct), 1e-9);
   const seasonGrid = grid("seasonGrid", [
     { key: "name", label: "Team", value: (r) => r.team },
@@ -1069,10 +1154,14 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
               <button data-v="0" aria-pressed="${window.__calibrate === false}">As published</button>
             </div></div>
         </div>
-        ${seasonGrid}
+        ${window.__noSeason
+          ? `<div class="note"><b>No season projection.</b> The regular season has no
+              weeks left and ESPN did not report a complete set of standings, so there
+              is nothing to seed a bracket from and any number here would be an
+              artifact of the order the teams came back in.</div>`
+          : seasonGrid}
         ${leverageStrip}
-        <div class="note"><b>What this is not.</b> Rosters are frozen: no waivers,
-          injuries or trades. ${measured >= 20
+        <div class="note"><b>What this is not.</b> ${seasonNote(AV)} ${measured >= 20
             ? `Swing is measured per player and assumes independence — a stack of players
                from one NFL team is swingier than shown.`
             : `±25 is assumed and is the biggest lever on every number here.`}
