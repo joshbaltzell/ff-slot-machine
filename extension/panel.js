@@ -12,6 +12,8 @@ import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 import { attachOdds, significant } from "./engine/odds.js";
 import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
+import { bandMean, bandTag, bindSourcesChips, calibrationSection, runProjections,
+         sourcesChips } from "./panel/projections.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -22,6 +24,7 @@ const PHASES = [
   ["settings", "League settings"],
   ["rosters",  "Rosters and projections"],
   ["agents",   "Free-agent pool"],
+  ["proj",     "Projection sources"],
   ["schedule", "Schedule"],
   ["vol",      "Player volatility"],
   ["s1",       "1-for-1 trades"],
@@ -282,13 +285,25 @@ async function start(ref) {
     if (unplayable.length)
       say(`${unplayable.length} rostered players fit no starting slot (IR/taxi)`, "");
 
+    // Projection sources, then calibration. Aggregate first and shrink the aggregate:
+    // shrinkage is a property of the number the engine is about to use, and the
+    // calibration log has to record what was shown before the week to measure anything.
+    Steps.set("proj", "run");
+    const P = await runProjections({ model, ref, say, progress });
+    window.__band = P.band;
+    window.__aggregate = P.aggregate;
+    window.__calibState = P;
+    Steps.set("proj", P.aggregate ? "done" : "skip",
+      P.aggregate ? `Sleeper ${P.coverage.sleeper}, FP ${P.coverage.fp}` : "ESPN only");
+
     // Calibrate before anything reads a projection. Off leaves ESPN's numbers as-is.
     const calibrate = (await chrome.storage.local.get("ffsm.calibrate"))["ffsm.calibrate"] ?? true;
     window.__calibrate = calibrate;
     if (calibrate) {
-      const r = shrinkProjections(model.players, model.weeks, CALIBRATION_K);
-      say(`projections calibrated for ${r.changed} players (${Object.entries(CALIBRATION_K)
-        .map(([p, k]) => `${p} ${k}`).join(", ")})`, "ok");
+      const r = shrinkProjections(model.players, model.weeks, P.k);
+      say(`projections calibrated for ${r.changed} players (${Object.entries(P.k)
+        .map(([p, k]) => `${p} ${k}`).join(", ")}) — ${P.fitted
+        ? "slopes fitted from this league's calibration log" : "literature slopes"}`, "ok");
     } else {
       say("projections used as ESPN publishes them (calibration off)", "");
     }
@@ -463,6 +478,7 @@ const HINT = {
   dtitle: "Change in your odds of winning the league, from two season simulations with identical luck - one with today's rosters, one after the trade. A dash means the change is smaller than the simulation's own error. The top trades are re-simulated at 20,000 seasons so this number resolves for the ones you would actually consider.",
   dbye:   "Change in your odds of a first-round bye. In a six-team bracket a bye roughly doubles title odds, so this is usually the number that matters in November.",
   calib:  "ESPN projections are over-spread: the gap between a position's #1 and #5 is smaller in reality than on paper. On, each projection is pulled toward its positional mean by the slope measured across twelve seasons (QB 0.67, RB 0.79, WR 0.85, TE 0.72).",
+  band:   "How much the projection sources disagree about this player, in points per week, averaged over the weeks left. A wide band means the number above it is less settled than it looks — not that the player is volatile.",
 };
 const th = (label, key, cls = "") =>
   `<th class="${cls}" data-hint="${esc(HINT[key])}"><span class="hint">${esc(label)}</span></th>`;
@@ -544,6 +560,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     }
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
   };
+  const bandMeanOf = (id) => bandMean(window.__band, id);
 
   /* ---------- filter state ---------- */
   const viewing = window.__view ?? myTeam;
@@ -580,8 +597,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       const d = ex[sd.team];
       const li = [];
       for (const a of d.acquired)
-        li.push(`<li><b>${esc(nm(a.i))}</b> would start <b>${a.startsHere}</b> of
-                 ${W.length} weeks here, versus ${a.startsThere} where he is now.</li>`);
+        li.push(`<li><b>${esc(nm(a.i))}</b>${esc(bandTag(window.__band, eng.ids[a.i]))} would start
+                 <b>${a.startsHere}</b> of ${W.length} weeks here, versus ${a.startsThere}
+                 where he is now.</li>`);
       for (const x of d.sent)
         li.push(`<li>Gives up ${esc(nm(x.i))} — ${x.wasStarting} starts.</li>`);
       for (const x of d.displaced)
@@ -774,6 +792,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "nfl", label: "NFL", value: (r) => r.p.nfl },
     { key: "bye", label: "Bye", num: true, value: (r) => r.p.bye || 99, hint: HINT.bye },
     { key: "avg", label: "Proj/wk", num: true, value: (r) => r.avg, hint: HINT.projwk },
+    { key: "band", label: "±", num: true, value: (r) => bandMeanOf(r.p.id), hint: HINT.band },
     { key: "rate", label: "Starts", num: true, value: (r) => r.rate, hint: HINT.starts },
     { key: "bar", label: "", sortable: false },
   ], rosterRows, {
@@ -784,6 +803,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td class="nfl">${esc(r.p.nfl)}</td>
       <td class="num" style="color:var(--faint)">${r.p.bye || "—"}</td>
       <td class="num">${r.avg.toFixed(1)}</td>
+      <td class="num" style="color:var(--faint)">${
+        bandMeanOf(r.p.id) > 0.05 ? bandMeanOf(r.p.id).toFixed(1) : "—"}</td>
       <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
         (r.rate * 100).toFixed(0)}%</td>
       <td><div class="meter"><i style="width:${(r.rate * 100).toFixed(0)}%"></i></div></td>
@@ -1040,6 +1061,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
               <button data-v="1" aria-pressed="${window.__calibrate !== false}">Calibrated</button>
               <button data-v="0" aria-pressed="${window.__calibrate === false}">As published</button>
             </div></div>
+          ${sourcesChips({ aggregate: window.__aggregate })}
         </div>
         ${seasonGrid}
         ${leverageStrip}
@@ -1052,6 +1074,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           ±${(100 * (proj[0]?.mcError ?? 0)).toFixed(2)} points.</div>
       </div>
     </section>
+
+    ${calibrationSection(window.__calibState ?? {}, { grid, esc })}
 
     <footer>Live from ESPN. Nothing leaves your machine.
       <button class="ghost" id="refresh">Refresh data</button></footer>
@@ -1119,6 +1143,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       location.reload();      // projections feed everything; a rebuild is the honest path
     };
   });
+  bindSourcesChips(app);
   $("#mg").oninput = (e) => {
     F.minGain = +e.target.value / 100;
     $("#mgv").textContent = F.minGain.toFixed(2);
@@ -1152,7 +1177,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   $("#refresh").onclick = async () => {
     // Refresh drops the cached league, not the user's choices: losing the objective
     // or the calibration toggle on every refetch would be its own bug.
-    const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed"];
+    const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed", "ffsm.aggregate"];
     const had = await chrome.storage.local.get(KEEP);
     await chrome.storage.local.clear();
     const keep = Object.fromEntries(KEEP.filter((k) => had[k] !== undefined).map((k) => [k, had[k]]));
