@@ -18,7 +18,7 @@ import { restrictToRemaining, buildAvailability } from "./engine/availability.js
 import { loadSleeperPlayers } from "./engine/sources/sleeper.js";
 import { AVAIL_HINT, statusRank, statusCell, statusBadge, seasonNote,
          availabilityLines, horizonLine } from "./panel/availability.js";
-import { USAGE_HINT, usageOrNull, usageViewStored, assetsSection, breakoutSection,
+import { usageOrNull, usageViewStored, assetsSection, breakoutSection,
          waiverView, faCrowdCols, faCrowdCells } from "./panel/usage.js";
 
 const $ = (s) => document.querySelector(s);
@@ -431,10 +431,12 @@ async function start(ref) {
 
     // Usage: what the box score has not caught up with yet. Evidence only - nothing
     // below this line reads it, and a dead feed costs two sections and two columns,
-    // not the search.
+    // not the search - so the computation, not just the load, is guarded.
     Steps.set("usage", "run");
-    const loadedUsage = await usageOrNull(model, ref.seasonId, say);
-    window.__usage = await usageViewStored(model, loadedUsage, s.currentWeek, say);
+    try {
+      const loadedUsage = await usageOrNull(model, ref.seasonId, say);
+      window.__usage = await usageViewStored(model, loadedUsage, s.currentWeek, say);
+    } catch { window.__usage = null; }
     Steps.set("usage", window.__usage ? "done" : "warn",
       window.__usage ? `${window.__usage.table.rows.size} players` : "unavailable");
 

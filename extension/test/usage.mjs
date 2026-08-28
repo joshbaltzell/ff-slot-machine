@@ -518,6 +518,19 @@ const OWNER = new Map([
   ok((faCrowdCells(ups[0], null).match(/<td/g) ?? []).length === 2,
      "…and so does no waiver view at all");
 
+  /* a fully-spent budget is a real $0, not a missing bid (I4) */
+  const spentWv = waiverView(ups, view, eng, { budget: 100, myRemaining: 0, weeksLeft: 10 });
+  ok(spentWv.mode === "faab", "a fully-spent budget still reports FAAB mode, not priority");
+  const spentBidCell = faCrowdCells(ups[0], spentWv).split("</td>")[1];
+  ok(/\$0/.test(spentBidCell) && !/—/.test(spentBidCell),
+     "…so the bid cell reads $0 rather than a dash");
+  ok((faCrowdCells(ups[0], spentWv).match(/<td/g) ?? []).length === 2,
+     "…and still exactly two cells");
+  ok(!/\$0/.test(faCrowdCells(ups[0], noBudget).split("</td>")[1]),
+     "…distinguishable from priority mode's dash, which never reads $0");
+  ok(!/\$0/.test(faCrowdCells(ups[0], deadWv).split("</td>")[1]),
+     "…and from the dead-feed case, whose bid still comes from a real, unspent budget");
+
   /* the loaders swallow every failure */
   const say = []; const rec = (t, c) => say.push([t, c]);
   ok(await usageOrNull({ settings: { currentWeek: 1 } }, 2026, rec,

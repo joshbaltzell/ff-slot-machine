@@ -64,8 +64,8 @@ export const USAGE_HINT = {
     + "a role changing rather than a game script.",
   depth: "Where Sleeper's depth chart has him, and how far he has moved since the last "
     + "time this page saw the file. Blank until it has seen the file twice.",
-  crowd: "How many Sleeper leagues added him in the last 24 hours. High means you will "
-    + "not be the only claim; low means he is free.",
+  crowd: "How many Sleeper leagues added him in the last 24 hours, when he is among the "
+    + "50 most-added. Blank or zero means he is not - not that nobody wants him.",
   bid: "A suggested FAAB bid: this add's share of the top five adds' gains, times what "
     + "is left of your budget, times an urgency multiplier from the crowd - rounded to "
     + "end in 1 or 6 so a tie against a round number goes your way. The second figure "
@@ -306,7 +306,7 @@ function breakoutRow(r, myTeam = null, crowdLive = true) {
   return `<tr>
   <td style="font-weight:600">${esc(r.name)}</td>
   <td><span class="pos" data-p="${esc(r.pos)}">${esc(r.pos)}</span></td>
-  <td style="color:var(--dim)">${esc(r.nfl ?? "—")}</td>
+  <td style="color:var(--dim)">${r.nfl == null ? '<span class="zero">—</span>' : esc(r.nfl)}</td>
   <td style="color:var(--dim)">${esc(owner)}</td>
   <td class="num">${pctOrDash(r.snapShare)}</td>
   <td class="num ${signCls(r.trend)}">${signPctOrDash(r.trend)}</td>
@@ -394,9 +394,12 @@ export function faCrowdCells(u, wv) {
     ? `<td class="num ${c.contested ? "down" : "up"}">${c.crowd.toLocaleString("en-US")}</td>`
     : dash;
   const b = wv?.mode === "faab" ? wv.bids.get(u.fa) : null;
-  const bid = b && b.bid > 0
-    ? `<td class="num">$${b.bid}${b.max != null
-        ? ` <span style="color:var(--faint)">/${b.max}</span>` : ""}</td>`
-    : dash;
+  // A spent budget is a real $0, not a missing bid - only "priority" mode (no such
+  // thing as a bid) and a wv that never resolved (b undefined) fall through to the dash.
+  const bid = b == null ? dash
+    : b.bid > 0
+      ? `<td class="num">$${b.bid}${b.max != null
+          ? ` <span style="color:var(--faint)">/${b.max}</span>` : ""}</td>`
+      : `<td class="num"><span class="zero">$0</span></td>`;
   return crowd + bid;
 }
