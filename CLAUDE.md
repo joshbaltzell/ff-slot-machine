@@ -142,7 +142,7 @@ a real trade. It is narrow, since only the current week can hold uncertain playe
 it takes seven of them, and `test/roster.mjs` cannot see it because the reference test
 runs with no availability attached.
 
-**A side that ends somewhere `(sent, received)` does not describe carries `final`.**
+**A side that ends somewhere other than `(sent, received)` carries `final`.**
 Only 2-for-1 sets it today. `enrich`, `explain` and `odds.js` all read
 `s.final ?? swap(roster, sent, received)`, so every other shape is untouched and a new
 shape that changes a roster after the trade must set it too — otherwise its win deltas
