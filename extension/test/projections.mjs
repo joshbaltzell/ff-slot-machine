@@ -14,6 +14,8 @@ import { aggregateProjections } from "../engine/aggregate.js";
 import { FIT_POS, MIN_N, MIN_WEEKS, attachActuals, fitSlopes, loadLog, logKey, logWeek,
          mergeSlopes, summary, weeksStored, weeksWithActuals } from "../engine/calibration.js";
 import { CALIBRATION_K } from "../engine/calibrate.js";
+import { bandMean, bandTag, calibrationSection, runProjections, sourcesChips }
+  from "../panel/projections.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -483,6 +485,116 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
        "positions names exactly what was measured");
     ok(CALIBRATION_K.QB === 0.67 && CALIBRATION_K.RB === 0.79 && CALIBRATION_K.WR === 0.85
        && CALIBRATION_K.TE === 0.72, "merging does not mutate the imported constants");
+  }
+}
+
+/* ---- 6. the panel module ---- */
+{
+  /* band helpers */
+  {
+    const band = new Map([[1, Float64Array.from([2, 4, 0])], [2, Float64Array.from([0.3, 0.3, 0.3])]]);
+    ok(close(bandMean(band, 1), 2), "bandMean is a plain mean over every week");
+    ok(bandMean(band, 99) === 0, "an unknown player bands at zero");
+    ok(bandMean(null, 1) === 0, "no band at all is zero");
+    ok(bandTag(band, 1).trim() === "±2.0", "a band over the threshold renders");
+    ok(bandTag(band, 2) === "", "a band under the threshold is silent");
+    ok(bandTag(band, 99) === "", "an unknown player renders nothing");
+  }
+
+  /* chips reflect the toggle */
+  {
+    const on = sourcesChips({ aggregate: true });
+    ok(on.includes('id="sources"'), "the chip group has an id to bind to");
+    ok(/data-v="1"[^>]*aria-pressed="true"/.test(on), "aggregate on is pressed");
+    ok(/data-v="0"[^>]*aria-pressed="false"/.test(on), "espn-only is not pressed");
+    const off = sourcesChips({ aggregate: false });
+    ok(/data-v="0"[^>]*aria-pressed="true"/.test(off), "the toggle flips");
+  }
+
+  /* the calibration section */
+  {
+    const grid = (id, cols, rows, opts) => `<table id="${id}">${rows.map((r) => opts.row(r, 0)).join("")}</table>`;
+    const esc = (v) => String(v).replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const html = calibrationSection({
+      summaryRows: [{ source: "espn", pos: "RB", n: 40, mae: 5.5, bias: -1.2, slope: 0.81 },
+                    { source: "agg", pos: "RB", n: 40, mae: 5.1, bias: -0.9, slope: null }],
+      fitted: true, fittedPositions: ["RB"], k: { QB: 0.67, RB: 0.81, WR: 0.85, TE: 0.72 },
+      weeksStored: 8, weeksWithActuals: 7,
+    }, { grid, esc });
+    ok(html.includes("<section"), "it returns a section");
+    ok(/Calibration/.test(html), "it is titled");
+    ok(html.includes("0.81"), "a fitted slope is shown");
+    ok(html.includes("—"), "a null slope renders as a dash");
+    ok(/fitted/i.test(html), "the note says fitted slopes are in use");
+    ok(/8/.test(html) && /7/.test(html), "it says how much data there is");
+
+    const early = calibrationSection({ summaryRows: [], fitted: false, fittedPositions: [],
+      k: { QB: 0.67, RB: 0.79, WR: 0.85, TE: 0.72 }, weeksStored: 1, weeksWithActuals: 0 },
+      { grid, esc });
+    ok(/literature/i.test(early), "before the fit the note says literature slopes");
+    ok(!/undefined/.test(early), "an empty log renders without holes");
+  }
+
+  /* runProjections end to end, offline */
+  {
+    const lines = [];
+    const say = (t, c) => { lines.push(String(t)); return {}; };
+    const model = mkModel([5, 6]);
+    for (const p of model.players.values())
+      p.rawStats = [{ statSourceId: 0, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 12 }];
+    model.settings = { pprValue: 0.5, currentWeek: 5 };
+
+    const sleeperPlayers = Object.fromEntries([101, 102, 103, 104, 201, 202].map((id, i) =>
+      [`s${i}`, { player_id: `s${i}`, espn_id: id, full_name: `p${id}`, position: "RB" }]));
+    const wk = (mult) => [101, 102, 103, 104, 201, 202].map((id, i) => ({
+      player_id: `s${i}`, stats: { pts_ppr: 0, pts_half_ppr: [10, 20, 30, 40, 15, 25][i] * mult, pts_std: 0 } }));
+    const table = {
+      "https://api.sleeper.app/v1/players/nfl": sleeperPlayers,
+      [(await import("../engine/sources/sleeperproj.js")).weekUrl(2026, 5)]: wk(1),
+      [(await import("../engine/sources/sleeperproj.js")).weekUrl(2026, 6)]: wk(1),
+    };
+    const storage = mkStorage();
+    const P = await runProjections({ model, ref: { leagueId: 7, seasonId: 2026 }, say,
+      fetchImpl: mkFetch(table), storage, now: 0 });
+
+    ok(P.aggregate === true, "the toggle defaults to on");
+    ok(P.coverage.sleeper === 6, "coverage is reported");
+    ok(P.band instanceof Map, "a band comes back");
+    ok(P.k && typeof P.k.RB === "number", "a slope map comes back");
+    ok(P.fitted === false, "one week of actuals is not enough to fit");
+    ok(close(P.k.RB, 0.79) && close(P.k.QB, 0.67), "so the literature slopes are in use");
+    ok(P.weeksStored === 1, "the current week was logged");
+    ok(lines.some((l) => /Sleeper covers 6/.test(l)), `a coverage line is logged (${JSON.stringify(lines)})`);
+    ok(lines.some((l) => /calibration log/.test(l)), "a calibration-log line is logged");
+    ok(lines.some((l) => /FantasyPros/.test(l)), "FantasyPros is mentioned even when unavailable");
+
+    const log = (await storage.get("ffsm.calib.7.2026"))["ffsm.calib.7.2026"];
+    const row = log.weeks["5"].rows.find((r) => r.id === 101);
+    ok(row.espn === 10, "the logged espn value is the pre-aggregate one");
+    ok(Number.isFinite(row.agg), "the logged agg value is the post-aggregate one");
+    ok(row.pos === "RB" && row.id === 101, "id and pos are logged");
+    ok(row.fp === null, "an unavailable source logs null, not a guess");
+
+    /* toggle off: no fetches, agg = espn */
+    const model2 = mkModel([5, 6]);
+    const f2 = mkFetch(table);
+    await storage.set({ "ffsm.aggregate": false });
+    const P2 = await runProjections({ model: model2, ref: { leagueId: 7, seasonId: 2026 }, say,
+      fetchImpl: f2, storage, now: 0 });
+    ok(P2.aggregate === false, "the stored toggle is honoured");
+    ok(f2.calls.length === 0, "nothing is fetched when the toggle is off");
+    ok(model2.players.get(101).proj[5] === 10, "espn-only leaves the projections alone");
+    ok(P2.band.size === 0, "espn-only produces no band");
+
+    /* every feed dead: still no throw, still espn */
+    await storage.set({ "ffsm.aggregate": true });
+    const model3 = mkModel([5, 6]);
+    const P3 = await runProjections({ model: model3, ref: { leagueId: 9, seasonId: 2026 }, say,
+      fetchImpl: mkFetch({}), storage: mkStorage(), now: 0 });
+    ok(model3.players.get(101).proj[5] === 10, "a dead feed leaves agg = espn");
+    ok(P3.k.RB === 0.79, "a dead feed still yields usable slopes");
+    ok(P3.coverage.sleeper === 0 && P3.coverage.fp === 0, "coverage is zero, not undefined");
   }
 }
 
