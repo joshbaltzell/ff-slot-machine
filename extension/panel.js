@@ -12,6 +12,8 @@ import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 import { attachOdds, significant } from "./engine/odds.js";
 import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
+import { marketOrNull, marketView, marketFair, marketFairChip, marketCol, marketCell,
+         marketDetail, marketPitchLine, arbitrageSection } from "./panel/market.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -24,6 +26,7 @@ const PHASES = [
   ["agents",   "Free-agent pool"],
   ["schedule", "Schedule"],
   ["vol",      "Player volatility"],
+  ["market",   "Market values"],
   ["s1",       "1-for-1 trades"],
   ["s2",       "2-for-2 trades"],
   ["s3",       "Three-team trades"],
@@ -342,6 +345,18 @@ async function start(ref) {
       Steps.set("vol", "warn", "assumed ±25");
     }
     window.__vol = vol;
+    // FantasyCalc's crowd values: what the manager on the other side is thinking.
+    // Display and ranking only - nothing below this line reads them, and a dead feed
+    // costs a dash in one column, not the search.
+    Steps.set("market", "run");
+    const loadedMarket = await marketOrNull(model.settings, model.teams.size, say);
+    window.__market = marketView(eng, loadedMarket);
+    // Zero priced players is not a healthy load - an empty feed should read the same
+    // as a dead one, not go green.
+    const marketHealthy = !!loadedMarket && loadedMarket.byEspn.size > 0;
+    Steps.set("market", marketHealthy ? "done" : "warn",
+      loadedMarket ? `${loadedMarket.byEspn.size} priced` : "unavailable");
+
     Steps.set("s1", "run");
     const one = await eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
@@ -548,6 +563,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   /* ---------- filter state ---------- */
   const viewing = window.__view ?? myTeam;
   const mineOnly = viewing !== "__all__";
+  const mkt = window.__market ?? null;
   const F = (window.__filters ??= {
     shapes: new Set(["1-for-1", "2-for-2", "three-way"]),
     minGain: 0.10, only: new Set(), q: "",
@@ -570,6 +586,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     .filter(({ t }) => Math.min(...t.sides.map((s) => s.gain)) >= F.minGain)
     .filter(({ t }) => !F.only.has("bye") || byeDriven(t))
     .filter(({ t }) => !F.only.has("even") || balance(t) >= 0.6)
+    // A dead feed (mkt === null) must never empty the list - the chip is also hidden
+    // whenever there is no market, but the filter stays inert on its own in case
+    // "mktfair" was set while the feed was still up.
+    .filter(({ t }) => !F.only.has("mktfair") || !mkt || (marketFair(t, mkt) ?? 0) >= 0.8)
     .filter(({ t }) => !F.q || t.sides.some((s) =>
       [...s.sent, ...s.received].some((i) => nm(i).toLowerCase().includes(F.q))));
 
@@ -597,6 +617,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           <span>bye weeks <b class="${cls(sd.bye)}">${f2(sd.bye)}</b></span>
           <span>weeks helped <b>${sd.weekly.filter((x) => x > 0.005).length}/${W.length}</b></span>
           <span>Δ wins <b class="${cls(sd.win ?? 0)}">${(sd.win >= 0 ? "+" : "−") + Math.abs(sd.win ?? 0).toFixed(2)}</b></span>
+          ${marketDetail(sd, mkt)}
         </div>
         <ul>${li.join("")}</ul>${deltaBars(sd.weekly, W)}
         ${sd.winWeekly ? `<div class="delta-cap">Win probability, week by week
@@ -688,6 +709,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     L.push("", balance(t) >= 0.5
       ? `I gain ${f2(me.gain)} per week, so we both come out ahead.`
       : `I gain ${f2(me.gain)} per week — most of the value here is on your side.`);
+    const mline = marketPitchLine(t, other, mkt);
+    if (mline) L.push("", mline);
     return L.join("\n");
   }
 
@@ -731,6 +754,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "byehelp", label: "Partner bye help", num: true,
       value: (r) => Math.max(...others(r.t).map((o) => o.bye)), hint: HINT.byehelp },
     { key: "balance", label: "Balance", num: true, value: (r) => balance(r.t), hint: HINT.balance },
+    marketCol(mkt),
   ];
   const tradeGrid = grid("tradeGrid", tradeCols, shown, {
     sort: objSort(window.__objective ?? "title"), dir: -1,
@@ -760,6 +784,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <td><div class="bal"><div class="track"><i style="width:${
           (balance(t) * 100).toFixed(0)}%"></i></div><span class="balpct">${
           (balance(t) * 100).toFixed(0)}%</span></div></td>
+        ${marketCell(t, mkt)}
       </tr>
       <tr class="detail" data-for="${i}" hidden><td colspan="${tradeCols.length}"></td></tr>`;
     },
@@ -984,6 +1009,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           <div class="fld"><label>Only</label><div class="chips" id="only">
             <button data-v="bye" aria-pressed="${F.only.has("bye")}">Bye-driven</button>
             <button data-v="even" aria-pressed="${F.only.has("even")}">Even splits</button>
+            ${marketFairChip(mkt, F.only.has("mktfair"))}
           </div></div>
           <div class="fld"><label for="q">Player</label>
             <input type="search" id="q" value="${esc(F.q)}" placeholder="filter by name…"
@@ -1009,6 +1035,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         field.</p>
       <div class="panel">${faGrid}</div>
     </section>
+
+    ${arbitrageSection(eng, model, mkt, { myTeam, grid })}
 
     <section>
       <h2 class="secttl">League strength</h2>
