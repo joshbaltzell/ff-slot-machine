@@ -193,3 +193,89 @@ export function playerRange(player, w, dist) {
 export function cv(player, dist) {
   return dist?.cvOf?.get(player?.id) ?? dist?.byPosCv?.get(player?.pos) ?? 0;
 }
+
+/**
+ * Teach an Engine about correlation, from outside.
+ *
+ * The parallel-build rules give this phase exactly one method of `search.js` -
+ * `rosterSigma` - so the correlation cannot arrive as an import there. It arrives as
+ * an attached function instead: `rosterSigma` adds a covariance term if and only if
+ * `eng.rhoOf` exists, so an engine nobody attaches to behaves exactly as it did
+ * before. That is also the mechanism that keeps `parity.mjs` green, twice over: it
+ * never calls this, and every fixture player is on "X" anyway.
+ *
+ * @param players Map<playerId, {pos, nfl}> - the model's player map
+ * @param gameOf  optional (nflAbbrev, weekNumber) -> game key, for the cross-game
+ *   term. Phase 7 publishes `gameOf(proTeamId, week)`; the call site adapts the id
+ *   to the abbreviation. Absent, the cross-game term is skipped entirely.
+ */
+export function attachCovariance(eng, players, { gameOf = null } = {}) {
+  const meta = new Map();
+  for (let i = 0; i < eng.n; i++) {
+    const p = players?.get?.(eng.ids[i]);
+    meta.set(i, { pos: p?.pos ?? "?", nfl: p?.nfl ?? "?" });
+  }
+  eng.corrMeta = meta;
+  eng.rhoOf = (i, j, w) => {
+    const a = meta.get(i), b = meta.get(j);
+    if (!a || !b) return 0;
+    if (a.nfl === b.nfl) return rho(a, b);
+    if (!gameOf || !isRealTeam(a.nfl) || !isRealTeam(b.nfl)) return 0;
+    const week = eng.weeks[w];
+    const ga = gameOf(a.nfl, week);
+    return ga != null && ga === gameOf(b.nfl, week) ? rho(a, b, { sameGame: true }) : 0;
+  };
+  eng.stacks = (ids, w = 0) => stacks(eng, ids, w);
+  // teamSigma memoises, and it memoised the uncorrelated answer.
+  eng._teamSigma = null;
+  return eng;
+}
+
+/**
+ * The correlated pairs among a roster's starters in one week, each listed once.
+ *
+ * `w` is an engine week index. Bench players are excluded: a stack you are not
+ * starting is not a stack, it is depth.
+ */
+export function stacks(eng, ids, w = 0) {
+  if (!eng.corrMeta) return [];
+  const mask = eng.starterMask(ids);
+  const on = [...mask].filter(([, m]) => m[w]).map(([i]) => i).sort((a, b) => a - b);
+  const out = [];
+  for (let x = 0; x < on.length; x++) {
+    for (let y = x + 1; y < on.length; y++) {
+      const r = eng.rhoOf(on[x], on[y], w);
+      if (!r) continue;
+      const a = eng.corrMeta.get(on[x]), b = eng.corrMeta.get(on[y]);
+      const fam = (p) => (posFamily(p.pos) === "QB" ? "QB" : p.pos);
+      out.push({ a: on[x], b: on[y], rho: r, nfl: a.nfl === b.nfl ? a.nfl : null,
+                 label: `${fam(a)}+${fam(b)}` });
+    }
+  }
+  return out;
+}
+
+/**
+ * A team's floor, median and ceiling for one week, as a normal.
+ *
+ * A single player's score is not normal - it is a mixture of a bust and a big game,
+ * bounded below at zero and long-tailed above - which is why `playerRange` uses his
+ * measured quantiles instead. A lineup total is a sum of nine such scores of
+ * comparable size and mostly modest correlation, and that is precisely the situation
+ * the central limit theorem describes: the sum is far closer to symmetric than any
+ * of its terms, so `mean +/- z * sigma_team` is the honest shape here even though it
+ * would be the wrong one one level down.
+ *
+ * `w` is an engine week index. `sigma_team` comes from `rosterSigma`, so it already
+ * carries both the availability weighting and the covariance. There is deliberately
+ * no `dist` argument: nothing here reads a per-player quantile.
+ */
+export function lineupRange(eng, ids, w) {
+  const mask = eng.starterMask(ids);
+  const av = eng.avail, NW = eng.NW;
+  let mu = 0;
+  for (const [i, m] of mask)
+    if (m[w]) mu += (av ? av[i * NW + w] : 1) * eng.proj[i * NW + w];
+  const sig = eng.rosterSigma(ids)?.[w] ?? 0;
+  return { floor: Math.max(0, mu - Z90 * sig), median: mu, ceiling: mu + Z90 * sig };
+}

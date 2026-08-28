@@ -424,12 +424,34 @@ export class Engine {
     // A man who may not play contributes his variance in proportion to his chance of
     // playing, so an OUT starter adds none - the spread has to follow availability
     // as well as roster composition, or a shelved team looks as swingy as a whole one.
+    //
+    // Teammates do not score independently, so when `rhoOf` has been attached (see
+    // distribution.js) the pairwise covariances are added too:
+    //   sigma^2 = sum(p_i sigma_i^2) + 2 sum_{i<j} rho_ij sqrt(p_i p_j) sigma_i sigma_j
+    // Each player's effective deviation that week is sqrt(p_i) * sigma_i, and the
+    // covariance term uses the same one, so availability and correlation compose
+    // without either having to know about the other. With no `rhoOf` attached this
+    // is character for character the arithmetic it has always been.
     const av = this.avail;
+    const sd = [];
     for (let w = 0; w < this.NW; w++) {
       let v = 0;
-      for (const [i, m] of mask)
-        if (m[w]) v += (av ? av[i * this.NW + w] : 1) * this.sigmaOf[i] ** 2;
-      out[w] = Math.sqrt(v);
+      sd.length = 0;
+      for (const [i, m] of mask) {
+        if (!m[w]) continue;
+        const p = av ? av[i * this.NW + w] : 1;
+        v += p * this.sigmaOf[i] ** 2;
+        if (this.rhoOf) sd.push(i, Math.sqrt(p) * this.sigmaOf[i]);
+      }
+      if (this.rhoOf) {
+        for (let x = 0; x < sd.length; x += 2) {
+          for (let y = x + 2; y < sd.length; y += 2) {
+            const r = this.rhoOf(sd[x], sd[y], w);
+            if (r) v += 2 * r * sd[x + 1] * sd[y + 1];
+          }
+        }
+      }
+      out[w] = Math.sqrt(Math.max(0, v));
     }
     return out;
   }

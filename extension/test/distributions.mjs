@@ -16,7 +16,7 @@ import { buildSlots, seatMask } from "../engine/lineup.js";
 import { Engine } from "../engine/search.js";
 import { measureVolatility } from "../engine/league.js";
 import { CORR, Z90, quantiles, buildDistribution, playerRange, cv, rho, isRealTeam,
-         posFamily } from "../engine/distribution.js";
+         posFamily, attachCovariance, stacks, lineupRange } from "../engine/distribution.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -222,6 +222,150 @@ const mkEngine = (model) =>
     ok(cv({ id: 404, pos: "WR" }, d) === d.byPosCv.get("WR"),
        "an unmeasured player falls back to his position's");
     ok(cv({ id: 404, pos: "HC" }, d) === 0, "and to zero when even that is missing");
+  }
+}
+
+/* ---- 3. stack covariance ---- */
+{
+  // Team A's roster is fixture indices 0..15 and its week-1 starters are
+  // 1 (TQB), 2 (RB), 3 (RB), 6 (WR), 7 (WR), 8 (WR), 10 (TE), 13 (D/ST), 14 (K).
+  // With a uniform sigma of 10 across nine starters the independent spread is
+  // sqrt(9 * 100) = 30 exactly, which makes every closed form below readable.
+  const T0 = F.teams[0];
+  const uniform = { bySigma: new Map(F.pos.map((_, i) => [i, 10])),
+                    byPos: new Map(), global: 10, measured: F.pos.length,
+                    residuals: new Map(), byPosResiduals: new Map() };
+  const build = (nflOf) => {
+    const m = mkModel(nflOf);
+    const e = mkEngine(m);
+    e.setVolatility(uniform);
+    return { e, m };
+  };
+  const WK0 = [1, 2, 3, 6, 7, 8, 10, 13, 14];
+
+  {
+    const { e } = build(() => "X");
+    const sm = e.starterMask(e.roster.get(T0));
+    ok([...sm].filter(([, mm]) => mm[0]).map(([i]) => i).join(",") === WK0.join(","),
+       "the fixture's week-1 starters are the nine this block reasons about");
+    near(e.rosterSigma(e.roster.get(T0))[0], 30, 1e-9,
+         "nine starters at sigma 10 are sqrt(900) with no correlation attached");
+  }
+
+  // The parity guard. Every fixture player is on "X", so attaching covariance to a
+  // fixture engine must change nothing at all.
+  {
+    const { e, m } = build(() => "X");
+    const before = Array.from(e.rosterSigma(e.roster.get(T0)));
+    attachCovariance(e, m.players);
+    const after = Array.from(e.rosterSigma(e.roster.get(T0)));
+    ok(before.every((x, i) => Math.abs(x - after[i]) < 1e-12),
+       "covariance attached to an all-\"X\" league is the independent value - the parity guard");
+    ok(e.stacks(e.roster.get(T0), 0).length === 0,
+       "and it reports no stacks");
+  }
+
+  // QB + WR on the same real team: sqrt(900 + 2 * 0.25 * 10 * 10) = sqrt(950).
+  {
+    const { e, m } = build((i) => (i === 1 || i === 6 ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    near(e.rosterSigma(e.roster.get(T0))[0], Math.sqrt(950), 1e-9,
+         "a QB-WR stack widens the spread by exactly the closed form");
+    const st = e.stacks(e.roster.get(T0), 0);
+    ok(st.length === 1, "and the pair is listed once, not twice");
+    ok(st[0].a === 1 && st[0].b === 6 && st[0].rho === CORR.qbToPass,
+       "with the lower index first and the table's own value");
+    ok(st[0].nfl === "KC" && st[0].label === "QB+WR", "and enough to render a flag");
+  }
+
+  // Two non-QB teammates: sqrt(900 + 2 * 0.10 * 100) = sqrt(920).
+  {
+    const { e, m } = build((i) => (i === 6 || i === 7 ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    near(e.rosterSigma(e.roster.get(T0))[0], Math.sqrt(920), 1e-9,
+         "two receivers on one team are the non-QB constant");
+  }
+
+  // Three receivers: three pairs, sqrt(900 + 6 * 0.10 * 100) = sqrt(960).
+  {
+    const { e, m } = build((i) => ([6, 7, 8].includes(i) ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    near(e.rosterSigma(e.roster.get(T0))[0], Math.sqrt(960), 1e-9,
+         "three teammates are three pairs, not two");
+    ok(e.stacks(e.roster.get(T0), 0).length === 3, "and three stack rows");
+  }
+
+  // The whole passing game: 3 QB-WR pairs at .25 and 3 WR-WR pairs at .10.
+  {
+    const { e, m } = build((i) => ([1, 6, 7, 8].includes(i) ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    near(e.rosterSigma(e.roster.get(T0))[0], Math.sqrt(1110), 1e-9,
+         "a QB with his three receivers is 900 + 150 + 60");
+  }
+
+  // A running back is uncorrelated with everybody, teammates included.
+  {
+    const { e, m } = build((i) => ([2, 3, 6].includes(i) ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    near(e.rosterSigma(e.roster.get(T0))[0], 30, 1e-9,
+         "two RBs and a WR on one team add nothing - the RB rule overrides");
+    ok(e.stacks(e.roster.get(T0), 0).length === 0, "and there is no stack to flag");
+  }
+
+  // A bench player on the same team is not a starter and must not count.
+  {
+    const { e, m } = build((i) => ([1, 0].includes(i) ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    near(e.rosterSigma(e.roster.get(T0))[0], 30, 1e-9,
+         "a benched teammate contributes no covariance - only starters do");
+  }
+
+  // Cross-game, through the injected lookup. Without gameOf the term is skipped.
+  {
+    const { e, m } = build((i) => (i === 1 ? "KC" : i === 6 ? "BUF" : "X"));
+    attachCovariance(e, m.players);
+    near(e.rosterSigma(e.roster.get(T0))[0], 30, 1e-9,
+         "with no schedule of pro games the cross-game term is skipped");
+
+    const { e: e2, m: m2 } = build((i) => (i === 1 ? "KC" : i === 6 ? "BUF" : "X"));
+    attachCovariance(e2, m2.players, {
+      gameOf: (nfl, week) => (week === 1 && (nfl === "KC" || nfl === "BUF") ? "KC@BUF" : null),
+    });
+    near(e2.rosterSigma(e2.roster.get(T0))[0], Math.sqrt(890), 1e-9,
+         "opponents in one game pull the spread in");
+    near(e2.rosterSigma(e2.roster.get(T0))[1], 30, 1e-9,
+         "and only in the week they actually meet");
+  }
+
+  // Availability composes: p = 0.5 on every starter halves the variance, correlated
+  // or not, because the covariance term uses the same sqrt(p) * sigma deviations.
+  {
+    const { e, m } = build((i) => (i === 1 || i === 6 ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    const plain = e.rosterSigma(e.roster.get(T0))[0];
+    const half = new Map(e.roster.get(T0).map((i) => {
+      const row = new Float64Array(NW).fill(1);
+      if (WK0.includes(i)) row[0] = 0.5;
+      return [e.ids[i], row];
+    }));
+    const { e: e3, m: m3 } = build((i) => (i === 1 || i === 6 ? "KC" : "X"));
+    e3.setAvailability(half);
+    attachCovariance(e3, m3.players);
+    near(e3.rosterSigma(e3.roster.get(T0))[0], plain / Math.SQRT2, 1e-9,
+         "p = 0.5 halves the variance of the correlated spread too");
+  }
+
+  // lineupRange puts the team total on a normal, which is the honest shape for a sum.
+  {
+    const { e, m } = build((i) => (i === 1 || i === 6 ? "KC" : "X"));
+    attachCovariance(e, m.players);
+    const r = lineupRange(e, e.roster.get(T0), 0);
+    const mu = e.baseline.get(T0)[0];
+    near(r.median, mu, 1e-9, "the centre of the team range is the lineup's mean");
+    near(r.ceiling - r.median, Z90 * Math.sqrt(950), 1e-9,
+         "and the ceiling is z90 sigmas above it, correlation included");
+    near(r.median - r.floor, Z90 * Math.sqrt(950), 1e-9, "symmetrically below");
+    ok(r.floor >= 0, "a team floor is never negative");
   }
 }
 
