@@ -595,8 +595,10 @@ const mkEngine = (model) =>
   const two = stackLine([{ a: 1, b: 6, rho: 0.25, nfl: "KC", label: "QB+WR" },
                          { a: 6, b: 7, rho: 0.10, nfl: "KC", label: "WR+WR" }],
                         { esc, name });
-  ok((two.match(/KC/g) ?? []).length >= 2 || two.includes("2"),
-     "two stacks are both reported");
+  ok((two.match(/<span class="tag warn"/g) ?? []).length === 2,
+     "two stacks render as two chips, not one dropped");
+  ok(two.includes("QB+WR") && two.includes("WR+WR"),
+     "and both distinct stack labels appear");
 
   // The season note replaces the old independence disclaimer.
   const note = stackNote(140, CORR);
@@ -617,7 +619,20 @@ const mkEngine = (model) =>
      "and the hints say which percentile they are");
 
   const bar = rangeBar({ floor: 88, median: 121, ceiling: 154 }, { lo: 80, hi: 170 }, esc);
-  ok(bar.includes("<") && bar.includes("%"), "the range bar is positioned HTML");
+  // lo 80, hi 170, span 90. floor 88 -> (8/90)*100 = 8.888...% -> "8.9"; ceiling 154 ->
+  // (74/90)*100 = 82.222...% -> "82.2", so width = (82.222... - 8.888...).toFixed(1) =
+  // "73.3"; median 121 -> (41/90)*100 = 45.555...% -> "45.6".
+  ok(bar.includes('<i class="rng-span" style="left:8.9%;width:73.3%">'),
+     "the span is scaled and positioned to the exact percentage");
+  ok(bar.includes('<i class="rng-med" style="left:45.6%">'),
+     "and the median tick is positioned to the exact percentage");
+
+  // A range that overhangs the scale on both sides must clamp rather than run negative
+  // or past 100: floor 50 is below lo 80 -> clamped to 0; ceiling 200 is above hi 170 ->
+  // clamped to 100; width = (100 - 0).toFixed(1) = "100.0".
+  const clamped = rangeBar({ floor: 50, median: 121, ceiling: 200 }, { lo: 80, hi: 170 }, esc);
+  ok(clamped.includes('<i class="rng-span" style="left:0.0%;width:100.0%">'),
+     "a range beyond the scale clamps to the full width instead of over/undershooting");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
