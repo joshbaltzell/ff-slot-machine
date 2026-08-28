@@ -14,6 +14,9 @@ import { VEGAS_BASE, refId, impliedTotals, pickOdds, buildWeek, loadVegas }
 import { atKickoff, loadWeather } from "../engine/sources/weather.js";
 import { ENV_K, envGroup, avgImplied, vegasFactor, weatherFactor, applyEnvironment }
   from "../engine/environment.js";
+import { buildSlots, seatMask } from "../engine/lineup.js";
+import { Engine } from "../engine/search.js";
+import { streamPlan } from "../engine/streaming.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -359,6 +362,93 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   const noWx = applyEnvironment(m3, vegas, new Map(), [4, 5]);
   ok(m3.players.get(3).proj[4] === 8 && noWx.byPlayer.get(3).weather === 1,
      "a dead forecast still lets the lines through");
+}
+
+/* ---- 5. streaming planner ---- */
+{
+  const { slots, starters } = buildSlots(F.lineupSlotCounts);
+  const base = {
+    weeks: F.weeks,
+    settings: {
+      regularSeasonWeeks: F.weeks.filter((w) => w <= 14),
+      playoffWeeks: [15, 16, 17],
+      playoffRoundWeeks: [[15], [16], [17]],
+      playoffTeams: 6,
+      playoffReseed: true,
+      lineupSlotCounts: F.lineupSlotCounts,
+      currentWeek: 5,
+    },
+    players: new Map(F.pos.map((pos, i) => [i, {
+      id: i, name: `p${i}`, pos, nfl: "X", eligibleSlots: F.eligibleSlots[pos],
+      bye: F.weeks.find((w) => !(F.proj[i][F.weeks.indexOf(w)] > 0)) ?? 0,
+      proj: Object.fromEntries(F.weeks.map((w, k) => [w, F.proj[i][k]])),
+    }])),
+    teams: new Map(F.teams.map((name, ti) =>
+      [ti, { id: ti, name, roster: new Set(F.rosters[name]) }])),
+  };
+
+  // Two free-agent kickers with hand-made weeks. The fixture's best rostered kicker
+  // is worth under 30 across any three weeks, so these two own the window: one is
+  // steady, the other is better but blank in the middle of it.
+  const FA_STEADY = 1000, FA_SPIKY = 1001;
+  const mkFa = (id, byeWeek, pts) => [id, {
+    id, name: `fa${id}`, pos: "K", nfl: "X", eligibleSlots: F.eligibleSlots.K, bye: byeWeek,
+    proj: Object.fromEntries(F.weeks.map((w) => [w, w === byeWeek ? 0 : pts])),
+  }];
+  base.players.set(...mkFa(FA_STEADY, 0, 30));   // 30 every week: 90 across the window
+  base.players.set(...mkFa(FA_SPIKY, 6, 60));    // 60 a week but blank in week 6: 120
+
+  const eng2 = new Engine(base, { starters },
+    new Map([...base.players].map(([id, p]) => [id, seatMask(p.eligibleSlots, slots)])));
+  const iSteady = eng2.index.get(FA_STEADY), iSpiky = eng2.index.get(FA_SPIKY);
+
+  const plan = streamPlan(eng2, base, F.teams[0], { weeks: 3 });
+  ok(plan.weeks.join(",") === "5,6,7", `the window is the next three weeks (${plan.weeks})`);
+  ok(plan.groups.some((g) => g.slot === 17), "the kicker slot is planned");
+  ok(plan.groups.some((g) => g.slot === 16), "so is D/ST");
+  ok(plan.groups.some((g) => g.slot === 1), "so is TQB, the slot this league actually starts");
+  ok(plan.groups.some((g) => g.slot === 6), "so is TE");
+  ok(!plan.groups.some((g) => g.slot === 0),
+     "a streamable slot the league does not start is not planned");
+
+  const k = plan.groups.find((g) => g.slot === 17);
+  ok(k.label === "K" && k.count === 1, "the group names its slot and how many start");
+  ok(k.rows[0].i === iSpiky, "the strongest candidate over the window leads");
+  ok(Math.abs(k.rows[0].total - 120) < 1e-9, `the window total skips the bye (${k.rows[0].total})`);
+  ok(k.rows[0].pts.length === 3, "one number per week in the window");
+  ok(k.rows[0].owner === "FA", "a free agent says so");
+  ok(k.rows.some((r) => r.owner === "me"), "so do the players already on the roster");
+  ok(k.rows.every((r) => r.pos === "K"), "only kickers are candidates for the kicker slot");
+  ok(k.rows.find((r) => r.i === iSpiky).bye === 6, "the bye week is reported");
+
+  ok(k.hold.i === iSpiky && Math.abs(k.holdTotal - 120) < 1e-9,
+     "the best hold is the best single window total");
+  ok(k.rows.filter((r) => r.hold).length === 1 && k.rows[0].hold === true,
+     "exactly one row is flagged as the hold");
+  ok(Math.abs(k.seqTotal - 150) < 1e-9,
+     `streaming beats holding across a bye (${k.seqTotal} vs ${k.holdTotal})`);
+  ok(k.sequence.map((s) => s.i).join(",") === [iSpiky, iSteady, iSpiky].join(","),
+     "the sequence swaps out for the bye week and back");
+  ok(k.sequence.map((s) => s.w).join(",") === "5,6,7", "the sequence names its weeks");
+  ok(k.sequence[0].name === `fa${FA_SPIKY}`, "the sequence names its players");
+  ok(k.adds === 2, `two roster moves inside the window (${k.adds})`);
+
+  // A slot where one player is best every week needs no moves at all.
+  const dst = plan.groups.find((g) => g.slot === 16);
+  ok(dst.seqTotal >= dst.holdTotal - 1e-9, "streaming is never worse than holding");
+  ok(dst.adds >= 0 && dst.adds <= 2, "a three-week window allows at most two changes");
+
+  const long = streamPlan(eng2, base, F.teams[0], { weeks: 99 });
+  ok(long.weeks.length === F.weeks.filter((w) => w >= 5).length,
+     "the window never runs past the end of the season");
+  const over = streamPlan(eng2,
+    { ...base, settings: { ...base.settings, currentWeek: 99 } }, F.teams[0], { weeks: 3 });
+  ok(over.weeks.length === 0 && over.groups.length === 0, "no weeks left, no plan");
+
+  const noSlots = streamPlan(eng2,
+    { ...base, settings: { ...base.settings, lineupSlotCounts: { 2: 2, 4: 2 } } },
+    F.teams[0], { weeks: 3 });
+  ok(noSlots.groups.length === 0, "a league with no streamable slots gets no groups");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
