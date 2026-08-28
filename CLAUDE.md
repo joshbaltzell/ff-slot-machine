@@ -29,16 +29,27 @@ extension/
   background.js      opens the page; nothing else lives here
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
+  panel/
+    projections.js   source orchestration, the ± band, the Calibration section
   engine/
-    sources/         one module per external feed (cache.js, sleeper.js, ...)
+    sources/
+      cache.js       cached fetch for every non-ESPN feed
+      csv.js         CSV reader (quoted fields)
+      sleeper.js     player crosswalk, injuries, trending
+      sleeperproj.js Sleeper/RotoWire weekly projections
+      fantasypros.js FantasyPros ECR via DynastyProcess
     league.js        ESPN API -> normalized model; settings; volatility
     lineup.js        optimal lineup for any slot configuration
     search.js        swap table, shapes, N-sided trades, three-way, free agents
     winprob.js       normal CDF, P(win), per-week leverage
     calibrate.js     positional shrinkage of ESPN projections
+    aggregate.js     average outside sources into ESPN's scoring
+    calibration.js   the per-league projection-error log and its fitted slopes
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
   test/parity.mjs    605 assertions against a frozen league
+  test/sources.mjs   the source layer, offline
+  test/projections.mjs  aggregate, calibration log and the panel module, offline
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -106,6 +117,38 @@ is unaffected.
 actual weekly scores in the same payload as projections; the residual is real
 league-scored volatility. Team sigma is the root of the summed variance of that
 week's starters, so it follows roster composition.
+
+**Raw external points are never averaged with ESPN's.** ESPN's projections are scored
+under *this league's* rules — its reception value, its bonuses, its defensive scoring.
+Sleeper's `pts_half_ppr` and FantasyPros' `r2p_pts` are scored under theirs. Averaging
+them as points would silently re-score the league by whatever the rule sets disagree
+about. So `aggregate.js` converts each source to a dimensionless fraction of its own
+positional mean for that week, averages the fractions, and multiplies back by *ESPN's*
+positional mean. Only the shape of a source's opinion crosses over; the unit stays
+ESPN's. A source published at twice the scale is therefore the same source, and that
+invariant is what makes the average legitimate — it is worth a test if you touch this.
+A source covering only part of a position is compared against ESPN on the shared set,
+so covering a skewed subset cannot shift that subset's level.
+
+**Aggregate before shrinkage, and log what was shown.** `aggregateProjections` runs
+before `shrinkProjections` in `start()`: shrinkage is a property of the number the
+engine is about to use, so it must be applied to the aggregate, not to ESPN's raw
+number before averaging. The calibration log's `espn` column is snapshotted *before*
+the aggregate mutates `p.proj` — otherwise the log records the aggregate twice and the
+fitted slope measures nothing.
+
+**The calibration log is the only league-specific model, and it lives in
+`chrome.storage.local`.** `CALIBRATION_K` is a literature constant from other people's
+leagues; the slope of actual on projected depends on the scoring rules, so this league
+has its own. Only something running here each week can measure it — it needs the
+projection as it stood before the week alongside the points actually awarded. Each run
+writes one row per player to `ffsm.calib.{leagueId}.{seasonId}`; each later run joins
+ESPN's own actuals (`statSourceId: 0`, matched on `seasonId`) and refits. Six weeks of
+actuals and twenty pairs per position before a fitted slope is trusted, clamped to
+[0.3, 1.2]. It is never sent anywhere, and there is nowhere to send it. Nothing prunes
+these keys, either: a user in several leagues across several seasons keeps one key per
+league-season forever. The rows are small — one per rostered player per week — so this
+is housekeeping debt rather than a quota risk, but nothing cleans it up today.
 
 ## Testing
 
