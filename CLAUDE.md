@@ -29,7 +29,6 @@ extension/
   background.js      opens the page; nothing else lives here
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
-  panel/
   engine/
     league.js        ESPN API -> normalized model; settings; volatility; injury status
     market.js        FantasyCalc fairness, the pitch sentence, buy low / sell high
