@@ -29,9 +29,12 @@ extension/
   background.js      opens the page; nothing else lives here
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
+  panel/
+    market.js        every string of market HTML; degrades to a dash
   engine/
-    sources/         one module per external feed (cache.js, sleeper.js, ...)
+    sources/         one module per external feed (cache.js, sleeper.js, fantasycalc.js)
     league.js        ESPN API -> normalized model; settings; volatility
+    market.js        FantasyCalc fairness, the pitch sentence, buy low / sell high
     lineup.js        optimal lineup for any slot configuration
     search.js        swap table, shapes, N-sided trades, three-way, free agents
     winprob.js       normal CDF, P(win), per-week leverage
@@ -39,6 +42,7 @@ extension/
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
   test/parity.mjs    605 assertions against a frozen league
+  test/market.mjs    the market phase, offline (fetch and storage injected)
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -63,6 +67,19 @@ valid for nested eligibility and was measured wrong 8% of the time when `RB/WR` 
 
 **Nothing in the search is approximated.** Three-way is exhaustive via the swap table in `search.js`.
 A marginal-value pruning heuristic was measured at 57% recall and rejected.
+
+**Market values are display and ranking only.** FantasyCalc's numbers come from real
+completed trades, which makes them a good model of what the manager on the other side
+believes — and a bad model of what a player is worth to a specific lineup, which is the
+only thing this engine measures. They are never read by `score`, `sideMetrics`, any
+search, `enrich` or `projectSeason`. They fill one column, one filter, one line of the
+pitch and one section. The gap between the two rankings is the product, so collapsing
+them would delete it.
+
+**A dead feed costs a dash, not the run.** Everything outside ESPN goes through
+`engine/sources/cache.js` and is wrapped by a caller that returns null rather than
+throwing (`marketOrNull`). A source being down must never cost a user their trade
+search; `start()` has to finish.
 
 **Time windows stay separate.** `gain` / `reg` / `playoff` / `bye` / `full` disagree
 with each other, and that is the point: a trade can be positive on the season
