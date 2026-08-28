@@ -398,6 +398,49 @@ const eng = mkEng(mkModel());          // all ten teams; index === id here
   }
 }
 
+/* ---- 9. the panel strings ---- */
+{
+  const { ROSTER_HINT, moveNote, moveLines, dropSection } =
+    await import("../panel/roster.js");
+  const D = F.teams[3], J = F.teams[9];
+  const sub = mkEng(mkModel([D, J]));
+  const model = mkModel([D, J]);
+  const res = await sub.findTwoForOne(0.05);
+  const t = res[0];
+  const nm = (i) => model.players.get(sub.ids[i]).name;
+
+  ok(typeof ROSTER_HINT.cost === "string" && ROSTER_HINT.cost.length > 40,
+     "every new column has a hint written for a human");
+  ok(["bestadd", "addgain", "net", "shape21"].every((k) => typeof ROSTER_HINT[k] === "string"),
+     "all five hints exist");
+
+  const addNote = moveNote(t.sides[0], nm);
+  const cutNote = moveNote(t.sides[1], nm);
+  ok(addNote.includes(nm(t.sides[0].backfill)) && addNote.includes("waivers"),
+     "the consolidating side's note names the free agent and says where he comes from");
+  ok(cutNote.includes(nm(t.sides[1].drop)) && cutNote.includes("drop"),
+     "the other side's note names the drop");
+  ok(moveNote({ backfill: null, drop: null }, nm) === "",
+     "a side with no waiver move renders nothing at all");
+  ok(!moveNote({ backfill: 0, drop: null }, () => '<img src=x onerror=1>').includes("<img"),
+     "names are escaped");
+
+  const ex = sub.explain(t);
+  const lines = moveLines(ex[t.sides[0].team], nm) + moveLines(ex[t.sides[1].team], nm);
+  ok(lines.includes(nm(t.sides[0].backfill)) && lines.includes(nm(t.sides[1].drop)),
+     "the detail lines name both moves");
+  ok(/\d/.test(lines), "and give their start counts");
+  ok(moveLines({}, nm) === "", "a shape with no waiver move contributes no lines");
+
+  const html = dropSection(sub, model, { team: D, grid: (id, cols, rows, o) =>
+    `<table id="${id}">${rows.length ? rows.map(o.row).join("") : o.empty}</table>` });
+  ok(html.includes("Drop candidates"), "the section is titled");
+  ok(html.includes('id="dropGrid"'), "and carries a sortable grid");
+  ok(sub.roster.get(D).every((i) => html.includes(nm(i))), "every rostered player appears");
+  ok(dropSection(sub, model, { team: D, grid: () => "" }).length > 0,
+     "an empty grid still renders the section");
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("ROSTER OK");
