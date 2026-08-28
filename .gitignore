@@ -5,3 +5,4 @@ trade_report.xlsx
 ~$*.xlsx
 __pycache__/
 .pytest_cache/
+.claude/worktrees/
