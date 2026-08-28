@@ -39,18 +39,23 @@ extension/
     calibrate.js     positional shrinkage of ESPN projections
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
+    usage.js         snap/target share, WOPR, TD over expectation, points over usage
+    faab.js          suggested waiver bids
     sources/
       cache.js       TTL-cached fetch for external feeds, storage-injectable
       sleeper.js     Sleeper players, trending, NFL state
+      sleeperstats.js Sleeper's weekly box score, one request per played week
       fantasycalc.js FantasyCalc crowd values keyed on espnId
   panel/
     market.js        every string of market HTML; degrades to a dash
     availability.js  status codes, cells, badges, log lines, the season note
+    usage.js         the assets, breakout and waiver-bid HTML
   test/
     parity.mjs       605 assertions against a frozen league — the engine contract
     availability.mjs availability, the horizon, record-seeded seasons, UI strings
     market.mjs       the market phase, offline (fetch and storage injected)
     sources.mjs      cache semantics and the Sleeper client, offline
+    usage.mjs        usage, breakouts, the crowd split, FAAB bids and the panel HTML
     run-all.mjs      runs every *.mjs in the directory
 ```
 
@@ -80,6 +85,15 @@ measured at 57% recall and rejected. The exception is availability: above six
 uncertain players in a week, `weekly` samples 64 fixed-seed outcomes instead of
 enumerating all `2^k`. It is deterministic, it is confined to the current week, and
 it is the only estimate in the search — keep it the only one.
+
+**Usage signals and FAAB bids are evidence, not inputs.** Snap and target shares, WOPR,
+touchdowns over expectation, the points-on-usage residual and the suggested bid are
+heuristics built from a third-party weekly box score. They rank their own grids and
+they are displayed beside the engine's numbers so a claim can be argued with. Nothing
+in `search.js`, `lineup.js`, `season.js` or `odds.js` reads any of them, and nothing
+should: the moment a heuristic enters the solve, "nothing in the search is
+approximated" stops being true. The residual is `null` — never 0 — when a position has
+too few players to fit, because 0 already means "exactly on the fit".
 
 **Market values are display and ranking only.** FantasyCalc's numbers come from real
 completed trades, which makes them a good model of what the manager on the other side
