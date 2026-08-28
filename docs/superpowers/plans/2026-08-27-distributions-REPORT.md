@@ -2,8 +2,8 @@
 
 **Branch:** `phase8-distributions`
 **Worktree:** `.claude/worktrees/agent-a926bf499759a2a83`
-**Base (merge-base with `main`):** `6036dd5` (after phase2-availability merged, before
-phase3/phase4/phase5/phase7)
+**Base (merge-base with `main`):** `6036dd5` (after phase2-availability and phase3-market
+were already merged; before phase4-roster, phase5-projections and phase7-environment)
 **Head:** `0125e5c` — the last code commit; `bc28110` (CLAUDE.md) and this report follow it.
 **Plan:** `docs/superpowers/plans/2026-08-27-distributions.md`
 **Spec (binding):** `docs/superpowers/specs/2026-08-27-distributions-design.md`
@@ -21,14 +21,18 @@ roster's spread now accounts for teammates scoring together, and Sunday morning 
 own lineup — the one most likely to beat this week's opponent, not the one with the highest
 mean.
 
+Lines below are `git diff --numstat 6036dd5..HEAD` (the whole branch against its
+merge-base, so `CLAUDE.md` — committed after the last code commit — is included; a new
+file's count is its insertion total, since it has no deletions).
+
 | File | What it is | Lines |
 |---|---|---|
 | `extension/engine/distribution.js` | `CORR`, `rho`, `quantiles`, `buildDistribution`, `playerRange`, `cv`, `attachCovariance`, `stacks`, `lineupRange`. The whole measured-shape and correlation model. | 281 |
 | `extension/engine/gameplan.js` | `lineupStats`, `feasible`, `gameplan` — the P(win)-optimal lineup by local search. | 177 |
-| `extension/engine/league.js` | `measureVolatility` now also returns `residuals` (every qualifying player) and `byPosResiduals` (players clearing `minWeeks` only). | +17/−2 |
-| `extension/engine/search.js` | `rosterSigma` gains the `2 Σ ρ σ σ` covariance term, active only when `eng.rhoOf` is attached. No other method touched. | +28/−3 |
+| `extension/engine/league.js` | `measureVolatility` now also returns `residuals` (every qualifying player) and `byPosResiduals` (players clearing `minWeeks` only). | +15/−2 |
+| `extension/engine/search.js` | `rosterSigma` gains the `2 Σ ρ σ σ` covariance term, active only when `eng.rhoOf` is attached. No other method touched. | +25/−3 |
 | `extension/panel/distributions.js` | Every string for floors, ceilings, stacks and the This-week section; the range bar; `SWAP_MIN`. | 138 |
-| `extension/panel.js` | Imports, volatility-step wiring (`attachCovariance`, `buildDistribution`), the This-week section above the trade grid, stack chips in trade detail, Floor/Ceiling roster-grid columns, the season note rewritten to name the measured constants. | +45/−4 |
+| `extension/panel.js` | Imports, volatility-step wiring (`attachCovariance`, `buildDistribution`), the This-week section above the trade grid, stack chips in trade detail, Floor/Ceiling roster-grid columns, the season note rewritten to name the measured constants. | +41/−4 |
 | `extension/panel.css` | Styles for the range bar and the This-week section. | +19 |
 | `extension/test/distributions.mjs` | 131 assertions for quantiles, correlation, stacks, the gameplan local search and every panel string. | 640 |
 | `CLAUDE.md` | Architecture map plus two load-bearing paragraphs (volatility's residuals, the `CORR` table, the gameplan heuristic). | +40/−9 |
@@ -104,8 +108,10 @@ byte-identical, so nothing this phase built on has moved under it.
 
 ## Rulings
 
-Twenty-one decisions were taken without asking, in the order they were made. The eight
-pre-flight rulings first, then the ones made during each task.
+Twenty decisions were taken without asking during Tasks 1–7, in the order they were made.
+The eight pre-flight rulings first, then the ones made during each task. (The review that
+produced this report's own fix round added further rulings to the ledger afterward; those
+concern the report's accuracy, not the phase's build, and are not counted here.)
 
 **Pre-flight 1. `Engine.stacks(ids)` is attached from `distribution.js`, not added to the
 `Engine` class.** The parallel-build rules give this phase exactly `rosterSigma`/`teamSigma`
@@ -353,9 +359,12 @@ A reviewer should click, in this order:
 
 ## Merge notes
 
-The branch is unmerged and handed off, based on `6036dd5` — before phase3-market,
-phase4-roster, phase5-projections and phase7-environment were merged into `main`. It owns,
-narrowly: `measureVolatility` in `league.js`, one method body (`rosterSigma`) in
+The branch is unmerged and handed off, based on `6036dd5` — after phase2-availability and
+phase3-market were already merged into `main`, and before phase4-roster,
+phase5-projections and phase7-environment were (`git merge-base --is-ancestor 18dad62
+6036dd5` succeeds; the same check for phase4-roster's, phase5-projections's and
+phase7-environment's merge commits fails). It owns, narrowly: `measureVolatility` in
+`league.js`, one method body (`rosterSigma`) in
 `search.js`, and two new files with no history to conflict over
 (`engine/distribution.js`, `engine/gameplan.js`, `panel/distributions.js`,
 `test/distributions.mjs`).
