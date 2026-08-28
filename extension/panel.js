@@ -25,6 +25,9 @@ import { environmentStep, envColumn, envCell, envChips, bindEnvChips, streamingS
 import { ROSTER_HINT, moveNote, moveLines, dropSection } from "./panel/roster.js";
 import { usageOrNull, usageViewStored, assetsSection, breakoutSection,
          waiverView, faCrowdCols, faCrowdCells } from "./panel/usage.js";
+import { buildDistribution, attachCovariance, playerRange } from "./engine/distribution.js";
+import { gameplan } from "./engine/gameplan.js";
+import { DIST_HINT, weekSection, stackLine, stackNote } from "./panel/distributions.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -438,6 +441,9 @@ async function start(ref) {
     const vol = measureVolatility([...model.players.values()], ref.seasonId - 1);
     if (vol.measured >= 20) {
       eng.setVolatility(vol);
+      // Teammates' scores move together. Attaching this clears the sigma cache, so
+      // it has to follow setVolatility and precede anything that reads teamSigma.
+      attachCovariance(eng, model.players);
       const posText = [...vol.byPos].sort()
         .map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", ");
       say(`volatility measured on ${vol.measured} players: ${posText}`, "ok");
@@ -450,6 +456,8 @@ async function start(ref) {
       Steps.set("vol", "warn", "assumed ±25");
     }
     window.__vol = vol;
+    // Measured floors and ceilings, from the residuals measureVolatility keeps.
+    window.__dist = buildDistribution(vol, model.players);
     // FantasyCalc's crowd values: what the manager on the other side is thinking.
     // Display and ranking only - nothing below this line reads them, and a dead feed
     // costs a dash in one column, not the search.
@@ -697,6 +705,19 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   };
   const bandMeanOf = (id) => bandMean(window.__band, id);
 
+  // Floors, ceilings and the gameplan all need a measured spread - gate every one of
+  // them on eng.sigmaOf, which setVolatility only assigns once vol.measured >= 20.
+  // Without that gate a league with no prior-season history still got a fabricated
+  // +-7.69 band from the empty-sample fallback in buildDistribution.
+  const DIST = eng.sigmaOf ? (window.__dist ?? null) : null;
+  // This week's game. The horizon starts at the current week, so index 0 is it -
+  // unless the season is over, in which case restrictToRemaining keeps every week and
+  // currentWeek exceeds all of them, and indexOf returns -1. Clamping that to 0 used
+  // to silently show week 1's game as "this week"; instead, no index means no plan.
+  const curIdx = W.indexOf(model.settings.currentWeek ?? W[0]);
+  const plan = DIST && eng.sigmaOf && curIdx >= 0 ? gameplan(eng, myTeam, curIdx) : null;
+  const thisWeek = weekSection(plan, { esc, name: nm, myTeam });
+
   /* ---------- filter state ---------- */
   const viewing = window.__view ?? myTeam;
   const mineOnly = viewing !== "__all__";
@@ -762,6 +783,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           <span>Δ wins <b class="${cls(sd.win ?? 0)}">${(sd.win >= 0 ? "+" : "−") + Math.abs(sd.win ?? 0).toFixed(2)}</b></span>
           ${marketDetail(sd, mkt)}
         </div>
+        ${eng.stacks ? stackLine(
+          eng.stacks(eng.swap(eng.roster.get(sd.team), sd.sent, sd.received), 0),
+          { esc, name: nm }) : ""}
         <ul>${li.join("")}</ul>${deltaBars(sd.weekly, W)}
         ${sd.winWeekly ? `<div class="delta-cap">Win probability, week by week
           <b class="${cls(sd.win)}">${(sd.win >= 0 ? "+" : "−") + Math.abs(sd.win).toFixed(2)} wins</b></div>
@@ -934,8 +958,23 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     },
   });
 
+  // Floor and ceiling per game, averaged over the weeks he is projected to play.
+  // A bye is not a bad week, it is no week, so it is excluded from both.
+  const rangeOf = (p) => {
+    const f = [], c = [];
+    for (const w of W) {
+      if (!(p.proj?.[w] > 0)) continue;
+      const r = playerRange(p, w, DIST);
+      f.push(r.floor); c.push(r.ceiling);
+    }
+    return f.length
+      ? { floor: f.reduce((a, b) => a + b, 0) / f.length,
+          ceiling: c.reduce((a, b) => a + b, 0) / c.length }
+      : { floor: 0, ceiling: 0 };
+  };
   const rosterRows = eng.roster.get(mineOnly ? viewing : myTeam).map((i) => ({
     i, p: model.players.get(eng.ids[i]), rate: rates.get(i) ?? 0, avg: avgProj(i),
+    rng: DIST ? rangeOf(model.players.get(eng.ids[i])) : null,
   }));
   const rosterGrid = grid("rosterGrid", [
     { key: "name", label: "Player", value: (r) => r.p.name },
@@ -946,6 +985,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "bye", label: "Bye", num: true, value: (r) => r.p.bye || 99, hint: HINT.bye },
     { key: "avg", label: "Proj/wk", num: true, value: (r) => r.avg, hint: HINT.projwk },
     { key: "band", label: "±", num: true, value: (r) => bandMeanOf(r.p.id), hint: HINT.band },
+    { key: "floor", label: "Floor", num: true,
+      value: (r) => r.rng?.floor ?? 0, hint: DIST_HINT.floor },
+    { key: "ceil", label: "Ceiling", num: true,
+      value: (r) => r.rng?.ceiling ?? 0, hint: DIST_HINT.ceiling },
     { key: "rate", label: "Starts", num: true, value: (r) => r.rate, hint: HINT.starts },
     envColumn(window.__env),
     { key: "bar", label: "", sortable: false },
@@ -959,6 +1002,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td class="num" style="color:var(--faint)">${r.p.bye || "—"}</td>
       <td class="num">${r.avg.toFixed(1)}</td>
       <td class="num" style="color:var(--faint)">${bd > 0.05 ? bd.toFixed(1) : "—"}</td>
+      <td class="num" style="color:var(--dim)">${r.rng ? r.rng.floor.toFixed(1) : "—"}</td>
+      <td class="num" style="color:var(--dim)">${r.rng ? r.rng.ceiling.toFixed(1) : "—"}</td>
       <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
         (r.rate * 100).toFixed(0)}%</td>
       ${envCell(window.__env, r.p)}
@@ -1139,6 +1184,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   </div></div></header>
 
   <div class="wrap">
+    ${thisWeek}
     <section>
       <h2 class="secttl">${mineOnly ? "Offers for you" : "Every trade in the league"}</h2>
       <p class="sectsub">${shown.length} of ${trades.length} offers. Every side has to
@@ -1245,10 +1291,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
               artifact of the order the teams came back in.</div>`
           : seasonGrid}
         ${leverageStrip}
-        <div class="note"><b>What this is not.</b> ${seasonNote(AV)} ${measured >= 20
-            ? `Swing is measured per player and assumes independence — a stack of players
-               from one NFL team is swingier than shown.`
-            : `±25 is assumed and is the biggest lever on every number here.`}
+        <div class="note"><b>What this is not.</b> ${seasonNote(AV)} ${stackNote(measured)}
           Odds are to the nearest tenth; the simulation's own error is about
           ±${(100 * (proj[0]?.mcError ?? 0)).toFixed(2)} points.</div>
       </div>

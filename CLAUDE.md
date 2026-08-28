@@ -42,6 +42,8 @@ extension/
     calibration.js   the per-league projection-error log and its fitted slopes
     environment.js   Vegas + weather -> a factor on this week's and next week's proj
     streaming.js     three-week hold-or-churn plan for K, D/ST, QB and TE slots
+    distribution.js  measured floor/median/ceiling; teammate correlation; stacks
+    gameplan.js      the week's P(win)-optimal lineup, by local search
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
     usage.js         snap/target share, WOPR, TD over expectation, points over usage
@@ -64,6 +66,7 @@ extension/
     environment.js   the environment column, chips and streaming section
     roster.js        2-for-1 waiver notes and the drop-candidate table
     usage.js         the assets, breakout and waiver-bid HTML
+    distributions.js floor/ceiling/stack strings; the range bar; the swap threshold
   test/
     parity.mjs       605 assertions against a frozen league — the engine contract
     availability.mjs availability, the horizon, record-seeded seasons, UI strings
@@ -73,6 +76,7 @@ extension/
     environment.mjs  151 assertions for lines, weather, factors and streaming
     roster.mjs       replacement level, the 2-for-1 shape, drop ranking
     usage.mjs        usage, breakouts, the crowd split, FAAB bids and the panel HTML
+    distributions.mjs distributions, stacks and the weekly plan, offline
     run-all.mjs      runs every *.mjs in the directory
 ```
 
@@ -191,7 +195,12 @@ sigma by 4.0%, four by 8.6%, a pathological six at `p = 0.5` by 21.7%. At a ten-
 projected edge the worst of that moves a week's win probability by under 1.5 points and
 an ordinary case by well under 0.5, and both of `odds.js`'s paired worlds carry the same
 bias, so the reported delta absorbs most of what is left. It is a known limitation of
-the spread, not of the projection.
+the spread, not of the projection. The covariance term added on top of this weights each
+pair by `sqrt(p_i) sqrt(p_j)`, where the same `E[Var | availability]` decomposition would
+call for `p_i p_j` - a 41% overweight on a pair both at `p = 0.71`. That moves team sigma
+by well under 1% for a realistic case, and for the positive correlations this build
+actually applies it pushes sigma up, partly offsetting the understatement above rather
+than adding to it.
 
 **The horizon is the weeks that remain.** `restrictToRemaining` trims `model.weeks`
 and the settings week arrays to `w >= settings.currentWeek` before the engine is
@@ -266,8 +275,41 @@ since no feed says whether the roof was shut and closing it is the common case.
 
 **Volatility is measured, not assumed.** `statSourceId: 0` gives the prior season's
 actual weekly scores in the same payload as projections; the residual is real
-league-scored volatility. Team sigma is the root of the summed variance of that
-week's starters, so it follows roster composition.
+league-scored volatility. `measureVolatility` keeps those residuals, not only their
+standard deviation, because a sigma is symmetric and a fantasy week is not: the
+10th/50th/90th percentiles in `distribution.js` are the real shape, shrunk toward the
+position's by `n/(n+10)`. Team sigma is the root of the summed variance of that week's
+starters, so it follows roster composition.
+
+**The correlation constants live in one table, and only real pro teams get them.**
+`CORR` in `distribution.js` is the whole model: `0.25` for a quarterback with his own
+receiver or tight end, `0.10` for any other pair of teammates, `0` for a running back
+with a teammate, `-0.05` for opponents in the same NFL game. `rho`'s cross-team check
+runs before the running-back rule, so that `0` applies only within one team: a running
+back facing an opponent in the same game would return `-0.05`, not `0`, if the
+same-game term were ever wired up. It is not wired up today — `panel.js` calls
+`attachCovariance` with no `gameOf`, so `rhoOf` never learns which pro teams share a
+game and the `-0.05` figure is defined but inert in the shipped build; wiring a
+schedule lookup is future work, not this phase's. `rosterSigma` adds `2 Σ ρ σ σ` over
+the week's starters, weighted by the same `sqrt(p)` availability factor the variance
+term uses. It applies **only when both players have a real pro team** — never `"X"`,
+`"?"` or `"FA"`. That guard is load-bearing twice over: the frozen fixture puts every
+player on `"X"`, so parity's season invariants stay true, and a free agent with no
+team never invents a stack. The correlation reaches `search.js` as an attached
+`eng.rhoOf`, not an import, so `rosterSigma` behaves exactly as it always did on an
+engine nobody attached to.
+
+**The weekly lineup search is a local-search heuristic — and that is fine here.**
+`gameplan.js` starts from the mean-optimal lineup and takes the best single
+starter-for-bench swap that raises `P(win) = Φ((μ−μₒ)/√(σ²+σₒ²))` until none does.
+Every step is a strict improvement, so it terminates, but it is not exhaustive and it
+does not claim to be. This does not contradict "nothing in the search is
+approximated": the trade search's answer is a recommendation about an irreversible
+decision over a space of a few million rosters, while the lineup space is
+`C(roster, starters)` with a matroid feasibility test on each candidate, the starting
+point is already the best-points answer, and a manager eyeballs the result before
+setting it. The panel says it is a heuristic on screen. Do not quietly upgrade the
+claim, and do not downgrade the trade search to match.
 
 **Raw external points are never averaged with ESPN's.** ESPN's projections are scored
 under *this league's* rules — its reception value, its bonuses, its defensive scoring.
