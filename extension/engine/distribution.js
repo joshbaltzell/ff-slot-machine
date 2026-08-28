@@ -57,6 +57,11 @@ export function posFamily(pos) {
 /**
  * Correlation between two players' weekly scores.
  *
+ * Precedence: the cross-team check runs before the running-back rule, so two
+ * players on different teams are resolved by `sameGame` alone - a running back
+ * facing an opponent in the same game returns `CORR.sameGame`, not `CORR.rb`. The
+ * `0` running-back figure applies only to a running back's own teammates.
+ *
  * @param a {{pos: string, nfl: string}}
  * @param b {{pos: string, nfl: string}}
  * @param opts.sameGame true when the two pro teams meet each other that week

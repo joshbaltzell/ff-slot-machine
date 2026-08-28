@@ -154,8 +154,11 @@ the opponent is priced from `eng.baseline`/`eng.teamSigma`, as the spec directs.
 E[optimal lineup] under substitution, so `pWinMean` may differ slightly from
 `eng.weekWins` for the same matchup and week. Within one plan every candidate lineup is
 priced identically, which is what makes the swap deltas comparable to each other.
-*Cost if wrong:* the This-week percentage differs by a fraction of a point from the
-leverage strip's for the same week.
+*Cost if wrong:* the This-week percentage differs from the leverage strip's for the same
+week and opponent - measured at 0.00pp with no availability attached, 1.74pp with one
+Questionable starter, 4.72pp with two, and 3.78-10.16pp league-wide with a realistic
+spread, always pessimistic relative to the leverage strip. The whole-branch review ruled
+this fixed by disclosure in `weekSection`'s note rather than by re-sourcing the estimator.
 
 **Pre-flight 8. `gameplan`'s candidate pool is every rostered player with play probability
 greater than 0**, including one under 0.5 whom `starterMask` would not show as a starter.

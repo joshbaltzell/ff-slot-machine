@@ -76,7 +76,7 @@ export function weekSection(gp, { esc, name, myTeam }) {
     <div class="panel gp">
       <div class="gp-top">
         <div class="gp-p">
-          <div class="k">Win probability</div>
+          <div class="k" data-hint="${esc(DIST_HINT.pwin)}"><span class="hint">Win probability</span></div>
           <div class="v ${gp.pWinMean >= 0.5 ? "up" : "down"}">${esc(pct(gp.pWinMean))}</div>
           <div class="s">with your best-points lineup</div>
         </div>
@@ -107,7 +107,10 @@ export function weekSection(gp, { esc, name, myTeam }) {
         marked. This lineup search is a <b>local search heuristic</b>, not the
         exhaustive enumeration the trade search runs: it takes the best single
         starter-for-bench swap until no swap helps. The number of legal lineups is
-        combinatorial, and the starting point is already the best-points answer.</div>
+        combinatorial, and the starting point is already the best-points answer.
+        The win probabilities above price one fixed lineup - the one named here -
+        while the leverage strip below prices your best lineup after in-week
+        substitution, so the two can read differently when a starter is questionable.</div>
     </div>
   </section>`;
 }
@@ -132,7 +135,9 @@ export function stackNote(measured, corr = CORR) {
          + "between teammates is modelled.";
   return `Swing is measured per player and now counts stacks: two players on one NFL `
        + `team are correlated at ${corr.qbToPass} for a quarterback with his own `
-       + `receiver or tight end and ${corr.sameTeam} for any other pair of `
-       + `teammates, running backs at ${corr.rb}, and opponents in the same game at `
-       + `${corr.sameGame}. A stacked roster is genuinely swingier and this says so.`;
+       + `receiver or tight end, ${corr.sameTeam} for any other pair of teammates, `
+       + `and ${corr.rb} for a running back with a teammate. Opponents in the same `
+       + `game pull apart at ${corr.sameGame}, though this build does not yet look up `
+       + `who plays whom, so that term is defined but never applied. A stacked roster `
+       + `is genuinely swingier and this says so.`;
 }

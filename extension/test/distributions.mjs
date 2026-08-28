@@ -484,6 +484,17 @@ const mkEngine = (model) =>
     ok(gp.lineupBest.length === gp.lineupMean.length,
        "a swap keeps the lineup the same size");
     ok(feasible(e, gp.lineupBest), "and legal");
+
+    // Pinned to a real run of this exact fixture, so the block cannot pass with an
+    // empty `swaps` array: a search that stopped finding swaps would leave `swaps`
+    // empty, `pWinBest` equal to `pWinMean` (≈0), and both checks below would fail.
+    ok(gp.swaps.length === 2, "this fixture's local search takes exactly two rounds");
+    near(gp.pWinBest, 0.056972019541896436, 1e-9,
+         "and lands on this exact win probability, not merely 'not worse than the mean'");
+    ok(gp.swaps[0].out === 1 && gp.swaps[0].in === 3,
+       "round one swaps the 11-point starter for the 8-point one");
+    ok(gp.swaps[1].out === 0 && gp.swaps[1].in === 2,
+       "round two swaps the 12-point starter for the 9-point one");
   }
 
   // lineupStats agrees with rosterSigma on the lineup rosterSigma would pick - the
@@ -573,6 +584,11 @@ const mkEngine = (model) =>
   ok(html.includes("121") && html.includes("128"), "both teams' medians appear");
   ok(/heuristic|local search|not exhaustive/i.test(html),
      "and the section says the search is a heuristic, not an exhaustive one");
+  ok(html.includes(esc(DIST_HINT.pwin)),
+     "and the win-probability tile carries its own hint, like floor and ceiling do");
+  ok(/fixed lineup/i.test(html) && /leverage strip/i.test(html),
+     "and discloses that this figure prices a fixed lineup while the leverage strip "
+     + "prices the best lineup after in-week substitution");
 
   // A swap under a percentage point is noise on numbers this soft.
   const small = weekSection({ ...plan, pWinBest: 0.4145,
@@ -611,6 +627,12 @@ const mkEngine = (model) =>
      "with no measurement it falls back to ±25 rather than quoting constants");
   ok(/no correlation/i.test(stackNote(0, CORR)),
      "and says plainly that no correlation is modelled");
+  ok(/Opponents in the same game/.test(note),
+     "opponents are their own sentence - a cross-team relationship, not folded into "
+     + "'two players on one NFL team'");
+  ok(/not yet|never applied/i.test(note),
+     "and the note admits this build does not yet look up who is playing whom, so the "
+     + "same-game term is defined but inert in production");
 
   ok(DIST_HINT.floor.length > 40 && DIST_HINT.ceiling.length > 40
        && DIST_HINT.pwin.length > 40,

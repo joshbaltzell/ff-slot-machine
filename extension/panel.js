@@ -649,11 +649,17 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
   };
 
-  // This week's game. The horizon starts at the current week, so index 0 is it
-  // unless ESPN reported a week outside the trimmed range.
-  const DIST = window.__dist ?? null;
-  const curIdx = Math.max(0, W.indexOf(model.settings.currentWeek ?? W[0]));
-  const plan = DIST && eng.sigmaOf ? gameplan(eng, myTeam, curIdx) : null;
+  // Floors, ceilings and the gameplan all need a measured spread - gate every one of
+  // them on eng.sigmaOf, which setVolatility only assigns once vol.measured >= 20.
+  // Without that gate a league with no prior-season history still got a fabricated
+  // +-7.69 band from the empty-sample fallback in buildDistribution.
+  const DIST = eng.sigmaOf ? (window.__dist ?? null) : null;
+  // This week's game. The horizon starts at the current week, so index 0 is it -
+  // unless the season is over, in which case restrictToRemaining keeps every week and
+  // currentWeek exceeds all of them, and indexOf returns -1. Clamping that to 0 used
+  // to silently show week 1's game as "this week"; instead, no index means no plan.
+  const curIdx = W.indexOf(model.settings.currentWeek ?? W[0]);
+  const plan = DIST && eng.sigmaOf && curIdx >= 0 ? gameplan(eng, myTeam, curIdx) : null;
   const thisWeek = weekSection(plan, { esc, name: nm, myTeam });
 
   /* ---------- filter state ---------- */
