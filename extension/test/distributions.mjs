@@ -171,9 +171,17 @@ const mkEngine = (model) =>
   ok(Z90 > 1.28 && Z90 < 1.282, "z90 is the tenth-percentile normal deviate");
 
   // buildDistribution wires the three tiers together.
+  //
+  // Three WR players feed the positional CV pool so the prior is a genuine
+  // median distinct from any one player's own raw CV: raw CVs (sigma / mean
+  // projection) are player 1 = 6/10 = 0.6, player 2 = 4/10 = 0.4 and player 3
+  // (measured only, never in `residuals`) = 5/10 = 0.5. Sorted [0.4, 0.5, 0.6]
+  // medians to exactly 0.5 - equidistant (±0.1) from both players 1 and 2, so
+  // the only thing that can move either player's shrunk CV off that midpoint
+  // is the shrinkage weight n/(n+n0), not how far their own CV sits from it.
   {
     const vol = {
-      bySigma: new Map([[1, 6]]),
+      bySigma: new Map([[1, 6], [2, 4], [3, 5]]),
       byPos: new Map([["WR", 6]]),
       global: 6,
       measured: 1,
@@ -182,7 +190,8 @@ const mkEngine = (model) =>
     };
     const players = new Map([
       [1, { id: 1, pos: "WR", nfl: "KC", proj: { 1: 10, 2: 10, 3: 0 } }],
-      [2, { id: 2, pos: "WR", nfl: "KC", proj: { 1: 8, 2: 8, 3: 0 } }],
+      [2, { id: 2, pos: "WR", nfl: "KC", proj: { 1: 10, 2: 10, 3: 0 } }],
+      [3, { id: 3, pos: "WR", nfl: "KC", proj: { 1: 10, 2: 10, 3: 0 } }],
     ]);
     const d = buildDistribution(vol, players);
     ok(d.of.get(1).n === 5, "the sample size rides along");
@@ -191,8 +200,25 @@ const mkEngine = (model) =>
        "a two-week sample is pulled harder toward a wider prior than a five-week one");
     ok(d.global.p10 < 0 && d.global.p90 > 0, "the league-wide prior exists as a last resort");
     ok(cv(players.get(1), d) > 0, "a measured player has a coefficient of variation");
-    near(cv(players.get(1), d), 0.6, 0.35,
-         "and it is sigma over the mean projection, shrunk - 6/10 before shrinkage");
+
+    near(d.byPosCv.get("WR"), 0.5, 1e-9,
+         "the WR prior is the median raw CV of 0.6, 0.4 and 0.5 - i.e. 0.5");
+
+    // Player 1: 5 residual weeks, n0 = 10 -> weight 5/15 = 1/3 on his own 0.6.
+    // (1/3)(0.6) + (2/3)(0.5) = 8/15.
+    near(cv(players.get(1), d), 8 / 15, 1e-9,
+         "shrunk a third of the way from the 0.5 prior to his own 0.6 CV");
+
+    // Player 2: 2 residual weeks -> weight 2/12 = 1/6 on his own 0.4.
+    // (1/6)(0.4) + (5/6)(0.5) = 29/60.
+    near(cv(players.get(2), d), 29 / 60, 1e-9,
+         "and player 2, with only two weeks, shrinks by the smaller weight 1/6");
+
+    ok(Math.abs(cv(players.get(2), d) - d.byPosCv.get("WR")) <
+       Math.abs(cv(players.get(1), d) - d.byPosCv.get("WR")),
+       "fewer measured weeks (2) lands closer to the positional prior than more (5) - " +
+       "same 0.1 distance from the prior on each raw CV, so only the weight can explain it");
+
     ok(cv({ id: 404, pos: "WR" }, d) === d.byPosCv.get("WR"),
        "an unmeasured player falls back to his position's");
     ok(cv({ id: 404, pos: "HC" }, d) === 0, "and to zero when even that is missing");
