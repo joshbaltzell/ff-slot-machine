@@ -76,10 +76,10 @@ search, `enrich` or `projectSeason`. They fill one column, one filter, one line 
 pitch and one section. The gap between the two rankings is the product, so collapsing
 them would delete it.
 
-**A dead feed costs a dash, not the run.** Everything outside ESPN goes through
-`engine/sources/cache.js` and is wrapped by a caller that returns null rather than
-throwing (`marketOrNull`). A source being down must never cost a user their trade
-search; `start()` has to finish.
+**A dead feed costs a dash, not the run.** Any feed outside ESPN goes through
+`engine/sources/cache.js` and must be wrapped by a caller that returns null rather
+than throwing, the way `marketOrNull` wraps FantasyCalc. A source being down must
+never cost a user their trade search; `start()` has to finish.
 
 **Time windows stay separate.** `gain` / `reg` / `playoff` / `bye` / `full` disagree
 with each other, and that is the point: a trade can be positive on the season

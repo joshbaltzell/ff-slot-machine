@@ -88,6 +88,9 @@ export async function loadMarket(settings, teamCount, opts = {}) {
   const r = await cached(key, marketUrl(settings, teamCount), opts.ttlMs ?? HALF_DAY,
     { ...opts, transform: trimValues });
   const byEspn = new Map();
+  // Last-wins on a duplicate espnId. FantasyCalc has not been observed to publish
+  // one player twice in a table; if it ever does, this silently keeps the last
+  // entry rather than failing loudly.
   for (const rec of r.data ?? []) byEspn.set(rec.espnId, rec);
   return { byEspn, params, at: r.at, fromCache: r.fromCache, stale: r.stale ?? false };
 }

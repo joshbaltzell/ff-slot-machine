@@ -12,8 +12,8 @@ import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 import { attachOdds, significant } from "./engine/odds.js";
 import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
-import { marketOrNull, marketView, marketFair, marketCol, marketCell, marketDetail,
-         marketPitchLine, arbitrageSection } from "./panel/market.js";
+import { marketOrNull, marketView, marketFair, marketFairChip, marketCol, marketCell,
+         marketDetail, marketPitchLine, arbitrageSection } from "./panel/market.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -351,7 +351,10 @@ async function start(ref) {
     Steps.set("market", "run");
     const loadedMarket = await marketOrNull(model.settings, model.teams.size, say);
     window.__market = marketView(eng, loadedMarket);
-    Steps.set("market", loadedMarket ? "done" : "warn",
+    // Zero priced players is not a healthy load - an empty feed should read the same
+    // as a dead one, not go green.
+    const marketHealthy = !!loadedMarket && loadedMarket.byEspn.size > 0;
+    Steps.set("market", marketHealthy ? "done" : "warn",
       loadedMarket ? `${loadedMarket.byEspn.size} priced` : "unavailable");
 
     Steps.set("s1", "run");
@@ -583,7 +586,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     .filter(({ t }) => Math.min(...t.sides.map((s) => s.gain)) >= F.minGain)
     .filter(({ t }) => !F.only.has("bye") || byeDriven(t))
     .filter(({ t }) => !F.only.has("even") || balance(t) >= 0.6)
-    .filter(({ t }) => !F.only.has("mktfair") || (marketFair(t, mkt) ?? 0) >= 0.8)
+    // A dead feed (mkt === null) must never empty the list - the chip is also hidden
+    // whenever there is no market, but the filter stays inert on its own in case
+    // "mktfair" was set while the feed was still up.
+    .filter(({ t }) => !F.only.has("mktfair") || !mkt || (marketFair(t, mkt) ?? 0) >= 0.8)
     .filter(({ t }) => !F.q || t.sides.some((s) =>
       [...s.sent, ...s.received].some((i) => nm(i).toLowerCase().includes(F.q))));
 
@@ -1003,7 +1009,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           <div class="fld"><label>Only</label><div class="chips" id="only">
             <button data-v="bye" aria-pressed="${F.only.has("bye")}">Bye-driven</button>
             <button data-v="even" aria-pressed="${F.only.has("even")}">Even splits</button>
-            <button data-v="mktfair" aria-pressed="${F.only.has("mktfair")}">Market-fair</button>
+            ${marketFairChip(mkt, F.only.has("mktfair"))}
           </div></div>
           <div class="fld"><label for="q">Player</label>
             <input type="search" id="q" value="${esc(F.q)}" placeholder="filter by name…"

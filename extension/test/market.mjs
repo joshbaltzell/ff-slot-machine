@@ -11,8 +11,8 @@ import { buildSlots, seatMask } from "../engine/lineup.js";
 import { Engine } from "../engine/search.js";
 import { marketParams, marketUrl, trimValues, loadMarket } from "../engine/sources/fantasycalc.js";
 import { indexMarket, sideMarket, tradeFairness, pitchMarketLine, arbitrage } from "../engine/market.js";
-import { MARKET_HINT, marketOrNull, marketView, marketFair, marketCol, marketCell,
-         marketDetail, marketPitchLine, arbitrageSection } from "../panel/market.js";
+import { MARKET_HINT, marketOrNull, marketView, marketFair, marketFairChip, marketCol,
+         marketCell, marketDetail, marketPitchLine, arbitrageSection } from "../panel/market.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -29,6 +29,9 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   if (hit instanceof Error) throw hit;
   return { ok: true, status: 200, json: async () => hit, text: async () => String(hit) }; }; f.calls = calls; return f; };
 const deadFetch = () => { const f = async () => { throw new Error("network down"); }; f.calls = []; return f; };
+/* Accepts the "connection" and then never answers - the one failure `cached()` cannot
+   see on its own, since `fetch` has no default timeout. */
+const stuckFetch = () => { const f = () => new Promise(() => {}); f.calls = []; return f; };
 
 /* ---- the model, built the way parity.mjs builds it (copied, not imported:
         parity.mjs is the frozen engine contract and runs 605 assertions) ---- */
@@ -121,6 +124,25 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
   ok(trimmed[0].pos === F.pos[0] && trimmed[0].name === "fc0", "name and position come from the nested player");
   ok(trimValues(null).length === 0 && trimValues({}).length === 0, "a non-array payload trims to nothing");
 
+  /* Hostile rows: trimValues must never throw, no matter what a feed sends. The
+     espnId guard runs before row.value is ever read, which is what makes these safe -
+     nothing currently pins that ordering. */
+  ok(trimValues([null, 3, "x"]).length === 0,
+     "rows that are null, a bare number, or a bare string are dropped rather than throwing");
+  ok(trimValues([{ value: 10, overallRank: 1 }]).length === 0,
+     "a row with no player key at all has no espnId and is dropped");
+  const badValue = trimValues([{ player: { espnId: 503 }, value: "not-a-number" }]);
+  ok(badValue.length === 1 && Number.isNaN(badValue[0].value),
+     "a non-numeric value string is still trimmed to a row - it comes out NaN here, "
+     + "not 0, because `row.value ?? 0` only replaces null/undefined");
+  const dup = trimValues([
+    { player: { espnId: 502, name: "first" }, value: 100 },
+    { player: { espnId: 502, name: "second" }, value: 200 },
+  ]);
+  ok(dup.length === 2 && dup[0].espnId === 502 && dup[1].espnId === 502,
+     "trimValues does not deduplicate by espnId - that happens one layer up, in "
+     + "loadMarket's byEspn map");
+
   const storage = mkStorage();
   const fetchImpl = mkFetch({ [FC_URL]: FC_PAYLOAD });
   const m = await loadMarket(SETTINGS, 10, { fetchImpl, storage, now: 0 });
@@ -185,6 +207,13 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
   const zeroes = new Map([[IX(0), { value: 0 }], [IX(1), { value: 0 }]]);
   ok(tradeFairness(swap([IX(0)], [IX(1)]), zeroes).fairness === null,
      "two worthless packages have no ratio, not a ratio of 1");
+
+  // A hostile feed value that parses to Infinity (e.g. JSON.parse("1e999")) must not
+  // turn into a visible NaN: Infinity/Infinity is NaN, and that has to become a dash.
+  const hostile = new Map([[IX(0), { value: Infinity }], [IX(1), { value: Infinity }]]);
+  const hostileFairness = tradeFairness(swap([IX(0)], [IX(1)]), hostile);
+  ok(hostileFairness.fairness === null,
+     "an Infinity value on both sides of a trade yields a dash, not NaN");
 
   const three = tradeFairness({ shape: "three-way", sides: [
     { team: "A", sent: [IX(0)], received: [IX(1)] },
@@ -329,6 +358,41 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
      "a dead feed logs exactly one line");
   ok(logged[0].cls === "err", "…and logs it as an error");
 
+  /* A feed that accepts the connection and then stalls must not hold up start() -
+     marketOrNull has to time out on its own rather than waiting on fetch. */
+  logged.length = 0;
+  const t0 = Date.now();
+  const stuck = await marketOrNull(SETTINGS, 10, say,
+    { fetchImpl: stuckFetch(), storage: mkStorage(), now: 0, timeoutMs: 20 });
+  const elapsed = Date.now() - t0;
+  ok(stuck === null, "a stalled feed resolves to null rather than hanging forever");
+  ok(elapsed < 2000, `the timeout actually bounds the wait (took ${elapsed}ms for a 20ms budget)`);
+  ok(logged.length === 1 && /market values unavailable/.test(logged[0].text),
+     "a timeout is logged the same way any other failed load is");
+  ok(logged[0].cls === "err", "…as an error, same as a hard failure");
+
+  /* An empty payload (or one where nothing carries an espnId) is a feed that
+     answered with nothing, not a feed that is down - the two must be distinguishable. */
+  logged.length = 0;
+  const empty = await marketOrNull(SETTINGS, 10, say,
+    { fetchImpl: mkFetch({ [FC_URL]: [] }), storage: mkStorage(), now: 0 });
+  ok(empty && empty.byEspn.size === 0, "an empty payload is still a successful load");
+  ok(logged.some((l) => l.cls === "warn" && /0 players priced/.test(l.text)),
+     "…but it is logged as a warning, not a green ok, since nothing was priced");
+
+  /* The stale-cache branch: a live load primes the cache, then the feed goes down
+     past the TTL and the caller should get the old data back, flagged stale. */
+  const staleStorage = mkStorage();
+  await marketOrNull(SETTINGS, 10, () => {},
+    { fetchImpl: mkFetch({ [FC_URL]: FC_PAYLOAD }), storage: staleStorage, now: 0 });
+  logged.length = 0;
+  const stale = await marketOrNull(SETTINGS, 10, say,
+    { fetchImpl: deadFetch(), storage: staleStorage, now: 13 * 3600e3 });
+  ok(stale && stale.fromCache === true && stale.stale === true,
+     "a dead feed past the TTL still returns the last cached copy, marked stale");
+  ok(logged.some((l) => /using the last cached copy/.test(l.text)),
+     "…and says so, distinct from the normal priced-count line");
+
   ok(marketView(eng, null) === null, "no feed means no view");
   const mkt = marketView(eng, loaded);
   ok(mkt.byIndex.size === 29 && mkt.priced === 29, "the view carries the index-keyed map");
@@ -359,12 +423,29 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
   ok(typeof marketCol(mkt).hint === "string" && marketCol(mkt).hint.length > 40,
      "the column carries a hint explaining where the numbers come from");
 
+  /* The Market-fair filter chip must not be offered when it cannot work. */
+  ok(marketFairChip(null, false) === "", "with no feed the chip renders nothing at all");
+  ok(marketFairChip(null, true) === "", "…even if the filter was left pressed from an earlier, healthy run");
+  const chip = marketFairChip(mkt, true);
+  ok(/data-v="mktfair"/.test(chip), "with a feed the chip keeps its data-v hook");
+  ok(/aria-pressed="true"/.test(chip), "…and reflects the pressed state");
+  ok(/aria-pressed="false"/.test(marketFairChip(mkt, false)), "…in both directions");
+
   ok(marketDetail(t.sides[0], null) === "", "no feed adds nothing to the detail panel");
   const det = marketDetail(t.sides[0], mkt);
   ok(/market/.test(det) && /sends/.test(det) && /receives/.test(det),
      `the detail line names both directions: ${det}`);
   ok(/—/.test(marketDetail(unpriced.sides[0], mkt)),
      "an unpriced side shows a dash rather than a partial sum");
+
+  // The color must land on the number whose sign it describes (the delta), not on
+  // the always-positive received figure.
+  const upSide = { team: F.teams[0], sent: [IX(0)], received: [IX(1)] }; // 10000 -> 9900, a losing delta
+  const detUp = marketDetail(upSide, mkt);
+  const receivedTag = detUp.match(/receives <b>[\d,]+<\/b>/)?.[0] ?? "";
+  ok(receivedTag && !/class=/.test(receivedTag),
+     `the received figure itself carries no sign class: ${detUp}`);
+  ok(/<b class="(up|down|zero)">/.test(detUp), "…the sign class instead sits on the delta figure");
 
   ok(marketPitchLine(t, t.sides[0], null) === null, "no feed omits the pitch sentence");
   ok(/FantasyCalc/.test(marketPitchLine(t, t.sides[0], mkt)), "the pitch sentence names the source");
@@ -387,8 +468,14 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
 
   /* The row renderer is injected into `grid` as `o.row`. Call it directly with a
      hostile player/owner name - `esc()` is the only thing standing between a
-     league's own names and innerHTML. */
-  const rowHtml = gridCalls[0].o.row({
+     league's own names and innerHTML. Uses its own fresh grid call rather than
+     reusing `gridCalls[0]` from the assertions above: those already asserted other
+     things about that same array entry, and depending on that ordering is exactly
+     how this would go silently vacuous if the earlier assertions were reshuffled. */
+  const escCalls = [];
+  const escGrid = (id, cols, rows, o) => { escCalls.push({ id, cols, rows, o }); return `[${id}:${rows.length}]`; };
+  arbitrageSection(eng, model, mkt, { myTeam: F.teams[0], grid: escGrid });
+  const rowHtml = escCalls[0].o.row({
     i: 0, name: "<script>x</script>", pos: 'RB"><img src=x>', owner: '"><img src=x>',
     ppg: 1.25, modelRank: 1, marketRank: 2, poolRank: 1, edge: 3, value: 1234, trend30Day: -5,
   });
@@ -398,6 +485,15 @@ const FC_URL = "https://api.fantasycalc.com/values/current?isDynasty=false&numQb
   ok(/&quot;/.test(rowHtml), "…the quote is escaped");
   ok(/data-p="RB&quot;&gt;&lt;img src=x&gt;"/.test(rowHtml),
      "the position lands in data-p, escaped, including inside the attribute value");
+
+  // An explicitly empty remainingWeeks is a real value, not "unset" - `??` would let
+  // it through and print "weeks undefined–undefined" in the subtitle.
+  const emptyWeeksHtml = arbitrageSection(eng, model, mkt,
+    { myTeam: F.teams[0], grid: fakeGrid, remainingWeeks: [] });
+  ok(!/undefined/.test(emptyWeeksHtml),
+     "an empty remainingWeeks falls back to the full season caption instead of printing undefined");
+  ok(/the whole season/.test(emptyWeeksHtml),
+     "…specifically, it reads as the whole season");
 
   gridCalls.length = 0;
   const noFeed = arbitrageSection(eng, model, null, { myTeam: F.teams[0], grid: fakeGrid });

@@ -49,16 +49,32 @@ export const MARKET_HINT = {
 /**
  * Load the market, or return null. This is the function that keeps a dead feed from
  * costing the user their trade search: it logs one line and gives up.
+ *
+ * A feed that accepts the connection and then never answers is the one failure mode
+ * `cached()` cannot see - `fetch` has no default timeout, so without a race here a
+ * stalled host would hold `start()` at this step until the browser's own socket
+ * timeout. `opts.timeoutMs` (default 8s) bounds the wait; a timeout degrades exactly
+ * like any other failed load.
  */
 export async function marketOrNull(settings, teamCount, say = () => {}, opts = {}) {
+  let timer;
+  const timeout = (ms) => new Promise((_, rej) => {
+    timer = setTimeout(() => rej(new Error(`no answer in ${ms / 1000}s`)), ms);
+  });
   try {
-    const m = await loadMarket(settings, teamCount, opts);
+    const m = await Promise.race([
+      loadMarket(settings, teamCount, opts),
+      timeout(opts.timeoutMs ?? 8000),
+    ]);
+    clearTimeout(timer);
     const p = m.params;
-    say(`FantasyCalc: ${m.byEspn.size} players priced `
-      + `(${p.numQbs}QB, ${p.numTeams} teams, ${p.ppr} PPR)`, "ok");
+    const priced = m.byEspn.size;
+    say(`FantasyCalc: ${priced} players priced `
+      + `(${p.numQbs}QB, ${p.numTeams} teams, ${p.ppr} PPR)`, priced > 0 ? "ok" : "warn");
     if (m.stale) say("  FantasyCalc did not answer - using the last cached copy", "");
     return m;
   } catch (err) {
+    clearTimeout(timer);
     say(`market values unavailable (${err.message ?? err})`, "err");
     return null;
   }
@@ -89,6 +105,17 @@ export function marketCol(mkt) {
   };
 }
 
+/**
+ * The "Market-fair" filter chip. Returns "" when there is no market to filter on -
+ * a dead feed must not offer a control that would empty every trade in the list.
+ * Keeps the same `data-v` and `aria-pressed` the generic `#only button` handler
+ * already wires up, so no new event handling is needed.
+ */
+export function marketFairChip(mkt, pressed) {
+  if (!mkt) return "";
+  return `<button data-v="mktfair" aria-pressed="${pressed}">Market-fair</button>`;
+}
+
 /** Exactly one `<td>` either way, so a dead feed never shifts the column count. */
 export function marketCell(trade, mkt) {
   const v = marketFair(trade, mkt);
@@ -102,9 +129,12 @@ export function marketCell(trade, mkt) {
 export function marketDetail(side, mkt) {
   if (!mkt) return "";
   const s = sideMarket(side, mkt.byIndex);
-  if (!s.known) return '<span>market <b class="zero">—</b></span>';
+  if (!s.known) return '<span>market: <b class="zero">—</b></span>';
+  // Color the delta, not the received figure - a green number should be the one that
+  // is actually saying "up".
   return `<span>market: sends <b>${money(s.sent)}</b> · receives `
-    + `<b class="${signCls(s.delta)}">${money(s.received)}</b></span>`;
+    + `<b>${money(s.received)}</b> <b class="${signCls(s.delta)}">(${
+      s.delta >= 0 ? "+" : "−"}${money(Math.abs(s.delta))})</b></span>`;
 }
 
 export function marketPitchLine(trade, other, mkt) {
@@ -146,10 +176,18 @@ function remainingOf(eng, model) {
 /**
  * The buy low / sell high section. Rendered even when the feed is dead - a section
  * that silently disappears is harder to understand than one that says why it is empty.
+ *
+ * `myTeam` is deliberately the fixed team the search runs for, not `window.__view` -
+ * unlike the roster grid and trade view, "sell high" is only meaningful against your
+ * own roster, so this section does not follow the "who" selector when the user is
+ * looking at another team. That is a deliberate difference from the rest of the page,
+ * not an oversight.
  */
 export function arbitrageSection(eng, model, mkt, opts = {}) {
   const { myTeam = null, grid, limit = 15 } = opts;
-  const weeks = opts.remainingWeeks ?? remainingOf(eng, model);
+  // `??` does not catch an explicitly empty array, and an empty `remainingWeeks` is a
+  // real caller value (not "unset"), so it must fall back too.
+  const weeks = opts.remainingWeeks?.length ? opts.remainingWeeks : remainingOf(eng, model);
   const res = mkt
     ? arbitrage(eng, model, mkt.byIndex, { myTeam, remainingWeeks: weeks, limit })
     : { buy: [], sell: [] };
@@ -170,13 +208,13 @@ export function arbitrageSection(eng, model, mkt, opts = {}) {
     ? `FantasyCalc ${mkt.params.numQbs}QB · ${mkt.params.numTeams} teams · `
       + `${mkt.params.ppr} PPR · ${mkt.priced} players priced`
     : "FantasyCalc unavailable";
-  const window = weeks.length === eng.weeks.length
+  const span = weeks.length === eng.weeks.length
     ? "the whole season" : `weeks ${weeks[0]}–${weeks.at(-1)}`;
 
   return `<section>
     <h2 class="secttl">Buy low / sell high (market vs projection)</h2>
     <p class="sectsub">Two rankings of the same players: ours, by projected points per
-      week over ${esc(window)}, and FantasyCalc's, from real completed trades. Where they
+      week over ${esc(span)}, and FantasyCalc's, from real completed trades. Where they
       disagree is where a deal is available. This compares <b>ranks</b>, not value above
       the player who would otherwise fill the slot — a bench player the crowd underrates
       is still a bench player.</p>

@@ -32,17 +32,17 @@ export function indexMarket(eng, byEspn) {
  */
 export function sideMarket(side, market) {
   let sent = 0, received = 0, known = true;
-  const add = (ids, onto) => {
+  const add = (ids) => {
     let total = 0;
     for (const i of ids ?? []) {
       const hit = market?.get(i);
       if (!hit) { known = false; continue; }
       total += Number(hit.value) || 0;
     }
-    return onto + total;
+    return total;
   };
-  sent = add(side.sent, sent);
-  received = add(side.received, received);
+  sent = add(side.sent);
+  received = add(side.received);
   return { sent, received, delta: received - sent, known };
 }
 
@@ -62,8 +62,11 @@ export function tradeFairness(trade, market) {
   const hi = recv.length ? Math.max(...recv) : 0;
   const lo = recv.length ? Math.min(...recv) : 0;
   // hi === 0 means every priced player in the deal is worth nothing. There is no
-  // ratio to take, and reporting 1 ("perfectly even") would be a lie.
-  const fairness = known && hi > 0 ? lo / hi : null;
+  // ratio to take, and reporting 1 ("perfectly even") would be a lie. A non-finite
+  // feed value (e.g. a huge or malformed number JSON parses as Infinity) can make
+  // `hi` non-finite too, and Infinity/Infinity is NaN - guard it to a dash instead.
+  const ratio = known && hi > 0 ? lo / hi : null;
+  const fairness = Number.isFinite(ratio) ? ratio : null;
   return { fairness, known, sides };
 }
 
