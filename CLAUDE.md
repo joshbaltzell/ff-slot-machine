@@ -37,6 +37,8 @@ extension/
     availability.js  injury status -> play probability; the remaining-weeks horizon
     winprob.js       normal CDF, P(win), per-week leverage
     calibrate.js     positional shrinkage of ESPN projections
+    distribution.js  measured floor/median/ceiling; teammate correlation; stacks
+    gameplan.js      the week's P(win)-optimal lineup, by local search
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
     sources/
@@ -44,14 +46,16 @@ extension/
       sleeper.js     Sleeper players, trending, NFL state
       fantasycalc.js FantasyCalc crowd values keyed on espnId
   panel/
-    market.js        every string of market HTML; degrades to a dash
-    availability.js  status codes, cells, badges, log lines, the season note
+    market.js          every string of market HTML; degrades to a dash
+    availability.js    status codes, cells, badges, log lines, the season note
+    distributions.js   floor/ceiling/stack strings; the range bar; the swap threshold
   test/
-    parity.mjs       605 assertions against a frozen league — the engine contract
-    availability.mjs availability, the horizon, record-seeded seasons, UI strings
-    market.mjs       the market phase, offline (fetch and storage injected)
-    sources.mjs      cache semantics and the Sleeper client, offline
-    run-all.mjs      runs every *.mjs in the directory
+    parity.mjs         605 assertions against a frozen league — the engine contract
+    availability.mjs   availability, the horizon, record-seeded seasons, UI strings
+    market.mjs         the market phase, offline (fetch and storage injected)
+    distributions.mjs  distributions, stacks and the weekly plan, offline
+    sources.mjs        cache semantics and the Sleeper client, offline
+    run-all.mjs        runs every *.mjs in the directory
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -175,8 +179,35 @@ is unaffected.
 
 **Volatility is measured, not assumed.** `statSourceId: 0` gives the prior season's
 actual weekly scores in the same payload as projections; the residual is real
-league-scored volatility. Team sigma is the root of the summed variance of that
-week's starters, so it follows roster composition.
+league-scored volatility. `measureVolatility` keeps those residuals, not only their
+standard deviation, because a sigma is symmetric and a fantasy week is not: the
+10th/50th/90th percentiles in `distribution.js` are the real shape, shrunk toward the
+position's by `n/(n+10)`. Team sigma is the root of the summed variance of that week's
+starters, so it follows roster composition.
+
+**The correlation constants live in one table, and only real pro teams get them.**
+`CORR` in `distribution.js` is the whole model: `0.25` for a quarterback with his own
+receiver or tight end, `0.10` for any other pair of teammates, `0` for a running back
+with anyone, `-0.05` for opponents in the same NFL game. `rosterSigma` adds
+`2 Σ ρ σ σ` over the week's starters, weighted by the same `sqrt(p)` availability
+factor the variance term uses. It applies **only when both players have a real pro
+team** — never `"X"`, `"?"` or `"FA"`. That guard is load-bearing twice over: the
+frozen fixture puts every player on `"X"`, so parity's season invariants stay true,
+and a free agent with no team never invents a stack. The correlation reaches
+`search.js` as an attached `eng.rhoOf`, not an import, so `rosterSigma` behaves
+exactly as it always did on an engine nobody attached to.
+
+**The weekly lineup search is a local-search heuristic — and that is fine here.**
+`gameplan.js` starts from the mean-optimal lineup and takes the best single
+starter-for-bench swap that raises `P(win) = Φ((μ−μₒ)/√(σ²+σₒ²))` until none does.
+Every step is a strict improvement, so it terminates, but it is not exhaustive and it
+does not claim to be. This does not contradict "nothing in the search is
+approximated": the trade search's answer is a recommendation about an irreversible
+decision over a space of a few million rosters, while the lineup space is
+`C(roster, starters)` with a matroid feasibility test on each candidate, the starting
+point is already the best-points answer, and a manager eyeballs the result before
+setting it. The panel says it is a heuristic on screen. Do not quietly upgrade the
+claim, and do not downgrade the trade search to match.
 
 ## Testing
 
