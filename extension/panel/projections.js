@@ -86,13 +86,20 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
     if (fpWeek?.size) sources.push({ name: "fp", byWeek: new Map([[currentWeek, fpWeek]]) });
 
     if (sources.length) {
-      const agg = aggregateProjections(model, sources, out.remaining);
-      out.band = agg.band;
-      out.coverage = { sleeper: agg.coverage.sleeper ?? 0, fp: agg.coverage.fp ?? 0 };
-      say(`projections: Sleeper covers ${out.coverage.sleeper} of ${model.players.size} players, `
-        + `FantasyPros ${out.coverage.fp} (week ${currentWeek})`, "ok");
-      if (sl.failed?.length) say(`  ${sl.failed.length} Sleeper week(s) unavailable`, "");
-      if (!fp.available) say(`  FantasyPros unavailable (${fp.reason || "no data"})`, "");
+      // The heaviest call on this path, and the one that mutates `p.proj` in
+      // place: wrapped like every other fallible call here, so a failure degrades
+      // to agg === espn and one log line instead of throwing out of `start()`.
+      try {
+        const agg = aggregateProjections(model, sources, out.remaining);
+        out.band = agg.band;
+        out.coverage = { sleeper: agg.coverage.sleeper ?? 0, fp: agg.coverage.fp ?? 0 };
+        say(`projections: Sleeper covers ${out.coverage.sleeper} of ${model.players.size} players, `
+          + `FantasyPros ${out.coverage.fp} (week ${currentWeek})`, "ok");
+        if (sl.failed?.length) say(`  ${sl.failed.length} Sleeper week(s) unavailable`, "");
+        if (!fp.available) say(`  FantasyPros unavailable (${fp.reason || "no data"})`, "");
+      } catch (e) {
+        fail(`projections: aggregate failed (${e.message ?? e}) — using ESPN alone`);
+      }
     } else {
       say(`projections: no outside source available (Sleeper 0, FantasyPros 0) — `
         + `using ESPN alone`, "err");
@@ -102,7 +109,13 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
     say("projections: ESPN only (aggregate off)", "");
   }
 
-  /* ---- the calibration log ---- */
+  /* ---- the calibration log ----
+     Written every run, aggregate toggle on or off: with the toggle off (or every
+     source dead) `agg` is simply `espn` again, and that is deliberate — the log
+     records what was actually fed to the engine, not what would have been fed
+     under some other setting, so a single league's log can mix ESPN-only and
+     aggregated rows across sessions and still be exactly what should be
+     calibrated. */
   if (storage) {
     try {
       const rows = [];
@@ -188,7 +201,10 @@ export function bindSourcesChips(root, { storage, reload } = {}) {
   root.querySelectorAll("#sources button").forEach((b) => {
     b.onclick = async () => {
       const on = b.dataset.v === "1";
-      if (on === (window.__aggregate !== false)) return;
+      // Guard on the chip's OWN rendered state, not a global: `sourcesChips`
+      // already rendered `aria-pressed` from the real toggle, so re-reading it
+      // here needs nothing else to have been set first.
+      if (b.getAttribute("aria-pressed") === "true") return;
       try { await (storage ?? chrome.storage.local).set({ [AGG_KEY]: on }); } catch { /* ignore */ }
       (reload ?? (() => location.reload()))();
     };

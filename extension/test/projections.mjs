@@ -14,7 +14,7 @@ import { aggregateProjections } from "../engine/aggregate.js";
 import { FIT_POS, MIN_N, MIN_WEEKS, attachActuals, fitSlopes, loadLog, logKey, logWeek,
          mergeSlopes, summary, weeksStored, weeksWithActuals } from "../engine/calibration.js";
 import { CALIBRATION_K } from "../engine/calibrate.js";
-import { bandMean, bandTag, calibrationSection, runProjections, sourcesChips }
+import { bandMean, bandTag, bindSourcesChips, calibrationSection, runProjections, sourcesChips }
   from "../panel/projections.js";
 
 let checks = 0, failures = 0;
@@ -509,6 +509,39 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     ok(/data-v="0"[^>]*aria-pressed="false"/.test(on), "espn-only is not pressed");
     const off = sourcesChips({ aggregate: false });
     ok(/data-v="0"[^>]*aria-pressed="true"/.test(off), "the toggle flips");
+  }
+
+  /* bindSourcesChips: the click guard reads the chip's own aria-pressed, not a
+     global. Regression for a bug where the guard read `window.__aggregate`
+     instead: with that global unset (as it is here, and as it is before Task 7's
+     `start()` first runs), clicking the Aggregate chip silently no-opped no
+     matter which chip was actually pressed, wedging the toggle into ESPN-only. */
+  {
+    const mkBtn = (v, pressed) => ({
+      dataset: { v },
+      _pressed: pressed,
+      getAttribute(k) { return k === "aria-pressed" ? String(this._pressed) : null; },
+      onclick: null,
+    });
+    // Current state: aggregate is OFF (ESPN only is the pressed chip) — the exact
+    // state the old bug got stuck in.
+    const btnOn = mkBtn("1", false);    // Aggregate, not pressed
+    const btnOff = mkBtn("0", true);    // ESPN only, pressed
+    const root = { querySelectorAll: () => [btnOn, btnOff] };
+
+    const storage = mkStorage();
+    let reloads = 0;
+    bindSourcesChips(root, { storage, reload: () => { reloads++; } });
+
+    await btnOff.onclick();
+    ok((await storage.get("ffsm.aggregate"))["ffsm.aggregate"] === undefined,
+      "clicking the already-pressed chip writes nothing");
+    ok(reloads === 0, "clicking the already-pressed chip does not reload");
+
+    await btnOn.onclick();
+    ok((await storage.get("ffsm.aggregate"))["ffsm.aggregate"] === true,
+      "clicking the unpressed chip persists the new value");
+    ok(reloads === 1, "clicking the unpressed chip reloads exactly once");
   }
 
   /* the calibration section */
