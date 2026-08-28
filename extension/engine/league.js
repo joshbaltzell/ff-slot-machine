@@ -225,6 +225,8 @@ export function readSettings(raw) {
 export function measureVolatility(players, priorSeason, minWeeks = 6) {
   const bySigma = new Map();
   const posSamples = new Map();
+  const residuals = new Map();
+  const posResiduals = new Map();
   const all = [];
 
   for (const p of players) {
@@ -238,14 +240,24 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
     // in the plan, and counting those measures roster churn rather than volatility.
     const weeks = [...act.keys()].filter(w => prj.has(w) && prj.get(w) > 1
       && act.get(w) != null && prj.get(w) != null);
+    if (!weeks.length) continue;
+    const res = weeks.map(w => act.get(w) - prj.get(w));
+    // Every player with any history keeps his residuals, even below minWeeks: the
+    // quantiles are shrunk toward the positional prior by n/(n+n0), so a two-week
+    // sample contributes almost nothing rather than nothing at all. Sigma keeps the
+    // stricter gate, because a two-week standard deviation is noise, not a number.
+    residuals.set(p.id, res);
     if (weeks.length >= minWeeks) {
-      const res = weeks.map(w => act.get(w) - prj.get(w));
       const mean = res.reduce((a, b) => a + b, 0) / res.length;
       const sd = Math.sqrt(res.reduce((a, b) => a + (b - mean) ** 2, 0) / (res.length - 1));
       bySigma.set(p.id, sd);
       all.push(sd);
       if (!posSamples.has(p.pos)) posSamples.set(p.pos, []);
       posSamples.get(p.pos).push(sd);
+      // The prior a small sample is shrunk toward must not itself be made of small
+      // samples, so the pooled positional residuals take only these players.
+      if (!posResiduals.has(p.pos)) posResiduals.set(p.pos, []);
+      posResiduals.get(p.pos).push(...res);
     }
   }
   const median = (a) => {
@@ -254,7 +266,8 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
     return s[Math.floor(s.length / 2)];
   };
   const byPos = new Map([...posSamples].map(([k, v]) => [k, median(v)]));
-  return { bySigma, byPos, global: median(all) ?? 6, measured: bySigma.size };
+  return { bySigma, byPos, global: median(all) ?? 6, measured: bySigma.size,
+           residuals, byPosResiduals: posResiduals };
 }
 
 /**
