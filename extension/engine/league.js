@@ -184,6 +184,9 @@ export function readSettings(raw) {
   const items = s.scoringSettings?.scoringItems ?? [];
   const rec = items.find((it) => it.statId === 53);
   const pprValue = rec ? Number(rec.points ?? 0) : 0;
+  // The free-agent acquisition budget. 0 means the league does not bid at all and
+  // runs on waiver priority instead. Read, never derived.
+  const faabBudget = Number(s.acquisitionSettings?.acquisitionBudget) || 0;
   // The week ESPN considers current. Weeks before it have been played; the engine
   // must not count them toward a trade's value, and the season sim must start from
   // the standings as they are. `status` rides along with every league view.
@@ -191,6 +194,7 @@ export function readSettings(raw) {
   return {
     name: s.name ?? "League",
     pprValue,
+    faabBudget,
     currentWeek,
     lineupSlotCounts: counts,
     starters,
@@ -351,6 +355,8 @@ export async function loadLeague({ leagueId, seasonId }, onProgress = () => {}) 
         ties: t.record.overall.ties ?? 0,
         pointsFor: t.record.overall.pointsFor ?? 0,
       };
+      // What this team has already spent of that budget. ESPN sends it with mTeam.
+      rec.faabSpent = t.transactionCounter?.acquisitionBudgetSpent ?? rec.faabSpent ?? 0;
       teams.set(t.id, rec);
       for (const e of t.roster?.entries ?? []) {
         const p = e.playerPoolEntry.player;

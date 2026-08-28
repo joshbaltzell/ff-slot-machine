@@ -23,6 +23,8 @@ import { bandMean, bandTag, bindSourcesChips, calibrationSection, runProjections
 import { environmentStep, envColumn, envCell, envChips, bindEnvChips, streamingSection }
   from "./panel/environment.js";
 import { ROSTER_HINT, moveNote, moveLines, dropSection } from "./panel/roster.js";
+import { usageOrNull, usageViewStored, assetsSection, breakoutSection,
+         waiverView, faCrowdCols, faCrowdCells } from "./panel/usage.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -39,6 +41,7 @@ const PHASES = [
   ["schedule", "Schedule"],
   ["vol",      "Player volatility"],
   ["market",   "Market values"],
+  ["usage",    "Usage and trends"],
   ["s1",       "1-for-1 trades"],
   ["s21",      "2-for-1 trades"],
   ["s2",       "2-for-2 trades"],
@@ -459,6 +462,17 @@ async function start(ref) {
     Steps.set("market", marketHealthy ? "done" : "warn",
       loadedMarket ? `${loadedMarket.byEspn.size} priced` : "unavailable");
 
+    // Usage: what the box score has not caught up with yet. Evidence only - nothing
+    // below this line reads it, and a dead feed costs two sections and two columns,
+    // not the search - so the computation, not just the load, is guarded.
+    Steps.set("usage", "run");
+    try {
+      const loadedUsage = await usageOrNull(model, ref.seasonId, say);
+      window.__usage = await usageViewStored(model, loadedUsage, s.currentWeek, say);
+    } catch { window.__usage = null; }
+    Steps.set("usage", window.__usage ? "done" : "warn",
+      window.__usage ? `${window.__usage.table.rows.size} players` : "unavailable");
+
     Steps.set("s1", "run");
     const one = await eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
     say(`  ${one.length} mutually beneficial`, "ok");
@@ -687,6 +701,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const viewing = window.__view ?? myTeam;
   const mineOnly = viewing !== "__all__";
   const mkt = window.__market ?? null;
+  const uv = window.__usage ?? null;
+  // What is left of my acquisition budget, for the bid column. Settings are read.
+  const myBudget = model.settings.faabBudget ?? 0;
+  const mySpent = [...model.teams.values()].find((t) => t.name === myTeam)?.faabSpent ?? 0;
   const F = (window.__filters ??= {
     shapes: new Set(SHAPES),
     minGain: 0.10, only: new Set(), q: "",
@@ -950,6 +968,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
 
   const upgrades = eng.freeAgents.length
     ? eng.freeAgentUpgrades(mineOnly ? viewing : myTeam, { minGain: 0.05, limit: 25 }) : [];
+  const wv = waiverView(upgrades, uv, eng,
+    { budget: myBudget, myRemaining: Math.max(0, myBudget - mySpent), weeksLeft: eng.NW });
   const faGrid = grid("faGrid", [
     { key: "add", label: "Add", value: (u) => nm(u.fa) },
     { key: "pos", label: "Pos", value: (u) => posOf(u.fa) },
@@ -960,6 +980,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "po", label: "Playoffs", num: true, value: (u) => u.playoff, hint: HINT.po },
     { key: "own", label: "Owned", num: true,
       value: (u) => model.players.get(eng.ids[u.fa]).owned ?? 0, hint: HINT.owned },
+    ...faCrowdCols(wv),
   ], upgrades, {
     sort: "gain", dir: -1,
     empty: '<div class="empty"><b>Nothing on waivers helps</b>Your worst starter '
@@ -974,6 +995,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td class="num ${cls(u.playoff)}">${f2(u.playoff)}</td>
       <td class="num" style="color:var(--faint)">${
         model.players.get(eng.ids[u.fa]).owned ?? "—"}%</td>
+      ${faCrowdCells(u, wv)}
     </tr>`,
   });
 
@@ -1166,16 +1188,22 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
                          env: window.__env, grid, esc })}
 
     <section>
-      <h2 class="secttl">Free agents worth adding</h2>
+      <h2 class="secttl">Free agents worth adding — quiet vs contested</h2>
       <p class="sectsub">A full roster makes a pickup a swap, so every row names the drop.
         Gains are measured exactly like trades: the change in the best lineup you could
-        field.</p>
+        field. <b>Crowd</b> is how many Sleeper leagues added him in the last day, and
+        <b>Bid</b> is a suggested FAAB figure beside the most it is worth — a heuristic
+        shown next to the gain, never part of it.</p>
       <div class="panel">${faGrid}</div>
     </section>
 
     ${dropSection(eng, model, { team: mineOnly ? viewing : myTeam, grid, avail: AV })}
 
     ${arbitrageSection(eng, model, mkt, { myTeam, grid })}
+
+    ${assetsSection(eng, model, uv, { myTeam, grid, trades })}
+
+    ${breakoutSection(eng, model, uv, { myTeam, grid })}
 
     <section>
       <h2 class="secttl">League strength</h2>

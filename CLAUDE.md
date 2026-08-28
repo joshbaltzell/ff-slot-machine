@@ -44,12 +44,15 @@ extension/
     streaming.js     three-week hold-or-churn plan for K, D/ST, QB and TE slots
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
+    usage.js         snap/target share, WOPR, TD over expectation, points over usage
+    faab.js          suggested waiver bids
     sources/
       cache.js       TTL-cached fetch for external feeds, storage-injectable
       csv.js         CSV reader (quoted fields)
       sleeper.js     Sleeper players, trending, NFL state
       sleeperproj.js Sleeper/RotoWire weekly projections
       fantasypros.js FantasyPros ECR via DynastyProcess
+      sleeperstats.js Sleeper's weekly box score, one request per played week
       fantasycalc.js FantasyCalc crowd values keyed on espnId
       vegas.js       Vegas lines and implied team totals
       weather.js     stadium weather for outdoor/retractable games
@@ -60,6 +63,7 @@ extension/
     projections.js   source orchestration, the ± band, the Calibration section
     environment.js   the environment column, chips and streaming section
     roster.js        2-for-1 waiver notes and the drop-candidate table
+    usage.js         the assets, breakout and waiver-bid HTML
   test/
     parity.mjs       605 assertions against a frozen league — the engine contract
     availability.mjs availability, the horizon, record-seeded seasons, UI strings
@@ -68,6 +72,7 @@ extension/
     sources.mjs      cache semantics and the Sleeper client, offline
     environment.mjs  151 assertions for lines, weather, factors and streaming
     roster.mjs       replacement level, the 2-for-1 shape, drop ranking
+    usage.mjs        usage, breakouts, the crowd split, FAAB bids and the panel HTML
     run-all.mjs      runs every *.mjs in the directory
 ```
 
@@ -97,6 +102,15 @@ pruning heuristic was measured at 57% recall and rejected. The first exception i
 availability: above six uncertain players in a week, `weekly` samples 64 fixed-seed
 outcomes instead of enumerating all `2^k`. It is deterministic and confined to the
 current week. The second is the backfill pool, below. Keep them the only two.
+
+**Usage signals and FAAB bids are evidence, not inputs.** Snap and target shares, WOPR,
+touchdowns over expectation, the points-on-usage residual and the suggested bid are
+heuristics built from a third-party weekly box score. They rank their own grids and
+they are displayed beside the engine's numbers so a claim can be argued with. Nothing
+in `search.js`, `lineup.js`, `season.js` or `odds.js` reads any of them, and nothing
+should: the moment a heuristic enters the solve, "nothing in the search is
+approximated" stops being true. The residual is `null` — never 0 — when a position has
+too few players to fit, because 0 already means "exactly on the fit".
 
 **Market values are display and ranking only.** FantasyCalc's numbers come from real
 completed trades, which makes them a good model of what the manager on the other side
@@ -325,5 +339,6 @@ uninstalled.
 
 Everything runs locally against ESPN's read API using the browser's own session. No
 backend, no analytics, no league data leaves the machine. The one other host is
-`api.sleeper.app`, which is asked only for its public league-agnostic player list —
-no league id, no team, no roster is sent with the request. Keep it that way.
+`api.sleeper.app`, which is asked only for its public, league-agnostic player list,
+weekly stats and trending-add feeds — no league id, no team, no roster is sent with
+any of those requests. Keep it that way.
