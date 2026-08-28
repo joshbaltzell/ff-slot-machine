@@ -98,10 +98,17 @@ export async function usageOrNull(model, seasonId, say = () => {}, opts = {}) {
       const stats = await loadSeasonStats(seasonId, currentWeek, opts);
       if (!stats.byWeek.size) throw new Error("no weekly stats");
       // The crowd is the least important of the three and must not take the rest down.
-      let trending = [];
+      // It is also the one failure the single `live` flag downstream cannot express:
+      // by the time the view is built, "trending answered with nothing" and "trending
+      // did not answer" look identical, and they are different claims. So the outcome
+      // is recorded here, where it is still known.
+      let trending = [], crowdLive = true;
       try { trending = await loadTrending("add", opts); }
-      catch (e) { say(`  crowd adds unavailable (${e.message ?? e})`, ""); }
-      return { players, stats, trending };
+      catch (e) {
+        crowdLive = false;
+        say(`  crowd adds unavailable (${e.message ?? e})`, "");
+      }
+      return { players, stats, trending, crowdLive };
     })();
     const got = await Promise.race([work, timeout(opts.timeoutMs ?? 15000)]);
     clearTimeout(timer);
@@ -127,8 +134,11 @@ export function usageView(model, loaded, currentWeek, memo = null) {
     if (p?.espn_id != null) crowdByEspn.set(Number(p.espn_id), Number(t.count) || 0);
   }
   const d = depthChanges(players.bySleeper, players.at, memo);
+  // Absent means "nobody said otherwise", which is the right default for a caller
+  // handing in a payload it assembled itself rather than one `usageOrNull` produced.
   return { table, crowdByEspn, depth: d.delta, memo: d.memo,
-           weeks: stats.weeks, failed: stats.failed, at: players.at };
+           weeks: stats.weeks, failed: stats.failed, at: players.at,
+           crowdLive: loaded.crowdLive ?? true };
 }
 
 /** The same view, with the depth-chart memo read and written. */
@@ -266,7 +276,7 @@ export function assetsSection(eng, model, view, opts = {}) {
 
 /* ------------------------------------------------------------------- breakout watch */
 
-const breakCols = () => [
+const breakCols = (crowdLive = true) => [
   { key: "name", label: "Player", value: (r) => r.name },
   { key: "pos", label: "Pos", value: (r) => r.pos },
   { key: "nfl", label: "Team", value: (r) => r.nfl ?? "" },
@@ -278,7 +288,7 @@ const breakCols = () => [
   { key: "depth", label: "Depth", num: true, hint: USAGE_HINT.depth,
     value: (r) => sortNum(r.depthDelta) },
   { key: "crowd", label: "Crowd 24h", num: true, hint: USAGE_HINT.crowd,
-    value: (r) => sortNum(r.crowd) },
+    value: (r) => (crowdLive ? sortNum(r.crowd) : SINK) },
 ];
 
 /** "RB2 +1", or the half of that which is known, or a dash. */
@@ -291,7 +301,7 @@ const depthCell = (r) => {
     ? ` <b class="${signCls(d)}">${d > 0 ? "+" : "−"}${Math.abs(d)}</b>` : ""}`;
 };
 
-function breakoutRow(r, myTeam = null) {
+function breakoutRow(r, myTeam = null, crowdLive = true) {
   const owner = r.owner == null ? "free agent" : r.owner === myTeam ? "you" : r.owner;
   return `<tr>
   <td style="font-weight:600">${esc(r.name)}</td>
@@ -301,7 +311,8 @@ function breakoutRow(r, myTeam = null) {
   <td class="num">${pctOrDash(r.snapShare)}</td>
   <td class="num ${signCls(r.trend)}">${signPctOrDash(r.trend)}</td>
   <td class="num">${depthCell(r)}</td>
-  <td class="num">${Number(r.crowd ?? 0).toLocaleString("en-US")}</td>
+  <td class="num">${crowdLive
+    ? Number(r.crowd ?? 0).toLocaleString("en-US") : '<span class="zero">—</span>'}</td>
 </tr>`;
 }
 
@@ -316,11 +327,14 @@ export function breakoutSection(eng, model, view, opts = {}) {
   const rows = view
     ? breakouts(view.table, ownerOf, view.crowdByEspn, view.depth).slice(0, limit)
     : [];
+  // `breakouts` fills a missing count with 0, which is a claim - "nobody else wants
+  // him" - and not one a silent endpoint has earned. A half-dead feed dashes instead.
+  const crowdLive = !!view && (view.crowdLive ?? true);
 
   const deadState = '<div class="empty"><b>Usage signals unavailable</b>Sleeper\'s weekly '
     + 'snap feed did not answer, so there are no snap shares to watch move.</div>';
-  const html = grid("usageBreak", breakCols(), rows, {
-    sort: "trend", dir: -1, row: (r) => breakoutRow(r, myTeam),
+  const html = grid("usageBreak", breakCols(crowdLive), rows, {
+    sort: "trend", dir: -1, row: (r) => breakoutRow(r, myTeam, crowdLive),
     empty: view
       ? '<div class="empty"><b>Nobody moving</b>No snap share has jumped by '
         + `${Math.round(USAGE_K.BREAKOUT_TREND * 100)} points and no depth chart has `
@@ -353,14 +367,20 @@ export function waiverView(upgrades, view, eng, opts = {}) {
     budget: opts.budget, myRemaining: opts.myRemaining,
     weeksLeft: opts.weeksLeft, crowdOf,
   });
-  return { split, threshold, mode: plan.mode, bids: plan.bids, live: !!view };
+  // Two flags, not one. `live` is "there is a usage view at all", which is what the
+  // sections key their empty states on; `crowdLive` is "the trending endpoint
+  // answered", which is the only thing the crowd column may be rendered from. They
+  // differ on exactly the path `usageOrNull` was written to survive: stats up, crowd
+  // down.
+  return { split, threshold, mode: plan.mode, bids: plan.bids,
+           live: !!view, crowdLive: !!view && (view.crowdLive ?? true) };
 }
 
 /** Two `tradeCols`-style descriptors for the free-agent grid. -1 sinks every dash. */
 export function faCrowdCols(wv) {
   return [
     { key: "crowd", label: "Crowd 24h", num: true, hint: USAGE_HINT.crowd,
-      value: (u) => (wv?.live ? (wv.split.get(u.fa)?.crowd ?? 0) : -1) },
+      value: (u) => (wv?.crowdLive ? (wv.split.get(u.fa)?.crowd ?? 0) : -1) },
     { key: "bid", label: "Bid", num: true, hint: USAGE_HINT.bid,
       value: (u) => (wv?.mode === "faab" ? (wv.bids.get(u.fa)?.bid ?? 0) : -1) },
   ];
@@ -369,7 +389,7 @@ export function faCrowdCols(wv) {
 /** Exactly two `<td>` on every path, so a dead feed never shifts the column count. */
 export function faCrowdCells(u, wv) {
   const dash = '<td class="num"><span class="zero">—</span></td>';
-  const c = wv?.live ? wv.split.get(u.fa) : null;
+  const c = wv?.crowdLive ? wv.split.get(u.fa) : null;
   const crowd = c
     ? `<td class="num ${c.contested ? "down" : "up"}">${c.crowd.toLocaleString("en-US")}</td>`
     : dash;

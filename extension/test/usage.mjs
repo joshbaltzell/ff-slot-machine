@@ -12,8 +12,8 @@ import { USAGE_K, DRIVER, quantile, ptsKeyFor, usageTable,
   from "../engine/usage.js";
 import { FAAB_K, offRound, faabBids } from "../engine/faab.js";
 import { readSettings } from "../engine/league.js";
-import { USAGE_HINT, usageOrNull, usageView, ownersOf, assetsSection, breakoutSection,
-         waiverView, faCrowdCols, faCrowdCells } from "../panel/usage.js";
+import { USAGE_HINT, usageOrNull, usageView, usageViewStored, ownersOf, assetsSection,
+         breakoutSection, waiverView, faCrowdCols, faCrowdCells } from "../panel/usage.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -508,7 +508,10 @@ const OWNER = new Map([
   const deadWv = waiverView(ups, null, eng, { budget: 100, myRemaining: 100, weeksLeft: 10 });
   ok((faCrowdCells(ups[0], deadWv).match(/<td/g) ?? []).length === 2,
      "a dead feed still renders two cells, so the column count never shifts");
-  ok(/—/.test(faCrowdCells(ups[0], deadWv)), "…both showing a dash");
+  ok(/—/.test(faCrowdCells(ups[0], deadWv).split("</td>")[0]),
+     "…the crowd one showing a dash. The bid is deliberately NOT dashed: it comes from "
+     + "the engine's own gains and the league's budget, neither of which is Sleeper's - "
+     + "only the urgency multiplier is, and that degrades to 1x");
   const noBudget = waiverView(ups, view, eng, { budget: 0, myRemaining: 0, weeksLeft: 10 });
   ok(noBudget.mode === "priority" && /—/.test(faCrowdCells(ups[0], noBudget).split("</td>")[1]),
      "a no-FAAB league shows no bid");
@@ -527,6 +530,120 @@ const OWNER = new Map([
   const stuck = await usageOrNull(model, 2026, rec,
     { fetchImpl: stuckFetch(), storage: mkStorage(), now: 0, timeoutMs: 20 });
   ok(stuck === null, "a feed that accepts the connection and never answers gives up");
+
+  /* ---- the half-dead feed: stats up, crowd down ----
+     `usageOrNull` catches a trending failure on its own and carries on, which is the
+     one degradation a single `live` flag cannot express: by view-build time, "trending
+     answered with nothing" and "trending never answered" are identical. A 0 in the
+     crowd column is an affirmative claim that nobody else wants the man, and a silent
+     endpoint has not earned it. */
+  const feed = {};
+  feed["https://api.sleeper.app/v1/players/nfl"] =
+    Object.fromEntries([...bySleeper].map(([sid, pl]) => [sid, { ...pl }]));
+  for (let w = 1; w <= 4; w++) {
+    feed[weekUrl(2026, w)] = [...byWeek.get(w)]
+      .map(([sid, r]) => ({ player_id: sid, team: r.team, stats: r }));
+  }
+  const half = await usageOrNull(model, 2026, rec,
+    { fetchImpl: mkFetch(feed), storage: mkStorage(), now: 0 });
+  ok(half && half.stats.byWeek.size === 4,
+     "a dead trending endpoint does not cost the snaps and targets");
+  ok(half.crowdLive === false,
+     "…and the loader records that the crowd is missing, where that is still knowable");
+  const withCrowd = { ...feed,
+    ["https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=24&limit=50"]:
+      [{ player_id: "s4", count: 900 }] };
+  const whole = await usageOrNull(model, 2026, rec,
+    { fetchImpl: mkFetch(withCrowd), storage: mkStorage(), now: 0 });
+  ok(whole.crowdLive === true && whole.trending.length === 1,
+     "…and reports it live when it answers");
+
+  const halfView = usageView(model, half, 5, null);
+  ok(halfView.crowdLive === false && halfView.crowdByEspn.size === 0,
+     "the view carries the distinction through");
+  const emptyCrowd = usageView(model, { ...loaded, trending: [] }, 5, null);
+  ok(emptyCrowd.crowdLive === true && emptyCrowd.crowdByEspn.size === 0,
+     "…and a genuinely empty trending list is NOT a dead one, though both look empty");
+  const halfWv = waiverView(ups, halfView, eng,
+    { budget: 100, myRemaining: 100, weeksLeft: 10 });
+  ok(halfWv.live === true && halfWv.crowdLive === false,
+     "the waiver view publishes both flags, because they differ on exactly this path");
+  ok(/—/.test(faCrowdCells(ups[0], halfWv).split("</td>")[0]),
+     "a dead crowd feed dashes the crowd cell instead of claiming zero adds");
+  ok((faCrowdCells(ups[0], halfWv).match(/<td/g) ?? []).length === 2,
+     "…still exactly two cells, so the column count does not shift");
+  ok(/\$/.test(faCrowdCells(ups[0], halfWv).split("</td>")[1]),
+     "…and the bid survives, because the bid was never Sleeper's to give");
+  ok(faCrowdCols(halfWv)[0].value(ups[0]) === -1,
+     "…and the column sorts it as missing rather than as a real zero");
+
+  gridCalls.length = 0;
+  breakoutSection(eng, model, halfView, { myTeam: "Mine", grid: fakeGrid });
+  ok(gridCalls[0].rows.length === 2,
+     "breakout watch still finds the snap jumps without the crowd");
+  ok(/—/.test(gridCalls[0].o.row(gridCalls[0].rows[0]).split("</td>").at(-2)),
+     "…and dashes its crowd column rather than reporting 0 adds");
+  ok(gridCalls[0].cols.find((c) => c.key === "crowd").value(gridCalls[0].rows[0]) < -1e8,
+     "…and sinks it in the sort, the way every other missing number is sunk");
+  gridCalls.length = 0;
+  breakoutSection(eng, model, view, { myTeam: "Mine", grid: fakeGrid });
+  ok(/900/.test(gridCalls[0].o.row(gridCalls[0].rows[0])),
+     "a live crowd feed still prints the count");
+
+  /* ---- usageViewStored: the depth memo, read and written ---- */
+  const store = mkStorage();
+  const stored1 = await usageViewStored(model, loaded, 5, rec, { storage: store });
+  ok(stored1.table.rows.size === 12 && stored1.depth.size === 0,
+     "a first stored run has no earlier snapshot to diff against");
+  ok(store._m.get("ffsm.depth")?.order?.s10 === 2,
+     "…and what it writes back is the memo depthChanges produced, not the one it read");
+  const promoted = new Map([...bySleeper].map(([k, v]) =>
+    [k, k === "s10" ? { ...v, depth_chart_order: 1 } : v]));
+  const stored2 = await usageViewStored(model,
+    { ...loaded, players: { bySleeper: promoted, byEspn: new Map(), at: 2000 } },
+    5, rec, { storage: store });
+  ok(stored2.depth.get("s10") === 1,
+     "a second run diffs against the stored memo and reports the promotion");
+  ok(store._m.get("ffsm.depth").prevOrder.s10 === 2
+     && store._m.get("ffsm.depth").order.s10 === 1,
+     "…and rolls the snapshot forward rather than writing back what it read");
+  // chrome.storage resolves a bare {} for a key it has never held, not {key: undefined}.
+  const missingKey = { async get() { return {}; }, async set() {} };
+  ok((await usageViewStored(model, loaded, 5, rec, { storage: missingKey })).depth.size === 0,
+     "a storage miss that answers with a bare {} is a first run, not a crash");
+  const throwingStore = { async get() { throw new Error("quota"); },
+                          async set() { throw new Error("quota"); } };
+  const storedT = await usageViewStored(model, loaded, 5, rec, { storage: throwingStore });
+  ok(storedT && storedT.table.rows.size === 12,
+     "a storage that throws on both sides costs the memo, never the view");
+  ok(await usageViewStored(model, null, 5, rec, { storage: store }) === null,
+     "no feed, no stored view either");
+
+  /* ---- the Best offer column: the only join to the search's own output ----
+     One trade moves B1 (index 4, mine, going out) and B2 (index 5, theirs, coming
+     back), so one fixture reaches both directions. The shape carries a hostile string
+     so `offerCell`'s own escape path is exercised rather than only asserted about. */
+  const offerTrades = [
+    { shape: '1-for-1"><img src=x>',
+      sides: [{ team: "Mine", sent: [4], received: [5], gain: 0.42 },
+              { team: "Theirs", sent: [5], received: [4], gain: 0.10 }] },
+  ];
+  gridCalls.length = 0;
+  assetsSection(eng, model, view, { myTeam: "Mine", grid: fakeGrid, trades: offerTrades });
+  const sellRows = gridCalls[0].rows, buyRows = gridCalls[1].rows;
+  ok(sellRows[0].name === "B1" && near(sellRows[0].offer?.gain, 0.42)
+     && sellRows[0].offer.dir === "send",
+     "the best offer the search already found is joined onto the sell row by espn id");
+  ok(sellRows[1].offer === null, "…and a player in no trade carries no offer at all");
+  ok(buyRows.find((r) => r.name === "B2")?.offer?.dir === "get",
+     "a player coming the other way is reported as one I would receive");
+  const offHtml = gridCalls[0].o.row(sellRows[0]);
+  ok(/\+0\.42/.test(offHtml) && /send/.test(offHtml),
+     "the offer cell renders the gain to two places and the direction");
+  ok(!/<img src=x>/.test(offHtml) && /&lt;img/.test(offHtml),
+     "…and escapes the trade shape, which is a string this file puts into HTML");
+  ok(/—/.test(gridCalls[0].o.row(sellRows[1]).split("</td>").at(-2)),
+     "a row with no offer shows a dash in that column, not a zero");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
