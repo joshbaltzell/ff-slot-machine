@@ -20,6 +20,8 @@ import { AVAIL_HINT, statusRank, statusCell, statusBadge, seasonNote,
 import { shrinkProjections } from "./engine/calibrate.js";
 import { bandMean, bandTag, bindSourcesChips, calibrationSection, runProjections,
          sourcesChips } from "./panel/projections.js";
+import { environmentStep, envColumn, envCell, envChips, bindEnvChips, streamingSection }
+  from "./panel/environment.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -32,6 +34,7 @@ const PHASES = [
   ["agents",   "Free-agent pool"],
   ["injuries", "Injury reports"],
   ["proj",     "Projection sources"],
+  ["env",      "Game environment"],
   ["schedule", "Schedule"],
   ["vol",      "Player volatility"],
   ["market",   "Market values"],
@@ -352,6 +355,13 @@ async function start(ref) {
     } else {
       say("projections used as ESPN publishes them (calibration off)", "");
     }
+
+    // Game environment. After shrinkage on purpose: shrinkage is about how far a
+    // projection sits from its positional mean, this is about which game it is for,
+    // and the two compose. Before the Engine, because the Engine snapshots proj.
+    Steps.set("env", "run");
+    window.__env = await environmentStep(model, ref.seasonId, say);
+    Steps.set("env", window.__env.state, window.__env.note);
 
     say("building engine…");
     const eng = new Engine(model, { starters }, masks);
@@ -905,6 +915,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "avg", label: "Proj/wk", num: true, value: (r) => r.avg, hint: HINT.projwk },
     { key: "band", label: "±", num: true, value: (r) => bandMeanOf(r.p.id), hint: HINT.band },
     { key: "rate", label: "Starts", num: true, value: (r) => r.rate, hint: HINT.starts },
+    envColumn(window.__env),
     { key: "bar", label: "", sortable: false },
   ], rosterRows, {
     sort: "rate", dir: 1,
@@ -918,6 +929,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td class="num" style="color:var(--faint)">${bd > 0.05 ? bd.toFixed(1) : "—"}</td>
       <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
         (r.rate * 100).toFixed(0)}%</td>
+      ${envCell(window.__env, r.p)}
       <td><div class="meter"><i style="width:${(r.rate * 100).toFixed(0)}%"></i></div></td>
     </tr>`; },
   });
@@ -1136,6 +1148,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <div class="panel">${rosterGrid}</div>
     </section>
 
+    ${streamingSection({ eng, model, team: mineOnly ? viewing : myTeam,
+                         env: window.__env, grid, esc })}
+
     <section>
       <h2 class="secttl">Free agents worth adding</h2>
       <p class="sectsub">A full roster makes a pickup a swap, so every row names the drop.
@@ -1177,6 +1192,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
               <button data-v="0" aria-pressed="${window.__calibrate === false}">As published</button>
             </div></div>
           ${sourcesChips({ aggregate: window.__aggregate })}
+          ${envChips(window.__env)}
         </div>
         ${window.__noSeason
           ? `<div class="note"><b>No season projection.</b> The regular season has no
@@ -1204,6 +1220,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const rerender = () => render(eng, model, trades, myTeam, schedule);
   bindSort(app, rerender);
   initTooltips(app);
+  bindEnvChips(app);
 
   app.querySelectorAll("#tradeGrid tr.tr-row").forEach((row) => {
     row.onclick = () => {
@@ -1299,7 +1316,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     // one week at a time and needs six of them, so a wiped log is six weeks of
     // waiting with no explanation. Its keys are dynamic (`ffsm.calib.{league}.{season}`),
     // so no literal list can name them — they are matched by prefix instead.
-    const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed", "ffsm.aggregate"];
+    const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed",
+                  "ffsm.aggregate", "ffsm.environment"];
     const all = await chrome.storage.local.get(null);
     const keep = Object.fromEntries(Object.entries(all).filter(([k]) =>
       KEEP.includes(k) || k.startsWith("ffsm.calib.")));

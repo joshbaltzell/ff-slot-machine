@@ -352,3 +352,13 @@ th.s:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   border-color:rgba(255,111,111,.32)}
 .avail.gone{background:var(--raised);color:var(--faint);border-color:var(--line-hi)}
 .avail.sm{font-size:9px;padding:1px 4px;margin-left:2px;vertical-align:1px}
+
+/* streaming planner */
+.substl{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin:22px 0 8px}
+.substl:first-of-type{margin-top:4px}
+tr.hold td{background:var(--accent-soft)}
+.tagx{display:inline-block;font-family:var(--mono);font-size:9px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
+  border:1px solid var(--accent-line);border-radius:2px;padding:1px 4px;
+  margin-left:6px;vertical-align:1px}

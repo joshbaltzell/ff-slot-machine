@@ -40,6 +40,8 @@ extension/
     calibrate.js     positional shrinkage of ESPN projections
     aggregate.js     average outside sources into ESPN's scoring
     calibration.js   the per-league projection-error log and its fitted slopes
+    environment.js   Vegas + weather -> a factor on this week's and next week's proj
+    streaming.js     three-week hold-or-churn plan for K, D/ST, QB and TE slots
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
     sources/
@@ -49,16 +51,21 @@ extension/
       sleeperproj.js Sleeper/RotoWire weekly projections
       fantasypros.js FantasyPros ECR via DynastyProcess
       fantasycalc.js FantasyCalc crowd values keyed on espnId
+      vegas.js       Vegas lines and implied team totals
+      weather.js     stadium weather for outdoor/retractable games
+      stadiums.js    stadium roof and location lookup
   panel/
     market.js        every string of market HTML; degrades to a dash
     availability.js  status codes, cells, badges, log lines, the season note
     projections.js   source orchestration, the ± band, the Calibration section
+    environment.js   the environment column, chips and streaming section
   test/
     parity.mjs       605 assertions against a frozen league — the engine contract
     availability.mjs availability, the horizon, record-seeded seasons, UI strings
     market.mjs       the market phase, offline (fetch and storage injected)
     projections.mjs  aggregate, calibration log and the panel module, offline
     sources.mjs      cache semantics and the Sleeper client, offline
+    environment.mjs  151 assertions for lines, weather, factors and streaming
     run-all.mjs      runs every *.mjs in the directory
 ```
 
@@ -181,6 +188,29 @@ the same scoring period alongside the current one. Matching on `statSourceId`,
 built; fixture tests run with it off. `measureVolatility` reads `rawStats`, so sigma
 is unaffected.
 
+**Game environment is an input adjustment, and only ever to this week and next.**
+`environment.js` scales `p.proj[w]` by an implied-total and weather factor for
+`currentWeek` and `currentWeek + 1`, in `start()`, after shrinkage and before the
+`Engine` is constructed. It composes with shrinkage on purpose: shrinkage is about
+how far a projection sits from its positional mean, this is about which game it is
+for. Three rules keep it safe. First, it is an adjustment to an *input*, not a new
+term: because it is folded into `proj` before the Engine is built, everything
+downstream — the lineup solver, `sideMetrics`, `projectSeason`, `attachOdds`, the
+leverage strip — reads the adjusted number, which is the point of the seam. What
+nothing downstream carries is a *separate* environment term, and no slot decision
+keys on one: the solver still runs entirely on `eligibleSlots`. The position strings
+`envGroup` reads are one of a small set of sanctioned exceptions to "position strings
+are display-only," alongside `calibrate.js`'s positional shrinkage and the
+positional-median volatility fallback in `league.js` and `search.js`; every one of
+them picks a coefficient, none picks a slot, and `positionLabel` derives `pos` from
+`eligibleSlots` to begin with, so `envGroup` is transitively slot-keyed. Second, it
+never touches a week without a line, so a dead feed is identity rather than a
+distortion. Third, it never reaches past next week — `gain` averages every week in
+the model and `reg` the regular-season weeks alone, so two moved weeks shift a
+season-long trade metric by at most 2/17 of the per-week swing, which is where the
+bound comes from. Factors clamp to [0.6, 1.4]; retractable roofs count as covered,
+since no feed says whether the roof was shut and closing it is the common case.
+
 **Volatility is measured, not assumed.** `statSourceId: 0` gives the prior season's
 actual weekly scores in the same payload as projections; the residual is real
 league-scored volatility. Team sigma is the root of the summed variance of that
@@ -217,6 +247,13 @@ actuals and twenty pairs per position before a fitted slope is trusted, clamped 
 these keys, either: a user in several leagues across several seasons keeps one key per
 league-season forever. The rows are small — one per rostered player per week — so this
 is housekeeping debt rather than a quota risk, but nothing cleans it up today.
+
+**Defence-versus-position is deferred, deliberately.** Ranking playoff-week matchups
+by how each defence performs against a position needs nflverse release assets, which
+are not CORS-open and would need either a host permission for a redirecting CDN or a
+copy of the data in the repo. The measured effect is also small next to the implied
+total, which the environment factor already carries. Revisit only with a CORS-open
+source.
 
 ## Testing
 
