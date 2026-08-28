@@ -29,6 +29,38 @@ import { mulberry32 } from "./availability.js";
 const ENUM_MAX = 6;
 const SAMPLES = 64;
 
+/** How many free agents per distinct seat mask enter the backfill pool. */
+const POOL_PER_MASK = 3;
+
+/**
+ * Bounds are compared with slack, and the decision is then made on the exact metric.
+ *
+ * `mean(after) - mean(before)` and `mean(after - before)` differ in the last bit, and
+ * gating on the first while reporting the second lets a handful of trades out of
+ * 172,800 be published with a gain fractionally under the minimum the user asked for.
+ * Measured, not theorised. Every prune below is therefore loose by GATE_EPS and every
+ * accept is made on `_metrics().gain` - the number the page prints.
+ */
+const GATE_EPS = 1e-9;
+
+/**
+ * How many (team, pair-sent) groups run between macrotask yields inside a search.
+ *
+ * One ordered pair of 16-man rosters is about 70 ms of arithmetic - long enough for a
+ * progress bar to stutter. Yielding every 32 groups as well brings the measured chunk
+ * to a 16 ms median and a 57 ms maximum, for about 0.2 s of overhead on a 7 s run.
+ */
+const YIELD_GROUPS = 32;
+
+/**
+ * When two lineup values count as the same number.
+ *
+ * Distinct from a gate on a user-facing minimum: this decides whether a removal
+ * was free, i.e. whether two solves of the same optimal-lineup problem landed on
+ * the same total. Float noise across a sum of eighteen weeks lives well below it.
+ */
+const TIE_EPS = 1e-12;
+
 /**
  * Hand the browser a turn.
  *
@@ -101,6 +133,9 @@ export class Engine {
     this._unc = new Int32Array(this.n);      // indices of the uncertain players
     this._uProb = new Float64Array(this.n);  // their probabilities
     this._isOut = new Uint8Array(this.n);    // outcome flags, cleared after each use
+    this._buf = new Float64Array(this.NW);   // one shared result buffer for _wmean
+    this._pool = null;                       // backfillPool(), lazy
+    this._rank = null;                       // _rankVal(), lazy
     this.baseline = new Map();
     for (const t of this.teams) this.baseline.set(t, this.weekly(this.roster.get(t)));
 
@@ -137,6 +172,8 @@ export class Engine {
     this._swaps = null;
     this._teamSigma = null;
     this._baseWins = null;
+    this._pool = null;      // pool membership is availability-weighted
+    this._rank = null;
     this.baseline = new Map();
     for (const t of this.teams) this.baseline.set(t, this.weekly(this.roster.get(t)));
   }
@@ -254,6 +291,42 @@ export class Engine {
     return out;
   }
 
+  /**
+   * Availability-weighted mean projection over the horizon, per player.
+   *
+   * Ranking only: it decides which free agents are worth trying and which rostered
+   * player to test dropping first. Never a value - every value in this engine comes
+   * from `weekly`, because a projection is not worth what it says until somebody
+   * seats it. Weighting by availability keeps a season-ending IR case off the waiver
+   * shortlist, where his raw projection would otherwise hold a slot he cannot use.
+   */
+  _rankVal() {
+    if (this._rank) return this._rank;
+    const NW = this.NW, av = this.avail;
+    const r = new Float64Array(this.n);
+    for (let i = 0; i < this.n; i++) {
+      let s = 0;
+      for (let w = 0; w < NW; w++) s += this.proj[i * NW + w] * (av ? av[i * NW + w] : 1);
+      r[i] = s / NW;
+    }
+    this._rank = r;
+    return r;
+  }
+
+  /**
+   * Mean weekly optimal lineup for a roster, over the horizon.
+   *
+   * Writes through one shared buffer, so a caller that needs to keep the per-week
+   * array must copy it before calling again. Everything in this section works in
+   * means, and a mean is all the comparisons need.
+   */
+  _wmean(ids) {
+    const a = this.weekly(ids, this._buf);
+    let s = 0;
+    for (let w = 0; w < this.NW; w++) s += a[w];
+    return s / this.NW;
+  }
+
   swap(ids, out, inn) {
     const drop = new Set(out);
     const kept = ids.filter(i => !drop.has(i));
@@ -268,6 +341,130 @@ export class Engine {
     for (const i of ids) c[this.posId[i]]++;
     for (const [pid, max] of this.limits) if (c[pid] > max) return false;
     return true;
+  }
+
+  /**
+   * The waiver candidates worth trying: the top few free agents in every distinct
+   * seat mask, ranked by availability-weighted projection.
+   *
+   * This is the engine's one bounded candidate set, and what it bounds is the WAIVER
+   * step, not the trade search. `backfill` is exact *within* this pool; the pool
+   * itself is the approximation. Ranking is by mean projection over the horizon, but
+   * an add's marginal value is a max over assignments, so week shape can invert that
+   * order: a free agent whose points are concentrated in the weeks a roster is thin
+   * (an IR stash about to return, a rookie about to be handed a job, a streamer with
+   * a favourable late schedule) can be worth more than three higher-mean men of the
+   * same eligibility and still be ranked out of the top three. The loss is
+   * one-directional - a missed better add understates the consolidating side's gain,
+   * so the bound costs recall and can never manufacture a trade that is not there.
+   *
+   * Buckets are seat MASKS, not position strings. Two players with the same mask are
+   * interchangeable to the lineup solver, which is what makes this correct in
+   * superflex, IDP, TQB and RB/WR leagues where "position" and "eligibility" part
+   * company. Nothing here reads `p.pos`.
+   */
+  backfillPool() {
+    if (this._pool) return this._pool;
+    const rank = this._rankVal();
+    const byMask = new Map();
+    for (const i of this.freeAgents) {
+      if (!this.mask[i]) continue;                 // cannot take any seat: never useful
+      if (!byMask.has(this.mask[i])) byMask.set(this.mask[i], []);
+      byMask.get(this.mask[i]).push(i);
+    }
+    const out = [];
+    for (const b of byMask.values()) {
+      b.sort((x, y) => rank[y] - rank[x]);
+      out.push(...b.slice(0, POOL_PER_MASK));
+    }
+    this._pool = out.sort((a, b) => rank[b] - rank[a]);
+    return this._pool;
+  }
+
+  /**
+   * The pool member whose addition raises this roster's mean lineup the most.
+   *
+   * A team that has just sent two men for one has an empty seat, and the honest
+   * comparison fills it: the alternative to consolidating is not playing a man short.
+   * The seat is filled with the best legal candidate even when his marginal value is
+   * zero, because the seat exists either way and a roster of 16 has to be compared
+   * with a roster of 16.
+   *
+   * Exact over `backfillPool()`. Returns `fa: null` only when the pool is empty or
+   * nothing in it is legal here - an open seat is a real outcome, not an error.
+   */
+  backfill(ids) {
+    const base = this._wmean(ids);
+    let fa = null, best = -Infinity;
+    for (const c of this.backfillPool()) {
+      if (ids.includes(c)) continue;
+      const after = ids.concat([c]);
+      if (!this.legal(after)) continue;
+      const v = this._wmean(after);
+      if (v > best) { best = v; fa = c; }
+    }
+    return { ids: fa === null ? ids : ids.concat([fa]), fa,
+             gain: fa === null ? 0 : best - base };
+  }
+
+  /**
+   * `backfill` again, bounded by the parent roster's marginals.
+   *
+   * `marg` is `[candidate, marginal value on the PARENT roster]`, sorted descending.
+   * Optimal lineup value is a weighted matroid rank function and therefore
+   * submodular, so a man is worth no more on a larger roster than on a smaller one:
+   * with `parent` a subset of `ids`, `base + marg[j]` is an upper bound on what
+   * candidate j can reach here. The list is sorted by that bound, so once the best
+   * found beats it, nothing later can win.
+   *
+   * Same answer as `backfill`. Measured at roughly a fifth of the lineup solves,
+   * which is what makes the exhaustive 2-for-1 search affordable.
+   */
+  _backfillFrom(ids, base, marg) {
+    let fa = null, best = -Infinity;
+    for (const [c, m] of marg) {
+      if (fa !== null && best >= base + m - TIE_EPS) break;
+      if (ids.includes(c)) continue;
+      const after = ids.concat([c]);
+      if (!this.legal(after)) continue;
+      const v = this._wmean(after);
+      if (v > best) { best = v; fa = c; }
+    }
+    return { ids: fa === null ? ids : ids.concat([fa]), fa,
+             gain: fa === null ? 0 : best - base, val: fa === null ? base : best };
+  }
+
+  /**
+   * The rostered player whose removal costs least. Exact.
+   *
+   * The scan runs in ascending rank order and stops the moment a removal costs
+   * nothing, because nothing can cost less than nothing: a man the optimal lineup
+   * leaves out every week is free to drop, and most rosters carry one. That is an
+   * early exit from an exhaustive scan, not a heuristic - eight of the fixture's ten
+   * teams take it and the two that do not fall through to the full scan and get the
+   * same answer a brute force does.
+   *
+   * `exclude` keeps the players who have just arrived in a trade out of the drop set.
+   * "Receive A and B, then drop B" is a 1-for-1 wearing a costume.
+   *
+   * When no single legal removal exists - a receiver two men over a position cap, say
+   * - it returns `drop: null` and the roster unchanged; callers must check for that
+   * rather than trusting `ids` to have shrunk.
+   */
+  trim(ids, exclude = null, base = null) {
+    const b = base ?? this._wmean(ids);
+    const rank = this._rankVal();
+    let drop = null, best = -Infinity;
+    const cand = ids.filter((i) => !exclude?.includes(i)).sort((x, y) => rank[x] - rank[y]);
+    for (const d of cand) {
+      const after = ids.filter((z) => z !== d);
+      if (!this.legal(after)) continue;
+      const v = this._wmean(after);
+      if (v > best) { best = v; drop = d; }
+      if (best >= b - TIE_EPS) break;
+    }
+    return { ids: drop === null ? ids : ids.filter((z) => z !== drop), drop,
+             cost: drop === null ? 0 : b - best, val: drop === null ? b : best };
   }
 
   /** Per-team swap table: value after (out -> in). Makes three-way a lookup. */
@@ -297,8 +494,15 @@ export class Engine {
     return tab;
   }
 
-  sideMetrics(team, out, inn) {
-    const now = this.weekly(this.swap(this.roster.get(team), out, inn));
+  /**
+   * A side's window means, given the roster it actually ends up with.
+   *
+   * Separated from `sideMetrics` because a 2-for-1 side finishes at the waiver wire:
+   * the roster to score is not `swap(roster, sent, received)`. Key order is the order
+   * `sideMetrics` has always produced.
+   */
+  _metrics(team, final, out) {
+    const now = this.weekly(final, out);
     const base = this.baseline.get(team);
     const d = [];
     for (let w = 0; w < this.NW; w++) d.push(now[w] - base[w]);
@@ -309,10 +513,17 @@ export class Engine {
     };
     const thin = this.thin.get(team);
     return {
-      team, sent: out, received: inn, weekly: d,
+      team, sent: [], received: [], weekly: d,
       gain: avg(d), reg: avg(d, this.regMask), playoff: avg(d, this.poMask),
       bye: avg(d, thin), full: avg(d, thin.map(x => !x)), win: 0, winWeekly: null,
     };
+  }
+
+  sideMetrics(team, out, inn) {
+    const s = this._metrics(team, this.swap(this.roster.get(team), out, inn));
+    s.sent = out;
+    s.received = inn;
+    return s;
   }
 
   score(moves, shape) {
@@ -388,6 +599,133 @@ export class Engine {
       if (n % 4 === 3) await yieldToBrowser();     // triples are quick; yield less often
     }
     return out.sort((a, b) => b.total - a.total);
+  }
+
+  /**
+   * Two players for one, priced all the way to the roster limit.
+   *
+   * A consolidation is the most common winning trade in a real league and every other
+   * tool grades it with a haircut, because the two sides do not end with the rosters
+   * the trade names: the side sending two has an empty seat and fills it from
+   * waivers, and the side receiving two is over the limit and drops somebody. Both
+   * are lineup solves, so both are inside the score. `sideMetrics` cannot express
+   * that - hence `_metrics` on a final roster, and `side.final` for the passes that
+   * run afterwards.
+   *
+   * The search is exhaustive over every ordered pair, every pair of players the
+   * sender could send, and every player the receiver could send back. It is made
+   * affordable by two upper bounds, both exact:
+   *
+   *   - the receiver has not yet paid for his drop, and a removal never raises the
+   *     optimal lineup, so his pre-trim gain is an upper bound on his final one;
+   *   - the sender's best waiver add is worth no more than the pool's best marginal
+   *     on the roster BEFORE the incoming player joined it (submodularity again).
+   *
+   * Both bounds are exact for a certain roster; when a week holds seven or more
+   * uncertain players `weekly` falls through to `_sample`, whose draws shift with
+   * `k`, so the bounds hold only up to that sampling noise - except when the removal
+   * is of a certain player, which leaves `k` and the `unc` order untouched and keeps
+   * monotonicity exact. See `CLAUDE.md`.
+   *
+   * Both bounds, and `trim`'s exactness, also assume per-week projections stay ≥ 0:
+   * `bestLineup` seats every player it can and adds his value unconditionally, so a
+   * negative projection would let a removal raise the lineup and break the bounds as
+   * upper bounds. Every transform on this branch (shrinkage, the environment factor,
+   * the calibration slope) keeps projections non-negative; a future signed adjustment
+   * must reckon with this before it ships.
+   *
+   * Measured on the fixture: 7.3 s against 72.2 s unpruned, and the reference test
+   * proves the two answer sets are identical - 0 missing, 0 extra, 0 value mismatch.
+   * There is no recall trade here; do not add one.
+   */
+  async findTwoForOne(minGain = 0.05, onProgress = () => {}) {
+    const out = [];
+    const pairs = [];
+    for (const A of this.teams) for (const B of this.teams) if (A !== B) pairs.push([A, B]);
+    // marginals depend on (sender, pair sent) only, so they are shared across the
+    // nine partners that sender faces.
+    const margOf = new Map();
+    let groups = 0;
+    for (let n = 0; n < pairs.length; n++) {
+      const [A, B] = pairs[n];
+      const ra = this.roster.get(A), rb = this.roster.get(B);
+      const bA = this._wmean(ra), bB = this._wmean(rb);
+      for (let x = 0; x < ra.length; x++) for (let y = x + 1; y < ra.length; y++) {
+        const two = [ra[x], ra[y]];
+        if (++groups % YIELD_GROUPS === 0) await yieldToBrowser();
+        const kept = ra.filter((i) => i !== two[0] && i !== two[1]);
+        const ck = `${A}\0${two[0]}\0${two[1]}`;
+        let marg = margOf.get(ck);
+        if (!marg) {
+          const v0 = this._wmean(kept);
+          marg = this.backfillPool()
+            .map((c) => [c, this._wmean(kept.concat([c])) - v0])
+            .sort((p, q) => q[1] - p[1]);
+          margOf.set(ck, marg);
+        }
+        const mMax = marg.length ? marg[0][1] : 0;
+        for (const one of rb) {
+          const withOne = kept.concat([one]);
+          const aBase = this._wmean(withOne);
+          if (aBase + mMax - bA < minGain - GATE_EPS) continue;
+          const recv = rb.filter((i) => i !== one).concat(two);
+          const bUp = this._wmean(recv);
+          if (bUp - bB < minGain - GATE_EPS) continue;
+          const bf = this._backfillFrom(withOne, aBase, marg);
+          if (!this.legal(bf.ids)) continue;
+          const sa = this._metrics(A, bf.ids);
+          if (sa.gain < minGain) continue;
+          const tr = this.trim(recv, two, bUp);
+          // A receiver two men over a position cap has no single legal drop: every
+          // removal still leaves him one over, so trim hands the roster back whole.
+          if (tr.drop === null || !this.legal(tr.ids)) continue;
+          if (tr.val - bB < minGain - GATE_EPS) continue;
+          const sb = this._metrics(B, tr.ids);
+          if (sb.gain < minGain) continue;
+          sa.sent = two; sa.received = [one];
+          sa.backfill = bf.fa; sa.drop = null; sa.final = bf.ids;
+          sb.sent = [one]; sb.received = two;
+          sb.backfill = null; sb.drop = tr.drop; sb.final = tr.ids;
+          out.push({
+            shape: "2-for-1", sides: [sa, sb], total: sa.gain + sb.gain,
+            balance: Math.min(sa.gain, sb.gain) / Math.max(sa.gain, sb.gain),
+          });
+        }
+      }
+      onProgress(n + 1, pairs.length, out.length);
+      await yieldToBrowser();
+    }
+    return out.sort((a, b) => b.total - a.total);
+  }
+
+  /**
+   * What every man on a roster is worth to keep, and what the wire would replace him
+   * with.
+   *
+   * `cost` is what the optimal lineup loses if he goes - zero for anyone the lineup
+   * never seats, which is most of a bench and is exactly the point. Ascending, so the
+   * first row is the safest cut. `net` is what the whole move is worth: the add minus
+   * the cost, which is the number that decides whether to make it.
+   */
+  dropCandidates(team) {
+    const ids = this.roster.get(team);
+    const base = this.baseline.get(team);
+    const rows = [];
+    for (const i of ids) {
+      const without = ids.filter((x) => x !== i);
+      // copy: `backfill` writes through the same shared buffer `weekly` just filled
+      const w = Float64Array.from(this.weekly(without, this._buf));
+      const avg = (m) => {
+        let s = 0, n = 0;
+        for (let x = 0; x < this.NW; x++) if (!m || m[x]) { s += base[x] - w[x]; n++; }
+        return n ? s / n : 0;
+      };
+      const cost = avg(null);
+      const bf = this.backfill(without);
+      rows.push({ i, cost, reg: avg(this.regMask), playoff: avg(this.poMask),
+                  add: bf.fa, addGain: bf.gain, net: bf.gain - cost });
+    }
+    return rows.sort((a, b) => a.cost - b.cost);
   }
 
   /**
@@ -523,7 +861,9 @@ export class Engine {
       if (!t) continue;
       const world = new Map();
       for (const s of t.sides) {
-        const ids = this.swap(this.roster.get(s.team), s.sent, s.received);
+        // A 2-for-1 side ends at the waiver wire, so its final roster is not the one
+        // (sent, received) describes. Every other shape has no `final` and is unchanged.
+        const ids = s.final ?? this.swap(this.roster.get(s.team), s.sent, s.received);
         world.set(s.team, { mu: this.weekly(ids, new Float64Array(this.NW)), sigma: this.rosterSigma(ids) });
       }
       const after = this.weekWins(t.sides.map(s => s.team), world);
@@ -616,7 +956,7 @@ export class Engine {
     for (const side of trade.sides) {
       const ids = this.roster.get(side.team);
       const before = this.starterMask(ids);
-      const after = this.starterMask(this.swap(ids, side.sent, side.received));
+      const after = this.starterMask(side.final ?? this.swap(ids, side.sent, side.received));
       const sum = (a) => a.reduce((x, y) => x + y, 0);
       const cnt = (m, i) => (m.get(i) ? sum([...m.get(i)]) : 0);
 
@@ -653,6 +993,13 @@ export class Engine {
         promoted: moved.filter(m => m.delta > 0).slice(-3).reverse(),
         thin: this.thin.get(side.team),
       };
+
+      // The waiver add and the drop are part of the trade's arithmetic, so the panel
+      // has to be able to name them and say how often each one plays.
+      if (side.backfill != null)
+        detail[side.team].backfill = { i: side.backfill, startsHere: cnt(after, side.backfill) };
+      if (side.drop != null)
+        detail[side.team].dropped = { i: side.drop, wasStarting: cnt(before, side.drop) };
     }
     return detail;
   }

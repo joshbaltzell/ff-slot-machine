@@ -362,3 +362,10 @@ tr.hold td{background:var(--accent-soft)}
   letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
   border:1px solid var(--accent-line);border-radius:2px;padding:1px 4px;
   margin-left:6px;vertical-align:1px}
+
+/* The waiver move a 2-for-1 implies, under the package it belongs to. */
+.movenote { font-size: 11px; margin-top: 3px; letter-spacing: .02em; }
+.movenote.add { color: var(--accent); }
+.movenote.cut { color: var(--dim); }
+.movenote .mn { color: var(--faint); margin-left: 5px; font-size: 10px;
+  text-transform: uppercase; letter-spacing: .08em; }

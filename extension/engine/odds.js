@@ -16,7 +16,9 @@ const yieldToBrowser = () => new Promise((r) => setTimeout(r, 0));
 function postWorld(eng, trade) {
   const override = new Map();
   for (const s of trade.sides) {
-    const ids = eng.swap(eng.roster.get(s.team), s.sent, s.received);
+    // `final` is set by shapes whose roster does not follow from (sent, received) -
+    // a 2-for-1 finishes with a waiver add or a drop. See Engine.findTwoForOne.
+    const ids = s.final ?? eng.swap(eng.roster.get(s.team), s.sent, s.received);
     override.set(s.team, { mu: eng.weekly(ids, new Float64Array(eng.NW)), sigma: eng.rosterSigma(ids) });
   }
   return override;
