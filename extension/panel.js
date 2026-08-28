@@ -12,6 +12,8 @@ import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 import { attachOdds, significant } from "./engine/odds.js";
 import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
+import { environmentStep, envColumn, envCell, envChips, bindEnvChips, streamingSection }
+  from "./panel/environment.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -22,6 +24,7 @@ const PHASES = [
   ["settings", "League settings"],
   ["rosters",  "Rosters and projections"],
   ["agents",   "Free-agent pool"],
+  ["env",      "Game environment"],
   ["schedule", "Schedule"],
   ["vol",      "Player volatility"],
   ["s1",       "1-for-1 trades"],
@@ -292,6 +295,13 @@ async function start(ref) {
     } else {
       say("projections used as ESPN publishes them (calibration off)", "");
     }
+
+    // Game environment. After shrinkage on purpose: shrinkage is about how far a
+    // projection sits from its positional mean, this is about which game it is for,
+    // and the two compose. Before the Engine, because the Engine snapshots proj.
+    Steps.set("env", "run");
+    window.__env = await environmentStep(model, ref.seasonId, say);
+    Steps.set("env", window.__env.state, window.__env.note);
 
     say("building engine…");
     const eng = new Engine(model, { starters }, masks);
@@ -775,6 +785,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "bye", label: "Bye", num: true, value: (r) => r.p.bye || 99, hint: HINT.bye },
     { key: "avg", label: "Proj/wk", num: true, value: (r) => r.avg, hint: HINT.projwk },
     { key: "rate", label: "Starts", num: true, value: (r) => r.rate, hint: HINT.starts },
+    envColumn(window.__env),
     { key: "bar", label: "", sortable: false },
   ], rosterRows, {
     sort: "rate", dir: 1,
@@ -786,6 +797,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td class="num">${r.avg.toFixed(1)}</td>
       <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
         (r.rate * 100).toFixed(0)}%</td>
+      ${envCell(window.__env, r.p)}
       <td><div class="meter"><i style="width:${(r.rate * 100).toFixed(0)}%"></i></div></td>
     </tr>`,
   });
@@ -1002,6 +1014,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <div class="panel">${rosterGrid}</div>
     </section>
 
+    ${streamingSection({ eng, model, team: mineOnly ? viewing : myTeam,
+                         env: window.__env, grid, esc })}
+
     <section>
       <h2 class="secttl">Free agents worth adding</h2>
       <p class="sectsub">A full roster makes a pickup a swap, so every row names the drop.
@@ -1040,6 +1055,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
               <button data-v="1" aria-pressed="${window.__calibrate !== false}">Calibrated</button>
               <button data-v="0" aria-pressed="${window.__calibrate === false}">As published</button>
             </div></div>
+          ${envChips(window.__env)}
         </div>
         ${seasonGrid}
         ${leverageStrip}
@@ -1061,6 +1077,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const rerender = () => render(eng, model, trades, myTeam, schedule);
   bindSort(app, rerender);
   initTooltips(app);
+  bindEnvChips(app);
 
   app.querySelectorAll("#tradeGrid tr.tr-row").forEach((row) => {
     row.onclick = () => {
@@ -1152,7 +1169,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   $("#refresh").onclick = async () => {
     // Refresh drops the cached league, not the user's choices: losing the objective
     // or the calibration toggle on every refetch would be its own bug.
-    const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed"];
+    const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed",
+                  "ffsm.environment"];
     const had = await chrome.storage.local.get(KEEP);
     await chrome.storage.local.clear();
     const keep = Object.fromEntries(KEEP.filter((k) => had[k] !== undefined).map((k) => [k, had[k]]));
