@@ -191,3 +191,157 @@ export function usageTable(model, stats, currentWeek, opts = {}) {
 
   return { rows, fits, weeks, recent, ptsKey };
 }
+
+/**
+ * The two lists this phase exists for.
+ *
+ * Sell high: MY players in the top quartile of their position on BOTH the residual
+ * and touchdowns over expectation - producing above their usage, and scoring above
+ * even that. Buy low: SOMEBODY ELSE'S players at or above the median usage for their
+ * position and in the bottom quartile of the residual - being given the ball and not
+ * yet cashing it.
+ *
+ * Free agents are deliberately absent from buy low: there is nothing to trade for,
+ * and the free-agent grid already covers them. Sell high follows `myTeam` rather than
+ * the page's "who" selector for the same reason `arbitrageSection` does - "sell high"
+ * is a statement about your own roster.
+ *
+ * @param ownerOf Map<espnId, teamName>; absent means free agent
+ */
+export function assetRows(usage, ownerOf, myTeam, opts = {}) {
+  const K = { ...USAGE_K, ...(opts.K ?? {}) };
+  const pop = new Map();
+  for (const r of usage.rows.values()) {
+    if (r.ppgOverUsage == null) continue;
+    if (!pop.has(r.pos)) pop.set(r.pos, []);
+    pop.get(r.pos).push(r);
+  }
+  const cut = new Map();
+  for (const [pos, list] of pop) {
+    if (list.length < K.MIN_QUARTILE) continue;
+    const asc = (f) => list.map(f).filter((v) => v != null).sort((a, b) => a - b);
+    cut.set(pos, {
+      resQ1: quantile(asc((r) => r.ppgOverUsage), 0.25),
+      resQ3: quantile(asc((r) => r.ppgOverUsage), 0.75),
+      tdQ3: quantile(asc((r) => r.tdOver), 0.75),
+      drvMed: quantile(asc((r) => r.driver), 0.5),
+    });
+  }
+  const sell = [], buy = [];
+  for (const [pos, list] of pop) {
+    const c = cut.get(pos);
+    if (!c) continue;
+    for (const r of list) {
+      const owner = ownerOf?.get(r.espnId) ?? null;
+      const row = { ...r, owner };
+      if (owner === myTeam) {
+        if (c.resQ3 != null && c.tdQ3 != null && r.tdOver != null
+            && r.ppgOverUsage >= c.resQ3 && r.tdOver >= c.tdQ3) sell.push(row);
+      } else if (owner != null) {
+        if (c.drvMed != null && c.resQ1 != null && r.driver != null
+            && r.driver >= c.drvMed && r.ppgOverUsage <= c.resQ1) buy.push(row);
+      }
+    }
+  }
+  // Names break every tie so two runs on the same data give the same list.
+  const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+  sell.sort((a, b) => b.ppgOverUsage - a.ppgOverUsage || b.tdOver - a.tdOver || byName(a, b));
+  buy.sort((a, b) => a.ppgOverUsage - b.ppgOverUsage || b.driver - a.driver || byName(a, b));
+  return { sell, buy, cut };
+}
+
+/**
+ * Who is being handed a bigger job than he had a fortnight ago: free agents, and
+ * rostered players still below `LOW_SNAP` whose share is climbing. A depth-chart
+ * promotion qualifies on its own - the snaps have not arrived yet, which is the
+ * point of watching for it.
+ */
+export function breakouts(usage, ownerOf, crowdByEspn, depthDelta, opts = {}) {
+  const K = { ...USAGE_K, ...(opts.K ?? {}) };
+  const out = [];
+  for (const r of usage.rows.values()) {
+    const owner = ownerOf?.get(r.espnId) ?? null;
+    const lowUse = r.snapShare == null || r.snapShare < K.LOW_SNAP;
+    if (owner != null && !lowUse) continue;
+    const dd = depthDelta?.get(r.sleeperId) ?? 0;
+    const jump = r.trend != null && r.trend >= K.BREAKOUT_TREND;
+    if (!jump && !(dd > 0)) continue;
+    out.push({ ...r, owner, depthDelta: dd, crowd: crowdByEspn?.get(r.espnId) ?? 0 });
+  }
+  out.sort((a, b) => (b.trend ?? 0) - (a.trend ?? 0) || b.crowd - a.crowd
+    || String(a.name).localeCompare(String(b.name)));
+  return out;
+}
+
+/**
+ * Depth-chart movement, which needs a before and an after. Sleeper's players file
+ * carries only "now", so two snapshots are kept locally and diffed. A snapshot rolls
+ * forward only when the file's own fetch timestamp changes; without that guard, the
+ * first render inside a cache day would consume the delta and every later render
+ * would show nothing.
+ *
+ * @param at    the players file's fetch timestamp
+ * @param memo  the stored {at, order, prevOrder}, or null on a first run
+ * @returns {delta: Map<sleeperId, number>, memo}   positive delta = moved UP the chart
+ */
+export function depthChanges(bySleeper, at, memo) {
+  const order = {};
+  for (const [sid, p] of bySleeper ?? []) {
+    const v = Number(p?.depth_chart_order);
+    if (p?.depth_chart_order != null && Number.isFinite(v)) order[sid] = v;
+  }
+  const next = memo && memo.at === at
+    ? { at, order, prevOrder: memo.prevOrder ?? {} }
+    : { at, order, prevOrder: memo?.order ?? {} };
+  const delta = new Map();
+  for (const [sid, o] of Object.entries(next.order)) {
+    const was = next.prevOrder[sid];
+    if (was == null || was === o) continue;
+    delta.set(sid, was - o);
+  }
+  return { delta, memo: next };
+}
+
+/**
+ * Quiet against contested: is the engine's pickup one nobody else has noticed, or one
+ * the whole of Sleeper is adding this morning?
+ *
+ * The line is relative with a floor. Trending counts swing by an order of magnitude
+ * between a quiet Tuesday and the Wednesday after a starter goes down, so an absolute
+ * cut-off means nothing; the floor stops the loudest of six near-zero counts from
+ * being announced as contested.
+ *
+ * @param crowdOf (upgrade) -> 24h add count
+ * @returns {split: Map<upgrade.fa, {crowd, contested}>, threshold, max}
+ */
+export function crowdSplit(upgrades, crowdOf, opts = {}) {
+  const K = { ...USAGE_K, ...(opts.K ?? {}) };
+  let max = 0;
+  for (const u of upgrades ?? []) max = Math.max(max, Number(crowdOf(u)) || 0);
+  const threshold = Math.max(K.CROWD_FLOOR, K.CROWD_SHARE * max);
+  const split = new Map();
+  for (const u of upgrades ?? []) {
+    const c = Number(crowdOf(u)) || 0;
+    split.set(u.fa, { crowd: c, contested: c >= threshold });
+  }
+  return { split, threshold, max };
+}
+
+/**
+ * The best deal the search already found that moves this player, from my side's point
+ * of view. Strictly read-only over the search's own output: this joins to it, it never
+ * feeds it.
+ */
+export function bestOfferFor(index, trades, myTeam) {
+  let best = null;
+  for (const t of trades ?? []) {
+    const mine = t.sides?.find((s) => s.team === myTeam);
+    if (!mine) continue;
+    const dir = mine.sent?.includes(index) ? "send"
+      : mine.received?.includes(index) ? "get" : null;
+    if (!dir) continue;
+    if (!best || mine.gain > best.gain)
+      best = { gain: mine.gain, shape: t.shape, dir, trade: t };
+  }
+  return best;
+}

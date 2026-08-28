@@ -7,7 +7,9 @@
  */
 import { weekUrl, trimStats, loadWeekStats, loadSeasonStats, STAT_FIELDS }
   from "../engine/sources/sleeperstats.js";
-import { USAGE_K, DRIVER, quantile, ptsKeyFor, usageTable } from "../engine/usage.js";
+import { USAGE_K, DRIVER, quantile, ptsKeyFor, usageTable,
+         assetRows, breakouts, depthChanges, crowdSplit, bestOfferFor }
+  from "../engine/usage.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -269,6 +271,104 @@ const OWNER = new Map([
   ok(empty.rows.size === 0 && empty.fits.size === 0 && empty.weeks.length === 0,
      "no stats at all yields an empty table rather than a throw");
   ok(usageTable(model, null, 5).rows.size === 0, "…and so does no stats object at all");
+}
+
+/* ---- 3. selection: who to sell, who to ask for, who is breaking out ---- */
+{
+  const u = usageTable(model, STATS, 5);
+  const a = assetRows(u, OWNER, "Mine");
+
+  const wr = a.cut.get("WR");
+  ok(wr && near(wr.resQ1, -0.5) && near(wr.resQ3, 0.5),
+     "the WR residual quartiles are the fixture's own -0.5 and +0.5");
+  ok(near(wr.tdQ3, 0.52), "…and the upper quartile of touchdowns over expectation is 0.52");
+  ok(near(wr.drvMed, 0.55), "…and the median WOPR is 0.55");
+  ok(!a.cut.has("RB") && !a.cut.has("QB"),
+     "a position too thin to fit is too thin to cut into quarters");
+
+  ok(a.sell.map((r) => r.name).join(",") === "B1,B3",
+     "sell high is mine, top quartile on BOTH residual and touchdowns over expectation");
+  ok(a.sell.every((r) => r.owner === "Mine"), "…and never somebody else's player");
+  ok(!a.sell.some((r) => r.name === "A1"),
+     "a player with a positive tdOver but a zero residual is not a sell-high");
+
+  ok(a.buy.map((r) => r.name).join(",") === "B2,B4",
+     "buy low is theirs, at or above the median driver and in the bottom residual quartile");
+  ok(a.buy.every((r) => r.owner != null && r.owner !== "Mine"),
+     "…owned by somebody else, never a free agent and never mine");
+  ok(a.buy[0].ppgOverUsage < a.buy[1].ppgOverUsage,
+     "buy low leads with the worst residual - the biggest gap between usage and output");
+  ok(a.sell[0].ppgOverUsage > a.sell[1].ppgOverUsage,
+     "sell high leads with the best");
+
+  // A free agent who would otherwise qualify still must not appear in buy low.
+  const faOwner = new Map(OWNER); faOwner.delete(106);
+  ok(!assetRows(u, faOwner, "Mine").buy.some((r) => r.name === "B2"),
+     "a qualifying free agent is excluded from buy low - there is nothing to trade for");
+
+  ok(assetRows(usageTable(model, { byWeek: new Map(), bySleeper }, 5), OWNER, "Mine")
+       .sell.length === 0,
+     "no stats means no sell-high list rather than a throw");
+
+  /* breakouts */
+  const crowd = new Map([[104, 900], [110, 50]]);
+  const depth = new Map([["s12", 1]]);
+  const b = breakouts(u, OWNER, crowd, depth);
+  ok(b.map((r) => r.name).join(",") === "A4,R2,T1",
+     "breakouts are ordered by the size of the snap-share jump");
+  ok(b[0].crowd === 900 && b[1].crowd === 50 && b[2].crowd === 0,
+     "each row carries the crowd's 24-hour add count");
+  ok(b[0].owner === null && b[1].owner === "Theirs",
+     "free agents and low-usage rostered players both qualify");
+  ok(b[2].depthDelta === 1 && near(b[2].trend, 0),
+     "a depth-chart promotion qualifies on its own, with no snap jump");
+  ok(!b.some((r) => r.name === "R1"),
+     "a rostered player already taking most of the snaps is not a breakout");
+  ok(breakouts(u, OWNER, null, null).map((r) => r.name).join(",") === "A4,R2",
+     "with no crowd and no depth data the snap jumps still stand alone");
+
+  /* the depth-chart memo */
+  const d1 = depthChanges(bySleeper, 1000, null);
+  ok(d1.delta.size === 0, "the first run has no before to compare against");
+  ok(d1.memo.at === 1000 && d1.memo.order.s10 === 2, "…but it records what it saw");
+  const moved = new Map([...bySleeper].map(([k, v]) =>
+    [k, k === "s10" ? { ...v, depth_chart_order: 1 } : v]));
+  const d2 = depthChanges(moved, 2000, d1.memo);
+  ok(d2.delta.get("s10") === 1, "a player moving from second to first reports +1");
+  ok(d2.delta.size === 1, "…and nobody who did not move reports anything");
+  const d3 = depthChanges(moved, 2000, d2.memo);
+  ok(d3.delta.get("s10") === 1,
+     "re-reading the same file keeps the delta rather than eating it on the first render");
+  const d4 = depthChanges(bySleeper, 3000, d3.memo);
+  ok(d4.delta.get("s10") === -1, "…and a demotion reports negative");
+
+  /* crowd split */
+  const ups = [{ fa: 1 }, { fa: 2 }, { fa: 3 }, { fa: 4 }];
+  const loud = crowdSplit(ups, (x) => ({ 1: 1000, 2: 250 }[x.fa] ?? 0));
+  ok(loud.threshold === 250 && loud.max === 1000,
+     "the contested line is a quarter of the loudest add in this pool");
+  ok(loud.split.get(1).contested && loud.split.get(2).contested
+     && !loud.split.get(3).contested,
+     "…and it splits quiet from contested at exactly that line");
+  const quiet = crowdSplit(ups, (x) => ({ 1: 10, 2: 5 }[x.fa] ?? 0));
+  ok(quiet.threshold === USAGE_K.CROWD_FLOOR && ![...quiet.split.values()].some((v) => v.contested),
+     "the floor stops the loudest of a handful of near-zero counts being called contested");
+  ok(crowdSplit([], () => 0).split.size === 0, "an empty pool splits into nothing");
+
+  /* best offer */
+  const trades = [
+    { shape: "1-for-1", sides: [{ team: "Mine", sent: [7], received: [9], gain: 0.30 },
+                                { team: "Theirs", sent: [9], received: [7], gain: 0.10 }] },
+    { shape: "2-for-2", sides: [{ team: "Mine", sent: [7, 8], received: [9, 10], gain: 0.55 },
+                                { team: "Theirs", sent: [9, 10], received: [7, 8], gain: 0.05 }] },
+  ];
+  const bo = bestOfferFor(7, trades, "Mine");
+  ok(bo && near(bo.gain, 0.55) && bo.shape === "2-for-2" && bo.dir === "send",
+     "the best offer moving a player is the one that gains my side the most");
+  ok(bestOfferFor(9, trades, "Mine").dir === "get",
+     "a player coming the other way is reported as one I would receive");
+  ok(bestOfferFor(42, trades, "Mine") === null, "a player in no trade has no offer");
+  ok(bestOfferFor(7, [], "Mine") === null, "…and neither does anyone when there are no trades");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
