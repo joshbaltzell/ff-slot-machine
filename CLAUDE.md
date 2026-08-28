@@ -112,9 +112,11 @@ is unaffected.
 `Engine` is constructed. It composes with shrinkage on purpose: shrinkage is about
 how far a projection sits from its positional mean, this is about which game it is
 for. Three rules keep it safe. It never enters lineup logic — the solver still runs
-entirely on `eligibleSlots`, and the position strings `envGroup` reads are the one
-sanctioned exception in the codebase, because they choose a coefficient and nothing
-else. It never touches a week without a line, so a dead feed is identity rather than
+entirely on `eligibleSlots`, and the position strings `envGroup` reads are one of a
+small set of sanctioned exceptions to "position strings are display-only," alongside
+`calibrate.js`'s positional shrinkage and the positional-median volatility fallback in
+`league.js` and `search.js`. Every one of them picks a coefficient; none of them picks
+a slot. It never touches a week without a line, so a dead feed is identity rather than
 a distortion. And it never reaches past next week, because a season-long trade
 evaluation must not be tilted by two weeks of weather. Factors clamp to
 [0.6, 1.4]; retractable roofs count as covered, since no feed says whether the roof

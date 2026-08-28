@@ -42,11 +42,13 @@ export const ENV_K = {
 /**
  * Position label -> factor group.
  *
- * `pos` is a display-only string everywhere else in this codebase and keying logic
- * on it is normally forbidden. It is acceptable HERE and only here: an environment
- * factor adjusts a projection *input*, it never decides which slot a player fills,
- * and the lineup solver still runs entirely on `eligibleSlots`. If this ever grows
- * into a lineup decision, move it onto slots first.
+ * `pos` is display-only for lineup purposes: the solver decides who starts entirely
+ * from `eligibleSlots`, never from this string. But `pos` already picks coefficients
+ * elsewhere - `calibrate.js`'s shrinkage slope, the positional-median volatility
+ * fallback in `league.js` and `search.js` - and this function is another one of
+ * those, not a new kind of exception. It is acceptable because it only ever chooses
+ * a multiplier, never a slot. If this ever grows into a lineup decision, move it
+ * onto slots first.
  *
  * TQB is ESPN's team-quarterback entity and belongs with the quarterbacks: it is
  * scored on the same plays, so the same implied-total sensitivity applies.
