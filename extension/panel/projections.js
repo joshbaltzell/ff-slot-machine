@@ -15,8 +15,8 @@ import { loadSleeperPlayers } from "../engine/sources/sleeper.js";
 import { loadSleeperProjections } from "../engine/sources/sleeperproj.js";
 import { loadFantasyProsWeek } from "../engine/sources/fantasypros.js";
 import { aggregateProjections } from "../engine/aggregate.js";
-import { attachActuals, fitSlopes, loadLog, logWeek, mergeSlopes, summary, weeksStored,
-         weeksWithActuals } from "../engine/calibration.js";
+import { attachActuals, fitSlopes, loadLog, logKey, logWeek, mergeSlopes, summary,
+         weeksStored, weeksWithActuals } from "../engine/calibration.js";
 import { CALIBRATION_K } from "../engine/calibrate.js";
 
 const AGG_KEY = "ffsm.aggregate";
@@ -47,9 +47,18 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
   out.remaining = remaining.length ? remaining : [...(model.weeks ?? [])];
 
   // Pre-aggregate ESPN, for the log. Snapshotted before anything can mutate it.
+  //
+  // Rostered players only (`teamId != null`; `loadFreeAgents` sets it to null). The
+  // free-agent pool is merged into `model.players` before this runs and outnumbers
+  // rostered players about 2.5 to 1, so a pooled log would be mostly deep-bench
+  // adds projected 2-5 points that score 0 because they were inactive. Their slope
+  // is genuinely different, and it is the top of each position that drives trades,
+  // so the fitted slope has to come from the players who are actually started.
+  // This is the LOG only — the aggregate below still covers everyone, because free
+  // agents are traded for and waiver-added and their aggregated number is the point.
   const espnAt = new Map();
   for (const p of model.players.values())
-    if (p.proj?.[currentWeek] > 0) espnAt.set(p.id, p.proj[currentWeek]);
+    if (p.teamId != null && p.proj?.[currentWeek] > 0) espnAt.set(p.id, p.proj[currentWeek]);
 
   if (storage) {
     try { out.aggregate = (await storage.get(AGG_KEY))[AGG_KEY] ?? true; } catch { /* default on */ }
@@ -132,7 +141,11 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
         week: currentWeek, rows, now: opts.now ?? Date.now() });
 
       const log = await loadLog({ storage, leagueId: ref.leagueId, seasonId: ref.seasonId });
-      attachActuals(log, model.players, ref.seasonId);
+      // Write the joined actuals back. ESPN's `rawStats` only carries a week for as
+      // long as it carries it; an actual visible this session and gone the next is
+      // lost for good unless it is persisted the moment it is seen.
+      const { filled } = attachActuals(log, model.players, ref.seasonId);
+      if (filled) await storage.set({ [logKey(ref.leagueId, ref.seasonId)]: log });
       out.weeksStored = weeksStored(log);
       out.weeksWithActuals = weeksWithActuals(log);
       out.summaryRows = summaryOf(log);
@@ -183,6 +196,9 @@ export function bandTag(band, id, threshold = 0.5) {
 
 /* ---------- chips ---------- */
 
+// Hand-escaped on purpose, and deliberately not routed through `esc` like every
+// other hint here: it is a module constant with no feed data in it, and `esc` would
+// double-escape the `&#39;` entities into visible `&amp;#39;`.
 export const SOURCES_HINT = "Averaging projection sources beats any single source. "
   + "On, ESPN&#39;s numbers are averaged with Sleeper/RotoWire and FantasyPros ECR — "
   + "not as raw points, which are scored under different rules, but as each source&#39;s "

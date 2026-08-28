@@ -89,7 +89,12 @@ export function attachActuals(log, players, seasonId) {
   return { log, filled };
 }
 
-/** OLS slope of y on x, with an intercept. null when x has no spread. */
+/**
+ * OLS slope of y on x, with an intercept, pooled over everything handed to it. Used
+ * by `summary` to describe a source's overall record; `fitSlopes` uses the
+ * within-week estimator below instead, for the reason given there.
+ * Returns null when x has no spread.
+ */
 function slopeOf(pairs) {
   const n = pairs.length;
   if (n < 2) return null;
@@ -101,9 +106,11 @@ function slopeOf(pairs) {
   return sxx > 0 ? sxy / sxx : null;
 }
 
-function pairsFor(log, column, pos) {
+/** The same pairs, still grouped by the week they were logged in. */
+function pairsByWeek(log, column, pos) {
   const out = [];
-  for (const entry of Object.values(log?.weeks ?? {}))
+  for (const entry of Object.values(log?.weeks ?? {})) {
+    const week = [];
     for (const r of entry.rows ?? []) {
       if (pos != null && (r.pos ?? "") !== pos) continue;
       if (!Number.isFinite(r.actual)) continue;
@@ -112,9 +119,47 @@ function pairsFor(log, column, pos) {
       // slope. It drops byes and inactives, whose (0, 0) pairs would otherwise pile
       // a mass point on the origin and drag the fitted slope toward 1.
       if (!Number.isFinite(x) || !(x > 0)) continue;
-      out.push([x, r.actual]);
+      week.push([x, r.actual]);
     }
+    if (week.length) out.push(week);
+  }
   return out;
+}
+
+function pairsFor(log, column, pos) {
+  return pairsByWeek(log, column, pos).flat();
+}
+
+/**
+ * The WITHIN-week slope: each week's pairs are centred on that week's own means and
+ * the pooled centred pairs are fitted through the origin.
+ *
+ * This is the estimator, not a variant of it, because `shrinkProjections` re-centres
+ * every player on *that week's* positional mean and moves him toward it by `k`. The
+ * quantity it applies is therefore how a player's distance from his week's mean
+ * shrinks — a within-week question.
+ *
+ * A single pooled fit answers a different one. Its slope is a variance-weighted mix
+ * of the within-week slope and the between-week slope (how a week's mean actual
+ * tracks its mean projection), and the between-week slope is close to 1 because both
+ * means move with the same scoring week. Pooling therefore drags the estimate toward
+ * 1 — toward under-shrinkage, the wrong direction for a shrinkage feature, and the
+ * bias grows with how much the weekly levels differ.
+ *
+ * Weeks with a single pair centre to (0, 0) and contribute nothing, which is right:
+ * one observation says nothing about spread within its week.
+ */
+function withinWeekSlope(groups) {
+  let sxx = 0, sxy = 0;
+  for (const week of groups) {
+    const n = week.length;
+    if (n < 2) continue;
+    let sx = 0, sy = 0;
+    for (const [x, y] of week) { sx += x; sy += y; }
+    const mx = sx / n, my = sy / n;
+    for (const [x, y] of week) { sxx += (x - mx) ** 2; sxy += (x - mx) * (y - my); }
+  }
+  return sxx > 0 ? sxy / sxx : null;
 }
 
 /**
@@ -153,6 +198,10 @@ export function summary(log) {
  * shrink. With the aggregate off, `agg` equals `espn`, so the column is always the
  * right one.
  *
+ * The estimator is `withinWeekSlope`, not a pooled OLS across every logged week:
+ * `shrinkProjections` re-centres on each week's own positional mean, so the slope it
+ * applies is the within-week one. See that function for why pooling biases toward 1.
+ *
  * @returns {{QB,RB,WR,TE}} with a number or null per position, or null overall when
  *          fewer than `minWeeks` weeks carry actuals. Slopes are clamped: a fit
  *          outside [0.3, 1.2] is measurement noise or a scoring change, not a real
@@ -168,8 +217,10 @@ export function fitSlopes(log, { column = "agg", minWeeks = MIN_WEEKS, minN = MI
   if (weeksWithActuals(log) < minWeeks) return null;
   const out = {};
   for (const pos of FIT_POS) {
-    const pairs = pairsFor(log, column, pos);
-    const b = pairs.length >= minN ? slopeOf(pairs) : null;
+    const groups = pairsByWeek(log, column, pos);
+    // The floor counts PAIRS, not weeks: `MIN_WEEKS` above already covers weeks.
+    const n = groups.reduce((a, w) => a + w.length, 0);
+    const b = n >= minN ? withinWeekSlope(groups) : null;
     out[pos] = b == null ? null
       : Math.round(Math.min(SLOPE_CLAMP[1], Math.max(SLOPE_CLAMP[0], b)) * 1000) / 1000;
   }

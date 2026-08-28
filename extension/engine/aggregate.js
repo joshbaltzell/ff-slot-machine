@@ -22,6 +22,15 @@
  * The spread of the fractions is a second, free output: how much the sources
  * disagree about a player, in points. That is the `±` the panel shows.
  *
+ * One consequence worth naming, because it looks like a bug and is not. Coverage is
+ * uneven: Sleeper publishes every remaining week, FantasyPros only the current one.
+ * So in the current week a player both sources cover is averaged over three opinions
+ * and pulled twice as far from ESPN as a player only Sleeper covers, who is averaged
+ * over two. That follows directly from the spec's rule that a player a source does
+ * not cover uses the sources that do; the alternatives — dropping FantasyPros, or
+ * dropping every player it misses — are both worse than an uneven pull toward the
+ * consensus. It is a documented property of the design, not a defect.
+ *
  * `pos` is used here only as the grouping for a statistical normalization. It is
  * never used for lineup logic — the engine models slots, not positions.
  *
@@ -33,7 +42,9 @@
  * @param model    { players: Map<id, {id, pos, proj}> } — `proj` keyed by week number
  * @param sources  [{ name, byWeek: Map<week, Map<espnId, points>> }]
  * @param weeks    the weeks to aggregate, usually the remaining ones
- * @returns {{changed, coverage: Record<string, number>, band: Map<id, Float64Array>, weeks}}
+ * @returns {{touched, coverage: Record<string, number>, band: Map<id, Float64Array>, weeks}}
+ *          `touched` is how many players the aggregate wrote to — not how many moved,
+ *          since a source that agrees exactly still writes the same number back.
  *          `band.get(id)[i]` is the disagreement for `weeks[i]`, in points.
  */
 export function aggregateProjections(model, sources = [], weeks = model.weeks ?? []) {
@@ -104,16 +115,19 @@ export function aggregateProjections(model, sources = [], weeks = model.weeks ??
     }
   }
 
-  let changed = 0;
+  // `touched`, not `changed`: a source that agrees with ESPN exactly still writes
+  // every value back, identical. This counts players the aggregate reached, which is
+  // the useful number and the honest name for it.
+  let touched = 0;
   for (const [id, arr] of staged) {
     const p = model.players.get(id);
     if (!p) continue;
-    let touched = false;
-    for (let wi = 0; wi < NW; wi++) if (Number.isFinite(arr[wi])) { p.proj[W[wi]] = arr[wi]; touched = true; }
-    if (touched) changed++;
+    let any = false;
+    for (let wi = 0; wi < NW; wi++) if (Number.isFinite(arr[wi])) { p.proj[W[wi]] = arr[wi]; any = true; }
+    if (any) touched++;
   }
 
   const coverage = {};
   for (const s of sources) coverage[s.name] = covered.get(s.name).size;
-  return { changed, coverage, band, weeks: W };
+  return { touched, coverage, band, weeks: W };
 }

@@ -11,7 +11,7 @@ import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
 import { attachOdds, significant } from "./engine/odds.js";
-import { shrinkProjections, CALIBRATION_K } from "./engine/calibrate.js";
+import { shrinkProjections } from "./engine/calibrate.js";
 import { bandMean, bandTag, bindSourcesChips, calibrationSection, runProjections,
          sourcesChips } from "./panel/projections.js";
 
@@ -293,7 +293,10 @@ async function start(ref) {
     window.__band = P.band;
     window.__aggregate = P.aggregate;
     window.__calibState = P;
-    Steps.set("proj", P.aggregate ? "done" : "skip",
+    // Toggle on but every feed dead is a warning, not a success: the step ran and
+    // came back with nothing, exactly as the free-agent step reports it.
+    Steps.set("proj", !P.aggregate ? "skip"
+        : (P.coverage.sleeper || P.coverage.fp) ? "done" : "warn",
       P.aggregate ? `Sleeper ${P.coverage.sleeper}, FP ${P.coverage.fp}` : "ESPN only");
 
     // Calibrate before anything reads a projection. Off leaves ESPN's numbers as-is.
@@ -797,18 +800,17 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "bar", label: "", sortable: false },
   ], rosterRows, {
     sort: "rate", dir: 1,
-    row: (r) => `<tr>
+    row: (r) => { const bd = bandMeanOf(r.p.id); return `<tr>
       <td style="font-weight:600">${esc(r.p.name)}</td>
       <td>${tag(r.i)}</td>
       <td class="nfl">${esc(r.p.nfl)}</td>
       <td class="num" style="color:var(--faint)">${r.p.bye || "—"}</td>
       <td class="num">${r.avg.toFixed(1)}</td>
-      <td class="num" style="color:var(--faint)">${
-        bandMeanOf(r.p.id) > 0.05 ? bandMeanOf(r.p.id).toFixed(1) : "—"}</td>
+      <td class="num" style="color:var(--faint)">${bd > 0.05 ? bd.toFixed(1) : "—"}</td>
       <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
         (r.rate * 100).toFixed(0)}%</td>
       <td><div class="meter"><i style="width:${(r.rate * 100).toFixed(0)}%"></i></div></td>
-    </tr>`,
+    </tr>`; },
   });
 
   const upgrades = eng.freeAgents.length
@@ -1175,12 +1177,16 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   $("#theme").onclick = () =>
     theme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
   $("#refresh").onclick = async () => {
-    // Refresh drops the cached league, not the user's choices: losing the objective
-    // or the calibration toggle on every refetch would be its own bug.
+    // Refresh drops the cached league. It must not drop the user's choices, and it
+    // must not drop anything they cannot get back: the calibration log accumulates
+    // one week at a time and needs six of them, so a wiped log is six weeks of
+    // waiting with no explanation. Its keys are dynamic (`ffsm.calib.{league}.{season}`),
+    // so no literal list can name them — they are matched by prefix instead.
     const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed", "ffsm.aggregate"];
-    const had = await chrome.storage.local.get(KEEP);
+    const all = await chrome.storage.local.get(null);
+    const keep = Object.fromEntries(Object.entries(all).filter(([k]) =>
+      KEEP.includes(k) || k.startsWith("ffsm.calib.")));
     await chrome.storage.local.clear();
-    const keep = Object.fromEntries(KEEP.filter((k) => had[k] !== undefined).map((k) => [k, had[k]]));
     if (Object.keys(keep).length) await chrome.storage.local.set(keep);
     location.reload();
   };
