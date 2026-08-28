@@ -124,14 +124,20 @@ somebody. `Engine.backfill` and `Engine.trim` price both, so the shape is graded
 exactly rather than with the 20% haircut every other tool applies.
 `backfillPool()` bounds only *which free agents are tried*: the top three in each
 distinct **seat mask** — masks, never position strings, because that is what keeps
-superflex, IDP and `RB/WR` correct. Backfill is exact within the pool, and the fourth
-free agent behind three better men of identical eligibility cannot beat all three into
-a lineup, so he cannot be the best add. The *search* around it is exhaustive: the two
-prunes are upper bounds — a removal never raises the optimal lineup, and lineup value
-is submodular so a man is worth no more on a larger roster than a smaller one — and
-`test/roster.mjs` proves them against a brute force with zero missing and zero extra.
-Measured at 7.3 s against 72.2 s unpruned on the fixture. Do not widen the pool into
-the search or narrow the search into a heuristic.
+superflex, IDP and `RB/WR` correct. Backfill is exact within the pool, but the pool
+itself can leave the best add out: it ranks by availability-weighted mean projection
+over the horizon, while an add's marginal value is a max over assignments, so week
+*shape* can invert that order. A free agent whose points are concentrated in the weeks
+a roster is thin — an IR stash about to return, a rookie about to be handed a job, a
+streamer with a favourable late schedule — can be worth more than three higher-mean
+men of the same eligibility and still be ranked out of the top three. The loss is
+one-directional: a missed better add understates the consolidating side's gain, so the
+bound costs recall and can never manufacture a trade that is not there. The *search*
+around it is exhaustive: the two prunes are upper bounds — a removal never raises the
+optimal lineup, and lineup value is submodular so a man is worth no more on a larger
+roster than a smaller one — and `test/roster.mjs` proves them against a brute force
+with zero missing and zero extra. Measured at 7.3 s against 72.2 s unpruned on the
+fixture. Do not widen the pool into the search or narrow the search into a heuristic.
 
 **The two pruning bounds are exact for a certain roster, and only up to sampling noise
 when a week holds seven or more uncertain players.** `_sample` draws its 64

@@ -349,9 +349,14 @@ export class Engine {
    *
    * This is the engine's one bounded candidate set, and what it bounds is the WAIVER
    * step, not the trade search. `backfill` is exact *within* this pool; the pool
-   * itself is the approximation, and it is a mild one - the fourth-best free agent
-   * behind three better men with identical eligibility cannot beat all three into a
-   * lineup, so he cannot be the best add either.
+   * itself is the approximation. Ranking is by mean projection over the horizon, but
+   * an add's marginal value is a max over assignments, so week shape can invert that
+   * order: a free agent whose points are concentrated in the weeks a roster is thin
+   * (an IR stash about to return, a rookie about to be handed a job, a streamer with
+   * a favourable late schedule) can be worth more than three higher-mean men of the
+   * same eligibility and still be ranked out of the top three. The loss is
+   * one-directional - a missed better add understates the consolidating side's gain,
+   * so the bound costs recall and can never manufacture a trade that is not there.
    *
    * Buckets are seat MASKS, not position strings. Two players with the same mask are
    * interchangeable to the lineup solver, which is what makes this correct in
@@ -441,6 +446,10 @@ export class Engine {
    *
    * `exclude` keeps the players who have just arrived in a trade out of the drop set.
    * "Receive A and B, then drop B" is a 1-for-1 wearing a costume.
+   *
+   * When no single legal removal exists - a receiver two men over a position cap, say
+   * - it returns `drop: null` and the roster unchanged; callers must check for that
+   * rather than trusting `ids` to have shrunk.
    */
   trim(ids, exclude = null, base = null) {
     const b = base ?? this._wmean(ids);
@@ -611,6 +620,19 @@ export class Engine {
    *     optimal lineup, so his pre-trim gain is an upper bound on his final one;
    *   - the sender's best waiver add is worth no more than the pool's best marginal
    *     on the roster BEFORE the incoming player joined it (submodularity again).
+   *
+   * Both bounds are exact for a certain roster; when a week holds seven or more
+   * uncertain players `weekly` falls through to `_sample`, whose draws shift with
+   * `k`, so the bounds hold only up to that sampling noise - except when the removal
+   * is of a certain player, which leaves `k` and the `unc` order untouched and keeps
+   * monotonicity exact. See `CLAUDE.md`.
+   *
+   * Both bounds, and `trim`'s exactness, also assume per-week projections stay ≥ 0:
+   * `bestLineup` seats every player it can and adds his value unconditionally, so a
+   * negative projection would let a removal raise the lineup and break the bounds as
+   * upper bounds. Every transform on this branch (shrinkage, the environment factor,
+   * the calibration slope) keeps projections non-negative; a future signed adjustment
+   * must reckon with this before it ships.
    *
    * Measured on the fixture: 7.3 s against 72.2 s unpruned, and the reference test
    * proves the two answer sets are identical - 0 missing, 0 extra, 0 value mismatch.
