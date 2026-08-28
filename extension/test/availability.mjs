@@ -146,6 +146,8 @@ const mkEngine = (model) =>
   const over = mkModel(99);
   const ho = restrictToRemaining(over);
   ok(ho.complete === true, "a finished season reports complete");
+  ok(ho.played === NW && ho.remaining === 0,
+     `a finished season has played every week and none remain (${ho.played}/${ho.remaining})`);
   ok(over.weeks.length === NW, "a finished season keeps every week rather than none");
   ok(over.settings.regularSeasonWeeks.length === 14, "and keeps its settings arrays");
 
@@ -242,9 +244,41 @@ const mkEngine = (model) =>
     const b = sampled.weekly(roster)[0];
     ok(a === b, "the sampled branch is deterministic across calls");
     const exact = enumerated.weekly(roster)[0];
+    // 3% is where 64 draws happen to land on this fixture with this seed. Retune it
+    // if SAMPLES, the seed or the fixture moves; a change here is not a regression.
     ok(Math.abs(a - exact) / exact < 0.03,
        `64 draws land within 3% of the enumerated value (${a} vs ${exact})`);
     console.log(`  sampling error at k=7: ${(100 * Math.abs(a - exact) / exact).toFixed(2)}%`);
+  }
+
+  /* the ENUM_MAX boundary: six uncertain players are exact, seven are not */
+  {
+    // Hand-enumeration of the 2^k outcomes, weighted, built from the plain engine so
+    // that it shares no code with weekly()'s own loop. Bit set means the man plays.
+    const handEnum = (who, p) => {
+      let total = 0;
+      for (let m = 0; m < (1 << who.length); m++) {
+        let wt = 1;
+        const drop = [];
+        for (let j = 0; j < who.length; j++) {
+          if ((m >> j) & 1) wt *= p; else { wt *= 1 - p; drop.push(who[j]); }
+        }
+        total += wt * base.weekly(roster.filter((i) => !drop.includes(i)))[0];
+      }
+      return total;
+    };
+    const P = 0.4;
+    const uncertain = (n) => withAvail((m) => {
+      for (const i of byProj.slice(0, n)) m.get(idOf(i))[0] = P;
+    }).weekly(roster)[0];
+
+    near(uncertain(6), handEnum(byProj.slice(0, 6), P), 1e-9,
+         "k = 6 is the exact expectation over all 64 outcomes");
+    // The half that pins the boundary: were ENUM_MAX 7, this would match exactly.
+    const got7 = uncertain(7), exact7 = handEnum(byProj.slice(0, 7), P);
+    ok(Math.abs(got7 - exact7) > 1e-9,
+       `k = 7 falls through to sampling and does not (${got7} vs ${exact7})`);
+    console.log(`  k=7 sampling gap: ${(100 * Math.abs(got7 - exact7) / exact7).toFixed(2)}%`);
   }
 
   /* the modal lineup drives the usage strips and the spread */
@@ -365,6 +399,7 @@ const mkEngine = (model) =>
     ]),
     summary: { out: 1, questionable: 1, shelved: 2, uncertain: 1, matched: 900, total: 4 },
     horizon: { currentWeek: 9, played: 8, remaining: 10, complete: false, from: 9, to: 18 },
+    applied: true,
     feed: "sleeper",
   };
 
@@ -404,7 +439,17 @@ const mkEngine = (model) =>
      "the season note says what is and is not frozen");
   ok(!/no waivers, injuries or trades/.test(seasonNote(AV)),
      "and no longer claims injuries are ignored");
+  ok(/2 shelved/.test(seasonNote(AV)), "and names the players out for the horizon");
+  // The other branch: a finished season, or a league with nobody hurt, priced no
+  // availability at all, so the note must not describe arithmetic that never ran.
+  ok(/frozen/.test(seasonNote({ ...AV, applied: false }))
+     && !/Questionable/.test(seasonNote({ ...AV, applied: false })),
+     "an unapplied table gets the frozen-roster sentence instead");
+  ok(seasonNote({ ...AV, applied: undefined }) === seasonNote({ ...AV, applied: false }),
+     "an absent flag reads as not applied");
   ok(seasonNote(null).length > 0, "the note works with no context");
+  ok(seasonNote(null) === seasonNote({ ...AV, applied: false }),
+     "and says the same thing render() says before start() finishes");
   ok(AVAIL_HINT.status.length > 40, "the column has a real hint");
 }
 

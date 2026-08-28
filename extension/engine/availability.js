@@ -179,11 +179,11 @@ export function buildAvailability(model, byEspn, weeks, currentWeek) {
  * showing a retrospective, and the caller is told so it can say which it is.
  */
 export function restrictToRemaining(model) {
-  const currentWeek = model.settings?.currentWeek ?? 1;
+  const currentWeek = model.settings.currentWeek ?? 1;
   const all = model.weeks ?? [];
   const keep = all.filter((w) => w >= currentWeek);
   if (!keep.length) {
-    return { currentWeek, played: 0, remaining: all.length, complete: true,
+    return { currentWeek, played: all.length, remaining: 0, complete: true,
              weeks: all, from: all[0] ?? 0, to: all.at(-1) ?? 0 };
   }
   const live = new Set(keep);

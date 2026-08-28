@@ -97,6 +97,17 @@ so a zeroed star still takes a seat and blocks the man who would have started.
 `starterMask`, `startRates` and `explain` show the *modal* lineup (everyone at
 `p ≥ 0.5`) instead, because a usage strip has to name actual players.
 
+**The mean under uncertainty is exact; the spread is not.** `weekly` enumerates the
+outcomes, but `rosterSigma` never sees them: it takes the modal lineup and scales each
+starter's variance by his chance of playing. That is `E[Var | availability]` with the
+between-outcome term `Var(E[L | A])` dropped, so a roster carrying several Questionable
+players is shown steadier than it is. Two Questionable at `p = 0.71` understate team
+sigma by 4.0%, four by 8.6%, a pathological six at `p = 0.5` by 21.7%. At a ten-point
+projected edge the worst of that moves a week's win probability by under 1.5 points and
+an ordinary case by well under 0.5, and both of `odds.js`'s paired worlds carry the same
+bias, so the reported delta absorbs most of what is left. It is a known limitation of
+the spread, not of the projection.
+
 **The horizon is the weeks that remain.** `restrictToRemaining` trims `model.weeks`
 and the settings week arrays to `w >= settings.currentWeek` before the engine is
 built. A trade proposed in week nine used to be scored partly on eight weeks nobody

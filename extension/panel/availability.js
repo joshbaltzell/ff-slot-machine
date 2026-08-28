@@ -104,8 +104,15 @@ export function horizonLine(h) {
   return `horizon: weeks ${h.from}–${h.to} (${h.played} already played and excluded)`;
 }
 
-/** The season panel's "what this is not" sentence. */
+/**
+ * The season panel's "what this is not" sentence.
+ *
+ * `applied` is false when the engine priced nobody's availability - a finished
+ * season, or a league with nobody hurt. The numbers on the page are then the
+ * frozen-roster ones, and saying otherwise would describe arithmetic that never ran.
+ */
 export function seasonNote(av) {
+  if (!av?.applied) return "Rosters are frozen: no waivers, injuries or trades.";
   const shelved = av?.summary?.shelved ?? 0;
   return "Rosters are frozen except for current injury status: OUT and IR players "
        + "score nothing, and Questionable ones are weighted by their chance to play. "
