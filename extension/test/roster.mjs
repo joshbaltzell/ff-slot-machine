@@ -188,6 +188,181 @@ const eng = mkEng(mkModel());          // all ten teams; index === id here
      "the pool still holds the capped position - the cap binds at add time, not at pool time");
 }
 
+/* ---- 5. drop candidates ---- */
+{
+  const t0 = F.teams[0];
+  const dc = eng.dropCandidates(t0);
+  const rates = eng.startRates();
+  ok(dc.length === eng.roster.get(t0).length, "one row per rostered player");
+  ok(dc.every((r, k) => k === 0 || dc[k - 1].cost <= r.cost + 1e-12), "ascending by cost");
+  ok(dc.every((r) => r.cost >= -1e-12), "a drop never costs less than nothing");
+  ok(dc.filter((r) => (rates.get(r.i) ?? 0) === 0).every((r) => r.cost < 1e-12),
+     "a player who never starts costs nothing to drop");
+  ok(dc.filter((r) => r.cost < 1e-12).length === 1, "exactly one free drop on Team A");
+  near(dc[0].cost, 0, 1e-12, "the first row is the free one");
+  near(dc[0].addGain, 0.2929, 5e-4, "and names what the wire would put in his place");
+  near(dc[0].net, dc[0].addGain - dc[0].cost, 1e-12, "net is add minus cost");
+  ok(dc.every((r) => r.add === null || eng.backfillPool().includes(r.add)),
+     "the best add always comes from the pool");
+  // cost is measured against the same baseline sideMetrics uses
+  const worst = dc.at(-1);
+  const without = eng.roster.get(t0).filter((x) => x !== worst.i);
+  near(worst.cost, wm(eng, eng.roster.get(t0)) - wm(eng, without), 1e-9,
+       "cost equals the drop in the mean optimal lineup");
+  ok(dc.every((r) => Number.isFinite(r.reg) && Number.isFinite(r.playoff)),
+     "the reg and playoff windows are computed too");
+}
+
+/* ---- 6. findTwoForOne is exactly a brute force, on a two-team sub-league ---- */
+{
+  const D = F.teams[3], J = F.teams[9];
+  const sub = mkEng(mkModel([D, J]));
+  ok(sub.freeAgents.length === 20, "a sub-league keeps its own waiver wire only");
+
+  let pairsSeen = 0;
+  const res = await sub.findTwoForOne(0.05, () => pairsSeen++);
+  ok(pairsSeen === 2, `progress fires once per ordered pair (${pairsSeen})`);
+
+  // brute force: no bounds anywhere, full pool scan, full removal scan
+  const brute = new Map();
+  for (const A of sub.teams) for (const B of sub.teams) {
+    if (A === B) continue;
+    const ra = sub.roster.get(A), rb = sub.roster.get(B);
+    for (let x = 0; x < ra.length; x++) for (let y = x + 1; y < ra.length; y++) {
+      const two = [ra[x], ra[y]];
+      const kept = ra.filter((i) => i !== two[0] && i !== two[1]);
+      for (const one of rb) {
+        const withOne = kept.concat([one]);
+        let addIds = withOne, av = -Infinity;
+        for (const c of sub.backfillPool()) {
+          if (withOne.includes(c)) continue;
+          const after = withOne.concat([c]);
+          if (!sub.legal(after)) continue;
+          const v = wm(sub, after);
+          if (v > av) { av = v; addIds = after; }
+        }
+        const ga = sub._metrics(A, addIds).gain;
+        if (ga < 0.05) continue;
+        const recv = rb.filter((i) => i !== one).concat(two);
+        let cutIds = null, tv = -Infinity;
+        for (const d of recv) {
+          if (two.includes(d)) continue;
+          const after = recv.filter((z) => z !== d);
+          if (!sub.legal(after)) continue;
+          const v = wm(sub, after);
+          if (v > tv) { tv = v; cutIds = after; }
+        }
+        const gb = sub._metrics(B, cutIds).gain;
+        if (gb < 0.05) continue;
+        brute.set(`${A}>${B}|${two[0]},${two[1]}|${one}`, [ga, gb]);
+      }
+    }
+  }
+  const got = new Map(res.map((t) => [
+    `${t.sides[0].team}>${t.sides[1].team}|${t.sides[0].sent[0]},${t.sides[0].sent[1]}|${t.sides[0].received[0]}`,
+    [t.sides[0].gain, t.sides[1].gain]]));
+  let miss = 0, extra = 0, mism = 0;
+  for (const [k, v] of brute) {
+    const p = got.get(k);
+    if (!p) { miss++; continue; }
+    if (Math.abs(p[0] - v[0]) > 1e-9 || Math.abs(p[1] - v[1]) > 1e-9) mism++;
+  }
+  for (const k of got.keys()) if (!brute.has(k)) extra++;
+  ok(brute.size === 829, `the brute force finds 829 trades (${brute.size})`);
+  ok(res.length === brute.size, `the search finds the same number (${res.length})`);
+  ok(miss === 0, `the pruning drops nothing (${miss} missing)`);
+  ok(extra === 0, `the pruning invents nothing (${extra} extra)`);
+  ok(mism === 0, `every gain matches to 1e-9 (${mism} mismatched)`);
+
+  /* invariants */
+  ok(res.every((t) => t.shape === "2-for-1"), "every trade is labelled 2-for-1");
+  ok(res.every((t) => t.sides.length === 2), "two sides");
+  ok(res.every((t) => t.sides.every((s) => s.gain >= 0.05)), "every side clears minGain exactly");
+  ok(res.every((t) => t.sides[0].sent.length === 2 && t.sides[0].received.length === 1),
+     "the consolidating side sends two and receives one");
+  ok(res.every((t) => t.sides[1].sent.length === 1 && t.sides[1].received.length === 2),
+     "the other side is its mirror");
+  ok(res.every((t) => t.sides.every((s) => s.final.length === 16)),
+     "both rosters end the trade the size they started");
+  ok(res.every((t) => t.sides[0].backfill !== null && t.sides[0].drop === null),
+     "only the consolidating side adds from waivers");
+  ok(res.every((t) => t.sides[1].drop !== null && t.sides[1].backfill === null),
+     "only the receiving side drops");
+  ok(res.every((t) => !t.sides[0].sent.includes(t.sides[1].drop)),
+     "nobody drops a player he just traded for");
+  ok(res.every((t) => sub.legal(t.sides[0].final) && sub.legal(t.sides[1].final)),
+     "both final rosters are legal");
+  ok(res.every((t) => t.sides[0].final.includes(t.sides[0].backfill)),
+     "the named backfill is on the final roster");
+  ok(res.every((t) => !t.sides[1].final.includes(t.sides[1].drop)),
+     "the named drop is not");
+  ok(res.every((t, k) => k === 0 || res[k - 1].total >= t.total - 1e-12),
+     "sorted by combined gain");
+  ok(dedupe(res, 3).length <= 3, "dedupe caps a single unordered pair at three");
+
+  /* the hand-built trade: Team D consolidates two men into Team J's best */
+  const ix = (id) => sub.index.get(id);
+  const key = `${D}>${J}|${ix(57)},${ix(58)}|${ix(152)}`;
+  ok(got.has(key), "the hand-built 2-for-1 (D sends 57+58 for 152) is reported");
+  const hand = got.get(key);
+  ok(hand[0] > 2.3 && hand[1] > 1.2, `and it is a large win for both (${hand})`);
+  near(hand[0], brute.get(key)[0], 1e-9, "hand-built: D's gain matches the brute force");
+  near(hand[1], brute.get(key)[1], 1e-9, "hand-built: J's gain matches the brute force");
+
+  /* it scores the same in the full ten-team league: nothing leaks across teams */
+  const kept = eng.roster.get(D).filter((i) => i !== 57 && i !== 58).concat([152]);
+  const bf = eng.backfill(kept);
+  const recv = eng.roster.get(J).filter((i) => i !== 152).concat([57, 58]);
+  const tr = eng.trim(recv, [57, 58]);
+  near(eng._metrics(D, bf.ids).gain, hand[0], 1e-9, "same trade, ten-team league: D");
+  near(eng._metrics(J, tr.ids).gain, hand[1], 1e-9, "same trade, ten-team league: J");
+}
+
+/* ---- 7. `final` reaches the passes that run after the search ---- */
+{
+  const D = F.teams[3], J = F.teams[9];
+  const sub = mkEng(mkModel([D, J]));
+  const res = await sub.findTwoForOne(0.05);
+  const t = res[0];
+
+  // explain names the waiver move and the drop, with their start counts
+  const ex = sub.explain(t);
+  ok(ex[t.sides[0].team].backfill?.i === t.sides[0].backfill, "explain names the backfill");
+  ok(Number.isInteger(ex[t.sides[0].team].backfill?.startsHere), "with a start count");
+  ok(ex[t.sides[1].team].dropped?.i === t.sides[1].drop, "explain names the drop");
+  ok(Number.isInteger(ex[t.sides[1].team].dropped?.wasStarting), "with the starts it costs");
+  ok(ex[t.sides[0].team].dropped === undefined, "a side with no drop has no drop line");
+
+  // enrich scores the FINAL roster, not the mid-trade one
+  const sched = new Map();
+  for (const w of sub.settings.regularSeasonWeeks) sched.set(w, [[D, J]]);
+  sub.setSchedule(sched);
+  await sub.enrich([t]);
+  ok(t.sides.every((s) => Array.isArray(s.winWeekly) && s.winWeekly.length === sub.NW),
+     "enrich fills winWeekly for a 2-for-1");
+  ok(Math.sign(t.sides[0].win) === Math.sign(t.sides[0].reg),
+     "the win delta agrees in sign with the points gain");
+  // a side whose `final` is deleted must fall back to swap() and score differently -
+  // that is the proof enrich is reading `final` rather than ignoring it
+  const clone = { ...t, sides: t.sides.map((s) => ({ ...s, win: 0, winWeekly: null })) };
+  delete clone.sides[0].final;
+  delete clone.sides[1].final;
+  sub._baseWins = null;
+  await sub.enrich([clone]);
+  ok(Math.abs(clone.sides[0].win - t.sides[0].win) > 1e-9,
+     "without `final`, enrich scores a different roster - so it was using it");
+}
+
+/* ---- 8. `weekly`'s fast path is untouched by any of this ---- */
+{
+  const fresh = mkEng(mkModel());
+  for (const t of F.teams) {
+    const js = fresh.weekly(fresh.roster.get(t));
+    for (let w = 0; w < F.weeks.length; w++)
+      ok(Math.abs(js[w] - F.baseline[t][w]) < 1e-6, `${t} wk${F.weeks[w]} still matches the fixture`);
+  }
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("ROSTER OK");
