@@ -332,8 +332,11 @@ async function start(ref) {
     const eng = new Engine(model, { starters }, masks);
     // Only when somebody's availability is actually in doubt: an engine with an
     // all-ones table takes a slower path through weekly() for no benefit, and
-    // 2-for-2 calls it millions of times.
-    if (av.avail.size) {
+    // 2-for-2 calls it millions of times. And never on a finished season:
+    // restrictToRemaining keeps every week when nothing remains, so this week's
+    // injury table would price games played in September — a currently-OUT
+    // player would score zero across the whole retrospective.
+    if (av.avail.size && !horizon.complete) {
       eng.setAvailability(av.avail);
       say(`availability applied to ${av.avail.size} players`, "ok");
     }
@@ -583,11 +586,16 @@ function usageBars(strip, proj, thin, weeks, outgoing = false) {
 
 function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new Map()) {
   const W = eng.weeks;
+  const AV = window.__avail ?? null;
   const rates = eng.startRates();
   const nm = (i) => model.players.get(eng.ids[i]).name;
   const posOf = (i) => model.players.get(eng.ids[i]).pos;
   const tag = (i) => `<span class="pos" data-p="${esc(posOf(i))}">${esc(posOf(i))}</span>`;
-  const pkg = (ids) => ids.map((i) => `${esc(nm(i))} ${tag(i)}`).join('<span class="plus">+</span>');
+  // A package that hands you a man on IR has to say so where the names are, not
+  // three sections further down.
+  const pkg = (ids) => ids
+    .map((i) => `${esc(nm(i))} ${tag(i)}${statusBadge(AV, eng.ids[i], esc)}`)
+    .join('<span class="plus">+</span>');
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   const avgProj = (i) => {
     const v = [];
@@ -825,6 +833,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     { key: "name", label: "Player", value: (r) => r.p.name },
     { key: "pos", label: "Pos", value: (r) => r.p.pos },
     { key: "nfl", label: "NFL", value: (r) => r.p.nfl },
+    { key: "status", label: "Status", num: true,
+      value: (r) => statusRank(AV, r.p.id), hint: AVAIL_HINT.status },
     { key: "bye", label: "Bye", num: true, value: (r) => r.p.bye || 99, hint: HINT.bye },
     { key: "avg", label: "Proj/wk", num: true, value: (r) => r.avg, hint: HINT.projwk },
     { key: "rate", label: "Starts", num: true, value: (r) => r.rate, hint: HINT.starts },
@@ -835,6 +845,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <td style="font-weight:600">${esc(r.p.name)}</td>
       <td>${tag(r.i)}</td>
       <td class="nfl">${esc(r.p.nfl)}</td>
+      <td class="num">${statusCell(AV, r.p.id, esc)}</td>
       <td class="num" style="color:var(--faint)">${r.p.bye || "—"}</td>
       <td class="num">${r.avg.toFixed(1)}</td>
       <td class="num ${r.rate < 0.35 ? "down" : r.rate > 0.8 ? "up" : ""}">${
@@ -926,7 +937,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
   const divSeed = divCount > 1 && (window.__divSeed ?? false);
   const proj = projectSeason(eng, schedule, model.settings,
-    { sims: SIMS, sigma: SIGMA, divisionSeeding: divSeed, divisionOf });
+    { sims: SIMS, sigma: SIGMA, divisionSeeding: divSeed, divisionOf,
+      records: window.__records ?? null });
   const maxTitle = Math.max(...proj.map((x) => x.titlePct), 1e-9);
   const seasonGrid = grid("seasonGrid", [
     { key: "name", label: "Team", value: (r) => r.team },
@@ -1096,8 +1108,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         </div>
         ${seasonGrid}
         ${leverageStrip}
-        <div class="note"><b>What this is not.</b> Rosters are frozen: no waivers,
-          injuries or trades. ${measured >= 20
+        <div class="note"><b>What this is not.</b> ${seasonNote(AV)} ${measured >= 20
             ? `Swing is measured per player and assumes independence — a stack of players
                from one NFL team is swingier than shown.`
             : `±25 is assumed and is the biggest lever on every number here.`}
