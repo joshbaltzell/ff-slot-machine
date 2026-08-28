@@ -18,6 +18,7 @@ import { restrictToRemaining, buildAvailability } from "./engine/availability.js
 import { loadSleeperPlayers } from "./engine/sources/sleeper.js";
 import { AVAIL_HINT, statusRank, statusCell, statusBadge, seasonNote,
          availabilityLines, horizonLine } from "./panel/availability.js";
+import { ROSTER_HINT, moveNote, moveLines, dropSection } from "./panel/roster.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -33,6 +34,7 @@ const PHASES = [
   ["vol",      "Player volatility"],
   ["market",   "Market values"],
   ["s1",       "1-for-1 trades"],
+  ["s21",      "2-for-1 trades"],
   ["s2",       "2-for-2 trades"],
   ["s3",       "Three-team trades"],
   ["win",      "Win probability"],
@@ -184,6 +186,9 @@ const ODDS_SIMS = 2500;
    dash for almost everything and quietly becomes a ranking by wins. */
 const REFINE_TOP = 15;
 const REFINE_SIMS = 20000;
+
+/* Chip order is search order: the cheapest shapes first, so the list fills early. */
+const SHAPES = ["1-for-1", "2-for-1", "2-for-2", "three-way"];
 
 const OBJECTIVES = [
   ["title", "Championship", "Rank by the change in your odds of winning the league."],
@@ -431,6 +436,13 @@ async function start(ref) {
     say(`  ${one.length} mutually beneficial`, "ok");
 
     Steps.set("s1", "done", `${one.length}`);
+    // A consolidation is scored to the roster limit: the sender fills the seat it
+    // empties from waivers, the receiver drops his least useful man. Exhaustive.
+    Steps.set("s21", "run");
+    const t21 = Date.now();
+    const twoOne = await eng.findTwoForOne(0.05, (n, tot) => progress(n / tot));
+    say(`  ${twoOne.length} consolidations in ${((Date.now() - t21) / 1000).toFixed(1)}s`, "ok");
+    Steps.set("s21", "done", `${twoOne.length}`);
     Steps.set("s2", "run", "slowest step");
     const two = await eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot));
     say(`  ${two.length} mutually beneficial`, "ok");
@@ -440,7 +452,7 @@ async function start(ref) {
     const three = await eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
     say(`  ${three.length} cycles`, "ok");
 
-    const trades = [...dedupe(one, 3), ...dedupe(two, 3), ...dedupe(three, 3)]
+    const trades = [...dedupe(one, 3), ...dedupe(twoOne, 3), ...dedupe(two, 3), ...dedupe(three, 3)]
       .sort((a, b) => b.total - a.total);
     Steps.set("s3", "done", `${three.length}`);
 
@@ -646,7 +658,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const mineOnly = viewing !== "__all__";
   const mkt = window.__market ?? null;
   const F = (window.__filters ??= {
-    shapes: new Set(["1-for-1", "2-for-2", "three-way"]),
+    shapes: new Set(SHAPES),
     minGain: 0.10, only: new Set(), q: "",
   });
   const balance = (t) => {
@@ -686,9 +698,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       for (const x of d.sent)
         li.push(`<li>Gives up ${esc(nm(x.i))} — ${x.wasStarting} starts.</li>`);
       for (const x of d.displaced)
-        li.push(`<li class="b">${esc(nm(x.i))} loses ${-x.delta} starts.</li>`);
+        if (x.i !== d.dropped?.i) li.push(`<li class="b">${esc(nm(x.i))} loses ${-x.delta} starts.</li>`);
       for (const x of d.promoted)
         li.push(`<li class="g">${esc(nm(x.i))} gains ${x.delta} starts.</li>`);
+      li.push(moveLines(d, nm));
       return `<div class="det-side${sd.team === myTeam ? " det-mine" : ""}">
         <h4>${esc(sd.team)}${sd.team === myTeam ? " · you" : ""}</h4>
         <div class="hd ${cls(sd.gain)}">${f2(sd.gain)}<span class="unit">/wk</span></div>
@@ -798,7 +811,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   /* ---------- grids ---------- */
   const tradeCols = [
     { key: "car", label: "", sortable: false },
-    { key: "shape", label: "Shape", num: true, value: (r) => r.t.shape, hint: HINT.shape },
+    { key: "shape", label: "Shape", num: true, value: (r) => r.t.shape,
+      hint: HINT.shape + " " + ROSTER_HINT.shape21 },
     { key: "recv", label: mineOnly ? "You receive" : "Receives",
       value: (r) => side(r.t).received.map(nm).join(" "), hint: HINT.recv },
     { key: "send", label: mineOnly ? "You send" : "Sends",
@@ -847,7 +861,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <td class="rank"><span class="car">&#9656;</span></td>
         <td class="num nowrap">${esc(t.shape)}</td>
         <td>${mineOnly ? "" : `<div class="side-l">${esc(me.team)}</div>`}
-            <div class="pkg">${pkg(me.received)}</div></td>
+            <div class="pkg">${pkg(me.received)}</div>${moveNote(me, nm)}</td>
         <td><div class="pkg">${pkg(me.sent)}</div></td>
         <td class="nowrap" style="color:var(--dim)">${rest.map((o) => esc(o.team)).join(" + ")}</td>
         <td class="num">${me.weekly.filter((x) => x > 0.005).length}<span
@@ -1084,7 +1098,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
             <option value="__all__"${viewing === "__all__" ? " selected" : ""}>All teams</option>
           </select></div>
           <div class="fld"><label>Shape</label><div class="chips" id="shapes">
-            ${["1-for-1", "2-for-2", "three-way"].map((sh) =>
+            ${SHAPES.map((sh) =>
               `<button data-v="${sh}" aria-pressed="${F.shapes.has(sh)}">${
                 sh === "three-way" ? "3-team" : sh}</button>`).join("")}
           </div></div>
@@ -1120,6 +1134,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         field.</p>
       <div class="panel">${faGrid}</div>
     </section>
+
+    ${dropSection(eng, model, { team: mineOnly ? viewing : myTeam, grid, avail: AV })}
 
     ${arbitrageSection(eng, model, mkt, { myTeam, grid })}
 
