@@ -34,3 +34,15 @@ Branch from `main` after wave 1 (2, 3, 5) has merged.
 | `extension/engine/league.js` | Phase 8 (`measureVolatility` keeps residuals) | Phase 7 may add `PRO_TEAM`-adjacent lookups in a new file instead |
 | `extension/engine/availability.js` | Phase 2 (merged) | read-only |
 | `extension/panel.js` | shared hook points only | — |
+
+## Wave 3 (Phases 6, 9, 10) — file ownership
+
+Branch from `main` after waves 1–2 have merged.
+
+| File | Owner | Others may |
+|---|---|---|
+| `extension/engine/season.js` | Phase 9 (availability draws in the sim) | read-only |
+| `extension/engine/availability.js` | Phase 9 (return weeks, durability) | Phase 6/10 read-only |
+| `extension/engine/league.js` | Phase 10 (`loadTransactions`, `loadMatchupDetail`) | Phase 9 may add fields to player records in a new helper file instead |
+| `extension/engine/search.js` | nobody this wave | — |
+| `extension/panel.js` | shared hook points only | — |
