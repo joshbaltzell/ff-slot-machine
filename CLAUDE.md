@@ -33,7 +33,8 @@ extension/
     league.js        ESPN API -> normalized model; settings; volatility; injury status
     market.js        FantasyCalc fairness, the pitch sentence, buy low / sell high
     lineup.js        optimal lineup for any slot configuration
-    search.js        swap table, shapes, N-sided trades, three-way, free agents
+    search.js        swap table, shapes, N-sided trades, three-way, 2-for-1, waiver
+                     backfill and trim, free agents, drop ranking
     availability.js  injury status -> play probability; the remaining-weeks horizon
     winprob.js       normal CDF, P(win), per-week leverage
     calibrate.js     positional shrinkage of ESPN projections
@@ -46,11 +47,13 @@ extension/
   panel/
     market.js        every string of market HTML; degrades to a dash
     availability.js  status codes, cells, badges, log lines, the season note
+    roster.js        2-for-1 waiver notes and the drop-candidate table
   test/
     parity.mjs       605 assertions against a frozen league — the engine contract
     availability.mjs availability, the horizon, record-seeded seasons, UI strings
     market.mjs       the market phase, offline (fetch and storage injected)
     sources.mjs      cache semantics and the Sleeper client, offline
+    roster.mjs       replacement level, the 2-for-1 shape, drop ranking
     run-all.mjs      runs every *.mjs in the directory
 ```
 
@@ -74,12 +77,12 @@ valid for nested eligibility and was measured wrong 8% of the time when `RB/WR` 
 `WR/TE` coexist. Do not reintroduce it as a fast path; the matroid solver runs at
 ~1 µs per team-week.
 
-**Nothing in the search is approximated, with one named exception.** Three-way is
-exhaustive via the swap table in `search.js`. A marginal-value pruning heuristic was
-measured at 57% recall and rejected. The exception is availability: above six
-uncertain players in a week, `weekly` samples 64 fixed-seed outcomes instead of
-enumerating all `2^k`. It is deterministic, it is confined to the current week, and
-it is the only estimate in the search — keep it the only one.
+**Nothing in the search is approximated, with two named exceptions.** Three-way is
+exhaustive via the swap table in `search.js`, and so is 2-for-1. A marginal-value
+pruning heuristic was measured at 57% recall and rejected. The first exception is
+availability: above six uncertain players in a week, `weekly` samples 64 fixed-seed
+outcomes instead of enumerating all `2^k`. It is deterministic and confined to the
+current week. The second is the backfill pool, below. Keep them the only two.
 
 **Market values are display and ranking only.** FantasyCalc's numbers come from real
 completed trades, which makes them a good model of what the manager on the other side
@@ -113,6 +116,37 @@ at zero — `bestLineup` seats players in the order it is given and never unseat
 so a zeroed star still takes a seat and blocks the man who would have started.
 `starterMask`, `startRates` and `explain` show the *modal* lineup (everyone at
 `p ≥ 0.5`) instead, because a usage strip has to name actual players.
+
+**The backfill pool is the one bounded step, and it bounds the waiver wire, not the
+search.** A 2-for-1 does not end with the rosters it names: the side sending two has
+an empty seat and fills it, and the side receiving two is over the limit and drops
+somebody. `Engine.backfill` and `Engine.trim` price both, so the shape is graded
+exactly rather than with the 20% haircut every other tool applies.
+`backfillPool()` bounds only *which free agents are tried*: the top three in each
+distinct **seat mask** — masks, never position strings, because that is what keeps
+superflex, IDP and `RB/WR` correct. Backfill is exact within the pool, and the fourth
+free agent behind three better men of identical eligibility cannot beat all three into
+a lineup, so he cannot be the best add. The *search* around it is exhaustive: the two
+prunes are upper bounds — a removal never raises the optimal lineup, and lineup value
+is submodular so a man is worth no more on a larger roster than a smaller one — and
+`test/roster.mjs` proves them against a brute force with zero missing and zero extra.
+Measured at 7.3 s against 72.2 s unpruned on the fixture. Do not widen the pool into
+the search or narrow the search into a heuristic.
+
+**The two pruning bounds are exact for a certain roster, and only up to sampling noise
+when a week holds seven or more uncertain players.** `_sample` draws its 64
+fixed-seed outcomes from one stream consumed in candidate order, so adding or removing
+a player shifts every later draw, and monotonicity and submodularity then hold only up
+to that noise — which is far larger than `GATE_EPS`, so a prune could in principle drop
+a real trade. It is narrow, since only the current week can hold uncertain players and
+it takes seven of them, and `test/roster.mjs` cannot see it because the reference test
+runs with no availability attached.
+
+**A side that ends somewhere `(sent, received)` does not describe carries `final`.**
+Only 2-for-1 sets it today. `enrich`, `explain` and `odds.js` all read
+`s.final ?? swap(roster, sent, received)`, so every other shape is untouched and a new
+shape that changes a roster after the trade must set it too — otherwise its win deltas
+and season odds are computed on a roster nobody will ever field.
 
 **The mean under uncertainty is exact; the spread is not.** `weekly` enumerates the
 outcomes, but `rosterSigma` never sees them: it takes the modal lineup and scales each
