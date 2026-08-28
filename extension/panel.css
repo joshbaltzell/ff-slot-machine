@@ -352,3 +352,22 @@ th.s:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
   border-color:rgba(255,111,111,.32)}
 .avail.gone{background:var(--raised);color:var(--faint);border-color:var(--line-hi)}
 .avail.sm{font-size:9px;padding:1px 4px;margin-left:2px;vertical-align:1px}
+
+/* ---- this week: range bars and the gameplan block ---- */
+.gp{padding:15px}
+.gp-top{display:flex;gap:34px;flex-wrap:wrap;margin-bottom:12px}
+.gp-p .k{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint)}
+.gp-p .v{font-family:var(--mono);font-size:26px;font-weight:500;margin-top:3px}
+.gp-p .s{font-size:11px;color:var(--dim);margin-top:2px}
+.gp-swaps{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:5px}
+.gp-swaps li{font-size:13px;display:flex;align-items:center;gap:8px}
+.gp-rng{display:grid;grid-template-columns:auto 1fr auto;gap:7px 12px;align-items:center;
+  padding:11px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.gp-lab{font-size:11px;color:var(--dim);white-space:nowrap}
+.gp-rng .num{white-space:nowrap;color:var(--faint)}
+.gp-rng .mid{color:var(--ink)}
+.rng{position:relative;height:11px;background:var(--sunken);border-radius:2px;overflow:hidden}
+.rng-span{position:absolute;top:0;bottom:0;background:var(--accent-soft);
+  border-left:1px solid var(--accent-line);border-right:1px solid var(--accent-line)}
+.rng-med{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--accent)}
+.gp-stacks{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px}
