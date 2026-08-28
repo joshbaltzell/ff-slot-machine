@@ -223,5 +223,6 @@ uninstalled.
 
 Everything runs locally against ESPN's read API using the browser's own session. No
 backend, no analytics, no league data leaves the machine. The one other host is
-`api.sleeper.app`, which is asked only for its public league-agnostic player list —
-no league id, no team, no roster is sent with the request. Keep it that way.
+`api.sleeper.app`, which is asked only for its public, league-agnostic player list,
+weekly stats and trending-add feeds — no league id, no team, no roster is sent with
+any of those requests. Keep it that way.

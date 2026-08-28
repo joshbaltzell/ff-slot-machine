@@ -27,7 +27,7 @@ which lead scoring by a week or two, and this phase turns them into five signals
 - **Assets and targets (usage).** A sell-high grid (yours, residual and `tdOver` both in the
   position's top quartile) and a buy-low grid (someone else's, driver above the position median
   and residual in the bottom quartile), each joined to the search's own best offer for that name.
-  `assetRows` returns the quartile cut points alongside the two lists so a claim can be checked.
+  `assetRows` returns the quartile cut points alongside the two lists so a test can check it.
 - **Breakout watch.** Rising driver trend plus low snap share, cross-checked against Sleeper's
   24-hour add count and against a depth-chart improvement measured between runs (`ffsm.depth`).
 - **Quiet vs contested waivers.** The free-agent grid gains a `Crowd 24h` column and a relative
@@ -264,56 +264,186 @@ None blocks merge. Listed so they are not lost.
 | `faab.js` | No test pins a pool of fewer than five upgrades. Correct by inspection (`slice(0, K.TOP)` degrades, `denom > 0` guards) but unpinned. |
 | `faab.js` | No test pins `max` when `myRemaining === 0` (the `rate = null` path). Sound by inspection. |
 | `faab.js` | The urgency base/cap `1` and the `Math.max(1, …)` bid floor are inline literals rather than `FAAB_K` entries. Structural constants of the formula, not tunable thresholds. |
-| `panel/usage.js:299` | A missing NFL team renders as a bare `esc(r.nfl ?? "—")`, so that one dash misses the `<span class="zero">` every other dash in the file carries and will not be dimmed. |
+| `panel/usage.js:299` | ~~A missing NFL team renders as a bare `esc(r.nfl ?? "—")`~~ — **fixed in the final-review fix wave**: wrapped in `<span class="zero">` like every other dash in the file. |
 | `panel/usage.js` | `faCrowdCols` keeps the brief's `-1` sort sentinel four lines from the docstring explaining why `-1` was rejected in favour of `SINK`. Harmless — crowd counts and bids are non-negative — but it reads as an oversight. |
 | `panel/usage.js` | The buy grid's `owner` column is the only column with no hint, because `USAGE_HINT` has no `owner` key. |
-| `panel/usage.js` | `USAGE_HINT.crowd` promises "how many Sleeper leagues added him in the last 24 hours" but the value is 0 for anyone outside Sleeper's trending top-N even on a healthy feed, so the hint overclaims. |
-| `panel.js:21` | `USAGE_HINT` is imported and referenced nowhere else — every hint is applied inside `panel/usage.js`. Dead but harmless (no lint step, no runtime cost to an unused ES module binding) and exactly what H1 specifies. |
+| `panel/usage.js` | ~~`USAGE_HINT.crowd` promises "how many Sleeper leagues added him in the last 24 hours" but the value is 0 for anyone outside Sleeper's trending top-N even on a healthy feed~~ — **fixed in the final-review fix wave**: the hint now says so. |
+| `panel.js:21` | ~~`USAGE_HINT` is imported and referenced nowhere else~~ — **fixed in the final-review fix wave**: the name is dropped from the import. |
 | process | A Task 5 report presented an assertion-count split ("116 + 48") as measurement; it does not reconcile with the `ok()` calls in section 5. The 191 total is measured; that split was not. |
 
-## Browser verification — nothing below has been checked
+## Follow-ups for the merge
+
+Recorded, not fixed here — this fix wave was scoped to the findings above it. Each entry carries
+enough for whoever picks it up cold.
+
+**I1 — the outer 15s race can discard a partially-loaded season.** `panel/usage.js` around line 113
+wraps the *whole* season load in `Promise.race([work, timeout(15000)])` — the Sleeper players file
+plus up to 17 week requests at concurrency 4. `loadSeasonStats` was written so one bad week costs
+precision, not the feature, and the outer race discards that: if week 15 of 17 is still in flight at
+15s, the user gets "unavailable" and zero weeks instead of 14 weeks of usage. Late-season cold starts
+are exactly the case that trips this. It self-heals across runs — `cached()` awaits `storage.set`
+before returning, so completed weeks are banked — but the first run shows "unavailable" with no hint
+that a retry would help. Fix later by giving the timeout to `loadWeekStats` per week, or by resolving
+with whatever `byWeek` holds instead of rejecting the whole batch.
+
+**I3 — the WOPR column dashes for every RB and QB, in a section whose job is saying why.**
+`assetRows` (in `extension/engine/usage.js`) selects buy-low on `r.driver >= c.drvMed`; for a WR/TE
+the driver *is* WOPR and the column shows it, but for an RB the driver is `touches` and for a QB
+`dropbacks` — both computed and carried on the row, neither rendered in `assetCols`/`assetRow` in
+`extension/panel/usage.js`. So a user sees "he's in the bottom residual quartile" and a blank where
+"and he's getting above-median touches" belongs. `USAGE_K.MIN_FIT` is 3, so ordinary leagues will
+populate RB rows and hit this. Fix later by rendering `r.driver` when the driver key is not WOPR,
+relabelling the column "WOPR / touches", and keeping `sortNum(r.driver)` as the sort key. This is a
+gap in the spec's literal column list, not an implementation defect — the build matches the spec.
+
+**Ruling 16, for the merger.** The wave-3 ownership table assigns `extension/engine/league.js` to
+Phase 10, with an exception granted only to Phase 9. This branch's 6-line edit (`settings.faabBudget`
+and `rec.faabSpent`) has no exception in the rules; the plan's Global Constraints authorised it and
+the controller ruled it stands, because reverting it strands `faab.js` with no budget to read.
+**Phase 10 must be told `faabBudget` and `faabSpent` already landed in `readSettings` and the
+team-record block**, and that `waiverRank` — the field this branch left as a dash (see Deviations
+from the spec) — wants to sit beside them.
+
+**Ruling 17, amending the existing `mySpent` follow-up (P1 above).** The existing note says the
+by-display-name team lookup should be keyed on ESPN team id at the five `panel.js` sites once the
+wave merges. The real root is deeper: `extension/engine/search.js` builds `this.roster` as a `Map`
+keyed on `t.name` (verified at lines 85–88: `this.roster = new Map(); for (const t of
+model.teams.values()) { this.roster.set(t.name, …) }`), so in a league with two identically-named
+teams one team's entire roster is silently overwritten by the other's, and **every trade, gain,
+lineup and season projection for that league is already wrong** long before the FAAB column is
+reached. The bid figure P1 describes is a symptom of that, not the bug itself. Amend the follow-up
+to name `search.js` as the root and the `panel.js` by-name lookups (`:200`, `:354`, `:476`, `:663`,
+`:1002`) as downstream consequences that inherit the same fix once `search.js` keys teams by id.
+
+**Merge-order note.** Of the eight `panel.js` hunks, the riskiest is not any insertion — it is the
+heading/subtitle replacement at H8 (the only two lines this branch *deletes* from `panel.js`, the
+old "Free agents worth adding" heading and subtitle). Every other hunk is a pure insertion a sibling
+phase can merge around; a deletion in a section Phase 10 (waivers) is likely to rewrite is where a
+conflict becomes a judgment call rather than a mechanical one. Recommend merging this branch before
+Phase 10 if the merge order is free to choose.
+
+**M4 — the Sleeper weekly-stats cache keys are unpruned, the same kind of housekeeping debt
+`CLAUDE.md` already documents for the calibration log on `main`.** `extension/engine/sources/
+sleeperstats.js`'s `loadWeekStats` writes `src.sleeper.stats.{season}.{week}` — up to 17 keys per
+season — and nothing prunes them across seasons; a user who returns to this extension season after
+season keeps every week's key forever. This worktree's copy of `CLAUDE.md` predates the
+`phase5-projections` merge (ruling 5), so it carries no calibration-log paragraph to extend here;
+this note is parked in the build report instead, as the task instructions for this fix wave direct,
+and should be folded into whichever paragraph documents that debt once the two `CLAUDE.md` copies
+are reconciled on merge.
+
+## Browser verification — revised in the final-review fix wave
 
 This environment has no browser, and **no part of this phase's UI has been exercised.** The two
-engine modules and the panel module carry 191 assertions; `extension/panel.js`'s eight hunks carry
+engine modules and the panel module carry 196 assertions; `extension/panel.js`'s eight hunks carry
 none and cannot — `panel.js` is a DOM module and the repo has no browser harness. `node --check`
 plus a hunk-by-hunk read by the implementer and again by the reviewer is the whole of the
 verification on that file. Every string of HTML in `extension/panel/usage.js` is asserted as a
 string, which is not the same as having been rendered. This is the largest residual risk of the
 phase.
 
+The final whole-branch review judged the checklist below, as it stood, **not adequate**: it tests
+the degradation paths thoroughly and the working path not at all, which is backwards for a feature
+whose degradation paths carry the bulk of those 196 offline assertions and whose working path
+carries none. The old item 1 accepted amber ("unavailable") as a pass, so a feature whose Sleeper
+endpoint was simply wrong could tick every box on the list. This revision keeps every item that
+still holds, fixes the ones that mislead or cannot be run as written, and adds the ones the review
+found missing — most importantly, a hard requirement that the working path actually be seen green.
+
 Load `extension/` unpacked via `chrome://extensions` → Developer mode → Load unpacked, open the
 panel on a real in-season league, and walk this list before trusting the feature.
 
-- [ ] **The loading checklist** shows `Usage and trends` between `Market values` and `1-for-1
-      trades`, and it finishes either green with an "N players" note or amber with "unavailable".
-      Either way the three search steps run after it and the report renders.
+- [ ] **a1 — the loading checklist must go green.** `Usage and trends` must finish **green** with a
+      player count in the low hundreds — amber ("unavailable") here is a **failure**, not an
+      acceptable degrade, because it means the working path was never actually seen. Separately,
+      confirm the naming: **Sell high** names players you recognise from your own roster, and
+      **Breakout watch** names real free agents or lightly-rostered players, not garbage rows.
 - [ ] **Free agents worth adding — quiet vs contested** — the heading reads that way, the
       subtitle mentions Crowd and Bid, and the grid has ten columns with `Crowd 24h` and `Bid`
-      last. Hover both new headers for their tooltips. Confirm the header count equals the cell
-      count in every row (no ragged right edge), and sort by `Crowd 24h` and by `Bid` in both
-      directions.
-- [ ] **Dashes, not blanks.** In week 1, or with Sleeper blocked (DevTools → Network → block
-      `api.sleeper.app`, then reload), the usage step goes amber, both new columns show `—` in
-      every row, the grid still has ten columns, and the two new sections show their "Usage
-      signals unavailable" empty states. The trade tables and the free-agent gains are unchanged.
+      last. Hover both new headers for their tooltips, and sort by `Crowd 24h` and by `Bid` in
+      both directions. **b5 —** rather than eyeballing column parity across 25 rows, run this in
+      the console (`#faGrid` is the free-agent table's real id, from `extension/panel.js`'s
+      `grid("faGrid", …)` call):
+      ```js
+      document.querySelectorAll('#faGrid thead th').length
+        === document.querySelectorAll('#faGrid tbody tr:first-child td').length
+      ```
+      should read `true`.
+- [ ] **a2 — plausibility of the numbers, not just their presence.** All 196 assertions run
+      against a synthetic fixture the tests build themselves, so nothing verifies that Sleeper
+      actually calls the fields `off_snp`, `tm_off_snp`, `rec_air_yd` and `pass_att`. If
+      `tm_off_snp` is absent, `snapShare` is `null` for *every* player and the step **still goes
+      green with a full player count** — and in Breakout watch, a `null` snap share is treated as
+      low-usage, so the whole league becomes breakout-eligible. Pick your league's clearest WR1:
+      Snap% should read 80–95%, Tgt% 20–30%, WOPR 0.5–1.0. Pick a quarterback: his `TD ±` must be a
+      dash (this feed carries no passing touchdowns) and his Snap% must sit near 100%. **Any column
+      that is a dash for every row is a broken field name, not a quiet week.**
+- [ ] **Dashes, not blanks.** First, from the panel's DevTools console, clear every cached key so a
+      genuinely dead feed cannot be masked by a stale cache from an earlier successful run:
+      ```js
+      chrome.storage.local.get(null, (all) => {
+        const keys = Object.keys(all).filter(k => k.startsWith("src.sleeper.") || k === "ffsm.depth");
+        chrome.storage.local.remove(keys);
+      });
+      ```
+      **Then** block `api.sleeper.app` in DevTools → Network and reload. The usage step goes amber,
+      both new columns show `—` in every row, the grid still has ten columns, and the two new
+      sections show their "Usage signals unavailable" empty states. The trade tables and the
+      free-agent gains are unchanged. (Without the clear-storage step first, `cached()` in
+      `engine/sources/cache.js` serves the prior run's stale copy on a fetch failure and this item
+      would falsely pass against a genuinely dead feed.)
 - [ ] **The half-dead feed** — this is ruling 9 and it is the one degradation with no live check.
-      Block only `api.sleeper.app/players/nfl/trending/add` and leave the stats endpoint reachable.
-      The `Crowd 24h` column must show `—`, not a green `0`, and the contested split must not
-      claim every upgrade is quiet.
+      The real request is `https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=24&limit=50`
+      (`/v1/`, plus a query string — DevTools matches the exact URL, so blocking the bare path
+      blocks nothing). First remove the `src.sleeper.trending.add.24` key from `chrome.storage.local`
+      (it caches for an hour and would otherwise serve from storage regardless of the block), then
+      block the URL *pattern* `*trending/add*` and reload. The `Crowd 24h` column must show `—`, not
+      a green `0`, and the contested split must not claim every upgrade is quiet.
 - [ ] **The two new sections** appear after the market arbitrage section and before `League
-      strength`: **Assets and targets (usage)** with the sell-high / buy-low / cut tables and the
+      strength`: **Assets and targets (usage)** with the sell-high / buy-low tables and the
       offer column joined from the search, then **Breakout watch**.
+- [ ] **a4 — sort the two new grids, and Sell high / Buy low / Breakout watch too.** Click every
+      sortable header in **Sell high**, **Buy low** and **Breakout watch**, both directions. These
+      three grids sort on `SINK = -1e9` through `sortNum` across several columns that are
+      legitimately null for some rows; a `NaN` reaching `grid()`'s numeric comparator produces a
+      silently arbitrary order rather than a console error, so a clean console would not catch a
+      broken sort. Dashes must clump at one end of every sorted column, never interleave with real
+      numbers.
 - [ ] **The FAAB bid figures** appear only in a FAAB league. In a waiver-priority league the `Bid`
       column should be all dashes — this is the `waiverRank` deviation, and a dash there is
-      expected, not a bug. In a FAAB league, sanity-check that no suggested bid exceeds your
-      remaining budget as ESPN reports it.
+      expected, not a bug. **b4 — if your league(s) are all FAAB**, you cannot exercise the
+      priority-mode dash directly; instead, in the console set `model.settings.faabBudget = 0` and
+      re-render. **a3 — read your remaining budget off ESPN's own waiver page**, not off this
+      panel, and confirm the suggested bids are scaled against *that* number, not the full season
+      budget: if ESPN's `transactionCounter` is ever missing from the league payload,
+      `faabSpent` silently reads 0, `myRemaining` becomes the *full* budget, every bid inflates
+      accordingly, and "no bid exceeds the remaining budget" still passes because the budget it is
+      being checked against is wrong. **Note (post-I4):** a manager who has spent his whole budget
+      now shows `$0` in the Bid column, not a dash; a waiver-priority league (or the console
+      override above) still shows a dash. Confirm you can tell the two apart on screen.
 - [ ] **The trade detail row** still spans the full trade table when you expand a trade — confirm
       the expanded panel is not one or two columns short.
 - [ ] **Switching the viewed team** and changing filters re-renders without error; the console
-      should stay clean.
-- [ ] **The depth-chart memo.** Run the panel twice a few days apart and confirm `ffsm.depth` is
-      written and that a real depth-chart move produces a memo line in Breakout watch rather than
-      a spurious one on the second run of the same day.
+      should stay clean. **a5 — and Sell high / Buy low must not change** when you do: `assetsSection`
+      deliberately fixes on `myTeam` and ignores the "who" selector, the same way `arbitrageSection`
+      does, because "sell high" and "buy low" are statements about your own roster. Switching the
+      viewed team to somebody else must re-render everything else but leave those two grids alone.
+- [ ] **b3 — the depth-chart memo, as a deterministic two-minute exercise** rather than waiting on a
+      real depth-chart move to coincide with a breakout-eligible player in this league. Run the
+      panel once and confirm, from the console, that `chrome.storage.local.get("ffsm.depth")`
+      returns an object with a populated `.order`. Then bump it and reload:
+      ```js
+      chrome.storage.local.get("ffsm.depth", ({ "ffsm.depth": memo }) => {
+        memo.at -= 24 * 3600e3;                        // force the snapshot to roll forward
+        const sid = Object.keys(memo.order)[0];
+        memo.order[sid] += 1;                           // simulate a one-slot chart move
+        chrome.storage.local.set({ "ffsm.depth": memo });
+      });
+      ```
+      Reload the page: that player should now show a depth-chart delta in Breakout watch (or in the
+      Depth column, if he is already listed). This drives `depthChanges`'s full before/after path,
+      which is the only part of it needing a browser — the arithmetic itself is already pinned in
+      `extension/test/usage.mjs`.
 - [ ] **Privacy.** The Network tab shows requests to `api.sleeper.app` carrying season, week and
       position only — no league id, team name or player list.
 
