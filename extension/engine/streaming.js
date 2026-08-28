@@ -17,12 +17,21 @@
  * whole point of the pairing: streaming decisions are exactly the short-horizon,
  * matchup-driven calls a Vegas total should move.
  *
- * The sequence is a per-week argmax and that is not a shortcut. With one seat to
- * fill and one add allowed per week, the best reachable plan IS the best available
- * player in each week: there is no future cost to taking this week's best, because
- * next week's add is still available. A DP here would return the same answer more
- * slowly. If the rules ever change - a weekly add limit shared across slots, an FAAB
- * budget - this becomes a real optimisation and the comment stops being true.
+ * The sequence is a per-week argmax, and for a slot that starts exactly ONE player
+ * that is not a shortcut, it is the exact answer. With one seat to fill and one add
+ * allowed per week, the best reachable plan IS the best available player in each
+ * week: there is no future cost to taking this week's best, because next week's add
+ * is still available. A DP here would return the same answer more slowly. If the
+ * rules ever change - a weekly add limit shared across slots, an FAAB budget - this
+ * becomes a real optimisation and the comment stops being true.
+ *
+ * A slot that starts more than one - true 2QB, a league with two D/ST - is still
+ * planned, because dropping it would delete the planner from those leagues entirely,
+ * which is worse than an imprecise note. But what comes back is narrower than a full
+ * N-seat plan: `hold` and `sequence` name the best *one* of those seats, not a set.
+ * `count` carries how many the league starts so the UI can say which it is. Solving
+ * N seats properly is a different problem - the top N each week, and a hold that is
+ * a set rather than a player - and nothing here claims to have solved it.
  */
 import { SLOT_LABEL } from "./league.js";
 
@@ -48,7 +57,7 @@ export function streamPlan(eng, model, team, { weeks = 3, limit = 12 } = {}) {
 
   const groups = [];
   for (const slot of STREAM_SLOTS) {
-    const count = Number(counts[slot] ?? counts[String(slot)] ?? 0);
+    const count = Number(counts[slot] ?? 0);
     if (!(count > 0)) continue;
 
     const rows = [];
@@ -68,13 +77,15 @@ export function streamPlan(eng, model, team, { weeks = 3, limit = 12 } = {}) {
     if (!rows.length) continue;
     rows.sort((a, b) => b.total - a.total);
 
-    // Best single hold: whoever is worth the most across the whole window.
+    // Best single hold: whoever is worth the most across the whole window. When the
+    // slot starts more than one, this is the best of those seats, not all of them.
     const hold = rows[0];
     hold.hold = true;
     const holdTotal = hold.total;
 
     // Best sequence: the best available player each week. See the header for why
-    // greedy is optimal under "one add per week, one seat".
+    // greedy is exact under "one add per week, one seat", and what it means when
+    // `count` is greater than one.
     const sequence = window.map((w, k) => {
       let best = rows[0];
       for (const r of rows) if (r.pts[k] > best.pts[k]) best = r;

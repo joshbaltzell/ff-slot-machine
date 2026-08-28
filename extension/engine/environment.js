@@ -20,7 +20,21 @@
  *
  * Scope: the current week and the next. A line does not exist past that, and a
  * season-long trade evaluation must not be tilted by two weeks of weather - which is
- * why the factors never touch any other week, and never enter lineup logic at all.
+ * why the factors never touch any other week.
+ *
+ * What "input adjustment" does and does not mean. The factor is folded into `proj`
+ * BEFORE the Engine is built, so everything downstream reads the adjusted number:
+ * the lineup solver, `sideMetrics`, `projectSeason`, `attachOdds`, the leverage
+ * strip. That is the entire point of this seam. What nothing downstream carries is a
+ * *separate* environment term, and no slot decision keys on one - the solver still
+ * runs on `eligibleSlots` alone, and sees only a number that is already correct.
+ *
+ * The blast radius is bounded by the averaging on the other side. `sideMetrics`
+ * (search.js) reports `gain` as the mean over every week in the model - 17 in a full
+ * season - and `reg` as the mean over the regular-season weeks alone, normally 14. So
+ * moving two weeks shifts a season-long trade metric by at most 2/17 of the per-week
+ * swing; the short-horizon views - this week's lineup, the streaming planner - are
+ * where it is meant to be felt.
  */
 import { PRO_TEAM_ID } from "./sources/stadiums.js";
 
@@ -49,6 +63,13 @@ export const ENV_K = {
  * those, not a new kind of exception. It is acceptable because it only ever chooses
  * a multiplier, never a slot. If this ever grows into a lineup decision, move it
  * onto slots first.
+ *
+ * There is a stronger justification than "it only picks a coefficient", and it is
+ * worth writing down: `positionLabel` in `league.js` derives `pos` FROM
+ * `eligibleSlots` in the first place - it is the first single-position slot a player
+ * may start in, with `defaultPositionId` only as a last-resort fallback. So
+ * `envGroup(p.pos)` is transitively slot-keyed. It is not a second source of truth
+ * about what a player is; it is the slot table read through one indirection.
  *
  * TQB is ESPN's team-quarterback entity and belongs with the quarterbacks: it is
  * scored on the same plays, so the same implied-total sensitivity applies.
@@ -113,6 +134,10 @@ export function weatherFactor(group, wx) {
  * @param weeks   the weeks to adjust, normally [currentWeek, currentWeek + 1]
  * @param opts    { enabled = true, weatherWeek = weeks[0] }
  * @returns {{adjusted: number, byPlayer: Map}} - `byPlayer` is what the UI shows.
+ *          A `byPlayer` entry records a player-week that had a GROUP and a LINE, not
+ *          one that was changed: a factor of exactly 1 is recorded too, and so is a
+ *          player whose `proj` was zero. `adjusted` is the narrower count - the
+ *          player-weeks whose number actually moved.
  */
 export function applyEnvironment(model, vegas, weather, weeks, opts = {}) {
   const byPlayer = new Map();

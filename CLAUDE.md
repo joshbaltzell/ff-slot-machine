@@ -29,6 +29,7 @@ extension/
   background.js      opens the page; nothing else lives here
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
+  panel/environment.js  the environment column, chips and streaming section
   engine/
     sources/         one module per external feed (cache, sleeper, vegas, weather, stadiums)
     league.js        ESPN API -> normalized model; settings; volatility
@@ -40,9 +41,8 @@ extension/
     streaming.js     three-week hold-or-churn plan for K, D/ST, QB and TE slots
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
-  test/parity.mjs    605 assertions against a frozen league
-  panel/environment.js  the environment column, chips and streaming section
-  test/environment.mjs  141 assertions for lines, weather, factors and streaming
+  test/parity.mjs       605 assertions against a frozen league
+  test/environment.mjs  151 assertions for lines, weather, factors and streaming
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -111,16 +111,23 @@ is unaffected.
 `currentWeek` and `currentWeek + 1`, in `start()`, after shrinkage and before the
 `Engine` is constructed. It composes with shrinkage on purpose: shrinkage is about
 how far a projection sits from its positional mean, this is about which game it is
-for. Three rules keep it safe. It never enters lineup logic — the solver still runs
-entirely on `eligibleSlots`, and the position strings `envGroup` reads are one of a
-small set of sanctioned exceptions to "position strings are display-only," alongside
-`calibrate.js`'s positional shrinkage and the positional-median volatility fallback in
-`league.js` and `search.js`. Every one of them picks a coefficient; none of them picks
-a slot. It never touches a week without a line, so a dead feed is identity rather than
-a distortion. And it never reaches past next week, because a season-long trade
-evaluation must not be tilted by two weeks of weather. Factors clamp to
-[0.6, 1.4]; retractable roofs count as covered, since no feed says whether the roof
-was shut and closing it is the common case.
+for. Three rules keep it safe. First, it is an adjustment to an *input*, not a new
+term: because it is folded into `proj` before the Engine is built, everything
+downstream — the lineup solver, `sideMetrics`, `projectSeason`, `attachOdds`, the
+leverage strip — reads the adjusted number, which is the point of the seam. What
+nothing downstream carries is a *separate* environment term, and no slot decision
+keys on one: the solver still runs entirely on `eligibleSlots`. The position strings
+`envGroup` reads are one of a small set of sanctioned exceptions to "position strings
+are display-only," alongside `calibrate.js`'s positional shrinkage and the
+positional-median volatility fallback in `league.js` and `search.js`; every one of
+them picks a coefficient, none picks a slot, and `positionLabel` derives `pos` from
+`eligibleSlots` to begin with, so `envGroup` is transitively slot-keyed. Second, it
+never touches a week without a line, so a dead feed is identity rather than a
+distortion. Third, it never reaches past next week — `gain` averages every week in
+the model and `reg` the regular-season weeks alone, so two moved weeks shift a
+season-long trade metric by at most 2/17 of the per-week swing, which is where the
+bound comes from. Factors clamp to [0.6, 1.4]; retractable roofs count as covered,
+since no feed says whether the roof was shut and closing it is the common case.
 
 **Volatility is measured, not assumed.** `statSourceId: 0` gives the prior season's
 actual weekly scores in the same payload as projections; the residual is real

@@ -257,6 +257,31 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
     { fetchImpl: mkFetch({ [url]: { hourly: windlessHourly } }), storage: mkStorage(), now: 0 });
   ok(!windlessWx.has(9) && !windlessWx.has(3),
      "no usable wind at kickoff means the stadium is absent, not present with zeros");
+
+  // Two clubs share MetLife, and both can be at home in the same week on different
+  // days. That is one stadium and one forecast, read at two different kickoff hours.
+  const met = STADIUMS[19];
+  const metUrl = `https://api.open-meteo.com/v1/forecast?latitude=${met.lat}&longitude=${met.lon}`
+    + "&hourly=wind_speed_10m,wind_gusts_10m,precipitation_probability"
+    + "&forecast_days=7&wind_speed_unit=mph&timezone=UTC";
+  const sharedWeek = new Map([
+    [19, { home: true,  opp: 4,  kickoff: "2026-09-27T16:00Z" }],   // Giants, Sunday early
+    [4,  { home: false, opp: 19, kickoff: "2026-09-27T16:00Z" }],
+    [20, { home: true,  opp: 5,  kickoff: "2026-09-27T18:00Z" }],   // Jets, same field, later
+    [5,  { home: false, opp: 20, kickoff: "2026-09-27T18:00Z" }],
+  ]);
+  const sharedFetch = mkFetch({ [metUrl]: { hourly } });
+  const sharedWx = await loadWeather(sharedWeek,
+    { fetchImpl: sharedFetch, storage: mkStorage(), now: 0 });
+  ok(sharedFetch.calls.length === 1,
+     `two tenants of one stadium are one request (${sharedFetch.calls.length})`);
+  ok(sharedWx.get(19)?.wind === 10 && sharedWx.get(20)?.wind === 30,
+     "each game reads its own kickoff hour out of the single cached forecast");
+  ok(sharedWx.get(4)?.wind === 10 && sharedWx.get(5)?.wind === 30,
+     "each visitor gets the row for the game it is actually in");
+  ok(sharedWx.get(19)?.kickoff === "2026-09-27T16:00Z"
+     && sharedWx.get(20)?.kickoff === "2026-09-27T18:00Z",
+     "each row carries its own kickoff, not the first one fetched");
 }
 
 /* ---- 4. environment factors ---- */
@@ -294,9 +319,12 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   ok(vegasFactor("pass", null, avg) === 1, "no game is identity");
   ok(vegasFactor("pass", week.get(12), 0) === 1, "no average is identity");
   ok(vegasFactor(null, week.get(12), avg) === 1, "a group with no coefficient is identity");
-  ok(vegasFactor("dst", { implied: 5, oppImplied: 0.1 }, 1) === ENV_K.clamp.hi,
+  // Hard-coded on purpose. ENV_K is the spec's binding constant table, so comparing
+  // against ENV_K.clamp here would let a widened clamp through green.
+  ok(ENV_K.clamp.hi === 1.4 && ENV_K.clamp.lo === 0.6, "the clamp range is [0.6, 1.4]");
+  ok(vegasFactor("dst", { implied: 5, oppImplied: 0.1 }, 1) === 1.4,
      "an absurd edge clamps high");
-  ok(vegasFactor("dst", { implied: 5, oppImplied: 100 }, 1) === ENV_K.clamp.lo,
+  ok(vegasFactor("dst", { implied: 5, oppImplied: 100 }, 1) === 0.6,
      "an absurd edge clamps low");
 
   ok(weatherFactor("k", { wind: 10, precipProb: 0 }) === 1, "a calm day is identity");
@@ -449,6 +477,25 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
     { ...base, settings: { ...base.settings, lineupSlotCounts: { 2: 2, 4: 2 } } },
     F.teams[0], { weeks: 3 });
   ok(noSlots.groups.length === 0, "a league with no streamable slots gets no groups");
+
+  // A slot that starts more than one - true 2QB, two defences. The planner still
+  // runs (dropping the group would delete the planner from those leagues), and it
+  // reports `count` so the UI can say the recommendation covers one of the seats.
+  const two = streamPlan(eng2,
+    { ...base, settings: { ...base.settings,
+      lineupSlotCounts: { ...F.lineupSlotCounts, 17: 2, 16: 2 } } },
+    F.teams[0], { weeks: 3 });
+  const k2 = two.groups.find((g) => g.slot === 17);
+  const d2 = two.groups.find((g) => g.slot === 16);
+  ok(k2 !== undefined && d2 !== undefined,
+     "a slot that starts two is still planned, not silently dropped");
+  ok(k2.count === 2 && d2.count === 2, `the group reports how many start (${k2?.count})`);
+  ok(k2.rows.length > 0 && k2.hold !== undefined && k2.sequence.length === 3,
+     "the two-seat group still carries rows, a hold and a three-week sequence");
+  ok(k2.hold.i === iSpiky && Math.abs(k2.holdTotal - 120) < 1e-9,
+     "the hold names the best single seat, exactly as in the one-seat case");
+  ok(two.groups.find((g) => g.slot === 1).count === 1,
+     "a one-seat slot in the same league still reports one");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);

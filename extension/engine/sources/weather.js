@@ -3,6 +3,8 @@
  *
  * Only outdoor games are fetched, and only one request per stadium: the visitors
  * play in the same wind as the hosts, so the row is written under both team ids.
+ * "Per stadium" means per coordinate pair, not per home team - two clubs share
+ * MetLife and two share SoFi, and both tenants can host in the same week.
  * Domes and retractable roofs are skipped entirely - see `stadiums.js` for why a
  * retractable roof counts as covered.
  *
@@ -13,7 +15,7 @@
  * Nothing about the league is sent: the URL carries a latitude and a longitude.
  */
 import { cached } from "./cache.js";
-import { STADIUMS } from "./stadiums.js";
+import { STADIUMS, isOutdoor } from "./stadiums.js";
 
 const OPEN_METEO = "https://api.open-meteo.com/v1/forecast";
 const HOURS3 = 3 * 3600e3;
@@ -64,15 +66,24 @@ export function atKickoff(hourly, kickoffIso) {
  */
 export async function loadWeather(weekMap, opts = {}) {
   const ttl = opts.ttlMs ?? HOURS3;
-  const jobs = [];
+
+  // Group by STADIUM, not by home team, and key the cache on the coordinates. Two
+  // clubs share a building - the Giants and the Jets at MetLife, the Rams and the
+  // Chargers at SoFi - and both can be at home in the same week on different days.
+  // Keyed by team id that was the identical URL fetched twice; keyed by position it
+  // is one forecast, read at each game's own kickoff hour.
+  const sites = new Map();
   for (const [teamId, g] of weekMap ?? new Map()) {
     if (!g?.home) continue;                       // one fetch per stadium, not per team
     const st = STADIUMS[teamId];
-    if (!st || st.roof !== "open") continue;      // dome or retractable: no weather
+    if (!st || !isOutdoor(teamId)) continue;      // dome or retractable: no weather
     if (!g.kickoff) continue;                     // without a time there is no hour to read
-    jobs.push({ teamId, opp: g.opp, st, kickoff: g.kickoff });
+    const key = `${st.lat},${st.lon}`;
+    if (!sites.has(key)) sites.set(key, { key, st, games: [] });
+    sites.get(key).games.push({ teamId, opp: g.opp, kickoff: g.kickoff });
   }
 
+  const jobs = [...sites.values()];
   const out = new Map();
   for (let i = 0; i < jobs.length; i += CONCURRENCY) {
     await Promise.all(jobs.slice(i, i + CONCURRENCY).map(async (j) => {
@@ -80,12 +91,14 @@ export async function loadWeather(weekMap, opts = {}) {
         + "&hourly=wind_speed_10m,wind_gusts_10m,precipitation_probability"
         + "&forecast_days=7&wind_speed_unit=mph&timezone=UTC";
       try {
-        const r = await cached(`src.weather.${j.teamId}`, url, ttl, opts);
-        const at = atKickoff(r.data?.hourly, j.kickoff);
-        if (!at) return;
-        const row = { ...at, kickoff: j.kickoff, stadium: j.st.name };
-        out.set(j.teamId, row);
-        if (j.opp) out.set(j.opp, row);           // the visitor throws into the same wind
+        const r = await cached(`src.weather.${j.key}`, url, ttl, opts);
+        for (const g of j.games) {
+          const at = atKickoff(r.data?.hourly, g.kickoff);
+          if (!at) continue;                      // this kickoff is out of forecast range
+          const row = { ...at, kickoff: g.kickoff, stadium: j.st.name };
+          out.set(g.teamId, row);
+          if (g.opp) out.set(g.opp, row);         // the visitor throws into the same wind
+        }
       } catch {
         /* one unreachable stadium is a missing row, not a failed week */
       }

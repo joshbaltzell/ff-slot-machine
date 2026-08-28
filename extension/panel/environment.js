@@ -68,7 +68,9 @@ export async function environmentStep(model, seasonId, say) {
     say(`Vegas: ${env.games} games priced for week ${env.weeks[0]} `
       + `(avg total ${(avg * 2).toFixed(1)})`, "ok");
   } catch (e) {
-    say(`Vegas lines unavailable (${e.message ?? e}) - projections unchanged`, "err");
+    // `||`, not `??`: an Error with an empty message is still an Error, and `??`
+    // would print "unavailable ()" rather than falling through to the object.
+    say(`Vegas lines unavailable (${e.message || e}) - projections unchanged`, "err");
     env.note = "no lines";
     env.state = "warn";
     return env;
@@ -80,15 +82,25 @@ export async function environmentStep(model, seasonId, say) {
     const worst = stadiums.reduce((m, r) => Math.max(m, r.wind ?? 0), 0);
     say(`weather: ${stadiums.length} open-roof games, worst wind ${worst.toFixed(0)} mph`, "ok");
   } catch (e) {
-    say(`weather unavailable (${e.message ?? e}) - wind and rain ignored`, "err");
+    say(`weather unavailable (${e.message || e}) - wind and rain ignored`, "err");
   }
 
-  const r = applyEnvironment(model, env.vegas, env.weather, env.weeks);
-  env.byPlayer = r.byPlayer;
-  env.note = `${env.games} games`;
-  env.state = "done";
-  say(`environment applied to ${r.adjusted} player-weeks `
-    + `across weeks ${env.weeks.join(" and ")}`, "ok");
+  // The last unguarded call, now guarded: "nothing escapes start()" should be true
+  // by construction, not because this one happens not to throw. A partial pass
+  // leaves some projections scaled and some not, which is the same shape of answer
+  // as a feed that priced only half the week - honest, and not worth losing the run.
+  try {
+    const r = applyEnvironment(model, env.vegas, env.weather, env.weeks);
+    env.byPlayer = r.byPlayer;
+    env.note = `${env.games} games`;
+    env.state = "done";
+    say(`environment applied to ${r.adjusted} player-weeks `
+      + `across weeks ${env.weeks.join(" and ")}`, "ok");
+  } catch (e) {
+    say(`environment could not be applied (${e.message || e}) - projections left as they are`, "err");
+    env.note = "not applied";
+    env.state = "warn";
+  }
   return env;
 }
 
@@ -97,7 +109,11 @@ export async function environmentStep(model, seasonId, say) {
 export function envColumn(env) {
   return {
     key: "env", label: "Env", num: true, hint: HINT_ENV.env,
-    value: (r) => env?.byPlayer?.get(r.p.id)?.factor ?? 1,
+    // Read exactly what `envCell` reads, or the column sorts on something it is not
+    // showing: `rec.factor` is 1 for a player with no game THIS week, which would
+    // file every dashed row in among the average ones. -1 is below any real factor
+    // (they clamp at 0.6), so dashes gather at one end where they can be ignored.
+    value: (r) => env?.byPlayer?.get(r.p.id)?.weeks?.[env?.weeks?.[0]]?.factor ?? -1,
   };
 }
 
@@ -148,13 +164,22 @@ export function bindEnvChips(root) {
 
 /* ============ streaming section ============ */
 
-export function streamingSection({ eng, model, team, env, grid, esc }) {
-  let plan;
+/**
+ * The planner is a bonus; it must never cost the page - so the WHOLE body is inside
+ * the try, not only `streamPlan`. Building the tables can throw too (a malformed row,
+ * a grid callback), and a section that renders nothing is a better outcome than a
+ * half-built page.
+ */
+export function streamingSection(args) {
   try {
-    plan = streamPlan(eng, model, team, { weeks: 3 });
+    return streamingHtml(args);
   } catch {
-    return "";                 // the planner is a bonus; it must never cost the page
+    return "";
   }
+}
+
+function streamingHtml({ eng, model, team, env, grid, esc }) {
+  const plan = streamPlan(eng, model, team, { weeks: 3 });
   if (!plan.groups.length) return "";
   const wk = plan.weeks;
 
@@ -184,10 +209,19 @@ export function streamingSection({ eng, model, team, env, grid, esc }) {
 
     const seq = g.sequence.map((s) => `wk ${s.w} ${esc(s.name)}`).join(" → ");
     const edge = g.seqTotal - g.holdTotal;
+    // The planner solves one seat exactly. When the league starts more than one of
+    // this slot - true 2QB, two defences - the recommendation is still a single
+    // name, so it must say which of the seats it is talking about rather than let
+    // the reader take it for the whole slot. `g.count` is in the heading either way.
+    const seats = g.count === 1 ? "1 starter" : `${g.count} starters`;
+    const many = g.count > 1
+      ? ` This league starts ${g.count} at this slot; the hold and the stream above
+          cover <b>one</b> of those ${g.count} seats, not all of them.`
+      : "";
     // `g.adds` counts the times the name CHANGES inside the window. It does not
     // count acquiring the first name, so it must not be sold as the number of
     // waiver claims: say what it is, and name the missing move separately.
-    return `<h3 class="substl">${esc(g.label)}</h3>
+    return `<h3 class="substl">${esc(g.label)} · ${seats}</h3>
       <div class="panel">${table}
         <div class="note"><b>Hold</b> ${esc(g.hold?.name ?? "—")} for
           ${g.holdTotal.toFixed(1)} points across the window.
@@ -195,7 +229,7 @@ export function streamingSection({ eng, model, team, env, grid, esc }) {
             ? `${edge.toFixed(1)} more, at the cost of ${g.adds} switch${
                 g.adds === 1 ? "" : "es"} inside the window`
               + ", plus the first add if that name is not already yours"
-            : "no better than holding, so hold"}.</div>
+            : "no better than holding, so hold"}.${many}</div>
       </div>`;
   }).join("");
 
