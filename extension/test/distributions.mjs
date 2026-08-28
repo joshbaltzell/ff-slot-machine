@@ -18,6 +18,8 @@ import { measureVolatility } from "../engine/league.js";
 import { CORR, Z90, quantiles, buildDistribution, playerRange, cv, rho, isRealTeam,
          posFamily, attachCovariance, stacks, lineupRange } from "../engine/distribution.js";
 import { gameplan, lineupStats, feasible } from "../engine/gameplan.js";
+import { DIST_HINT, SWAP_MIN, weekSection, rangeBar, stackLine, stackNote }
+  from "../panel/distributions.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -542,6 +544,80 @@ const mkEngine = (model) =>
     ok(gameplan(bare, F.teams[0], 0) === null,
        "and with no measured volatility there is none either");
   }
+}
+
+/* ---- 5. the strings the page shows ---- */
+{
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const name = (i) => `Player ${i}`;
+
+  ok(weekSection(null, { esc, name, myTeam: "Team A" }) === "",
+     "no plan renders nothing at all");
+
+  const plan = {
+    opponent: "Team B", week: 5,
+    pWinMean: 0.412, pWinBest: 0.466,
+    lineupMean: [1, 2], lineupBest: [1, 3],
+    swaps: [{ out: 2, in: 3, dP: 0.054 }],
+    me: { floor: 88, median: 121, ceiling: 154 },
+    them: { floor: 95, median: 128, ceiling: 161 },
+  };
+  const html = weekSection(plan, { esc, name, myTeam: "Team A" });
+  ok(html.includes("Team B"), "the opponent is named");
+  ok(html.includes("41.2%"), "the mean lineup's win probability is shown");
+  ok(html.includes("46.6%"), "and the best lineup's");
+  ok(html.includes("Player 2") && html.includes("Player 3"),
+     "the recommended swap names both players");
+  ok(html.includes("+5.4pp"), "and states what it is worth");
+  ok(html.includes("121") && html.includes("128"), "both teams' medians appear");
+  ok(/heuristic|local search|not exhaustive/i.test(html),
+     "and the section says the search is a heuristic, not an exhaustive one");
+
+  // A swap under a percentage point is noise on numbers this soft.
+  const small = weekSection({ ...plan, pWinBest: 0.4145,
+    swaps: [{ out: 2, in: 3, dP: 0.0025 }] }, { esc, name, myTeam: "Team A" });
+  ok(!small.includes("Player 3"),
+     "a sub-one-point swap is not recommended - it is inside the model's own error");
+  ok(small.includes("Team B"), "but the week is still described");
+  ok(SWAP_MIN === 0.01, "and the bar is one percentage point");
+
+  // Escaping. A team called <script> must not become one.
+  const nasty = weekSection({ ...plan, opponent: '<script>x</script>' },
+                            { esc, name, myTeam: "Team A" });
+  ok(!nasty.includes("<script>"), "the opponent's name is escaped");
+
+  // Stack flags.
+  ok(stackLine([], { esc, name }) === "", "no stacks, no line");
+  const sl = stackLine([{ a: 1, b: 6, rho: 0.25, nfl: "KC", label: "QB+WR" }],
+                       { esc, name });
+  ok(sl.includes("QB+WR") && sl.includes("KC"), "a stack flag names the shape and the team");
+  const two = stackLine([{ a: 1, b: 6, rho: 0.25, nfl: "KC", label: "QB+WR" },
+                         { a: 6, b: 7, rho: 0.10, nfl: "KC", label: "WR+WR" }],
+                        { esc, name });
+  ok((two.match(/KC/g) ?? []).length >= 2 || two.includes("2"),
+     "two stacks are both reported");
+
+  // The season note replaces the old independence disclaimer.
+  const note = stackNote(140, CORR);
+  ok(!/independen/i.test(note),
+     "the note no longer claims the swing assumes independence - it does not");
+  ok(/0\.25/.test(note) && /0\.1/.test(note),
+     "and it states the constants it now uses");
+  ok(/stack/i.test(note), "in the language of stacks");
+  ok(/±25/.test(stackNote(0, CORR)) && !/0\.25/.test(stackNote(0, CORR)),
+     "with no measurement it falls back to ±25 rather than quoting constants");
+  ok(/no correlation/i.test(stackNote(0, CORR)),
+     "and says plainly that no correlation is modelled");
+
+  ok(DIST_HINT.floor.length > 40 && DIST_HINT.ceiling.length > 40
+       && DIST_HINT.pwin.length > 40,
+     "every new column has a real hint");
+  ok(/10th/.test(DIST_HINT.floor) && /90th/.test(DIST_HINT.ceiling),
+     "and the hints say which percentile they are");
+
+  const bar = rangeBar({ floor: 88, median: 121, ceiling: 154 }, { lo: 80, hi: 170 }, esc);
+  ok(bar.includes("<") && bar.includes("%"), "the range bar is positioned HTML");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
