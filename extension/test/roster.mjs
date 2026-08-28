@@ -318,6 +318,41 @@ const eng = mkEng(mkModel());          // all ten teams; index === id here
   near(eng._metrics(J, tr.ids).gain, hand[1], 1e-9, "same trade, ten-team league: J");
 }
 
+/* ---- 6b. positionLimits filters the search too, and `legal` is not vacuous ---- */
+{
+  // Section 6's `sub` has no limits at all, so its `legal()` returns true without ever
+  // looking at a roster - the legality invariants above are the right shape but they
+  // assert nothing there. A cap makes them bite. Both teams hold exactly `cap` tight
+  // ends, so both start legal and either is one incoming TE away from being over.
+  const D = F.teams[3], J = F.teams[9];
+  const cap = Math.max(...[D, J].map((t) => F.rosters[t].filter((i) => F.pos[i] === "TE").length));
+  const capped = mkEng(mkModel([D, J], { [POS_ID.TE]: cap }));
+  ok(capped.limits.length > 0, "the capped engine really has a limit to enforce");
+  ok(capped.teams.every((t) => capped.legal(capped.roster.get(t))), "both rosters start legal");
+
+  // The mechanism the search has to guard against: a receiver two men over a cap has
+  // no single legal drop at all, and `trim` says so by returning the roster whole.
+  const rj = capped.roster.get(J), rd = capped.roster.get(D);
+  const twoTE = rd.filter((i) => POS[i] === "TE").slice(0, 2);
+  const back = rj.find((i) => POS[i] !== "TE");
+  ok(twoTE.length === 2 && back !== undefined, "the fixture can build an over-cap roster");
+  const over = rj.filter((i) => i !== back).concat(twoTE);
+  ok(!capped.legal(over), "two over the cap is illegal - so `legal` is doing work here");
+  const stuck = capped.trim(over, twoTE);
+  ok(stuck.drop === null && stuck.ids.length === over.length,
+     "trim finds no legal single drop and hands the roster back unchanged");
+
+  // Not the section-6 brute force: its `cutIds` starts null and it never checks
+  // legality, so on a capped league it would hand null to `_metrics` and throw.
+  const res = await capped.findTwoForOne(0.05);
+  ok(res.length > 0, `the capped search still finds trades (${res.length})`);
+  ok(res.every((t) => t.sides[1].drop !== null), "every receiving side names a real drop");
+  ok(res.every((t) => t.sides.every((s) => s.final.length === 16)),
+     "no final roster is oversized");
+  ok(res.every((t) => t.sides.every((s) => capped.legal(s.final))),
+     "no final roster is one ESPN would refuse");
+}
+
 /* ---- 7. `final` reaches the passes that run after the search ---- */
 {
   const D = F.teams[3], J = F.teams[9];

@@ -654,6 +654,9 @@ export class Engine {
           const sa = this._metrics(A, bf.ids);
           if (sa.gain < minGain) continue;
           const tr = this.trim(recv, two, bUp);
+          // A receiver two men over a position cap has no single legal drop: every
+          // removal still leaves him one over, so trim hands the roster back whole.
+          if (tr.drop === null || !this.legal(tr.ids)) continue;
           if (tr.val - bB < minGain - GATE_EPS) continue;
           const sb = this._metrics(B, tr.ids);
           if (sb.gain < minGain) continue;
