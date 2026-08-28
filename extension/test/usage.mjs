@@ -12,6 +12,8 @@ import { USAGE_K, DRIVER, quantile, ptsKeyFor, usageTable,
   from "../engine/usage.js";
 import { FAAB_K, offRound, faabBids } from "../engine/faab.js";
 import { readSettings } from "../engine/league.js";
+import { USAGE_HINT, usageOrNull, usageView, ownersOf, assetsSection, breakoutSection,
+         waiverView, faCrowdCols, faCrowdCells } from "../panel/usage.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -436,6 +438,95 @@ const OWNER = new Map([
      "a league that does not bid reports a budget of zero rather than undefined");
   ok(readSettings({ settings: { acquisitionSettings: { acquisitionBudget: "0" } } })
        .faabBudget === 0, "…and a string zero is still zero");
+}
+
+/* ---- 5. the panel module ---- */
+{
+  const gridCalls = [];
+  const fakeGrid = (id, cols, rows, o) => { gridCalls.push({ id, cols, rows, o }); return `<!--${id}-->`; };
+
+  const loaded = { players: { bySleeper, byEspn: new Map(), at: 1000 },
+                   stats: { byWeek, weeks: [1, 2, 3, 4], failed: [], at: 1000 },
+                   trending: [{ player_id: "s4", count: 900 }, { player_id: "s10", count: 50 }] };
+  const view = usageView(model, loaded, 5, null);
+  ok(view.table.rows.size === 12, "the view carries the usage table");
+  ok(view.crowdByEspn.get(104) === 900,
+     "trending adds are joined onto ESPN ids through the Sleeper crosswalk");
+  ok(usageView(model, null, 5, null) === null, "no feed, no view");
+
+  // A minimal engine stand-in: the section code reads only ids, teams and roster.
+  const eng = { ids: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112],
+                teams: ["Mine", "Theirs"],
+                roster: new Map([["Mine", [4, 6, 8, 10]], ["Theirs", [0, 1, 2, 5, 7, 9]]]),
+                index: new Map([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
+                  .map((id, i) => [id, i])) };
+  ok(ownersOf(eng).get(105) === "Mine" && ownersOf(eng).get(101) === "Theirs"
+     && !ownersOf(eng).has(104),
+     "owners are read off the engine's rosters; anyone unowned is a free agent");
+
+  gridCalls.length = 0;
+  const html = assetsSection(eng, model, view, { myTeam: "Mine", grid: fakeGrid, trades: [] });
+  ok(html.startsWith("<section") && gridCalls.length === 2, "two grids: sell high and buy low");
+  ok(gridCalls[0].rows.map((r) => r.name).join(",") === "B1,B3", "…the first is mine");
+  ok(gridCalls[1].rows.map((r) => r.name).join(",") === "B2,B4", "…the second is theirs");
+  ok(gridCalls[0].cols.some((c) => c.key === "wopr")
+     && gridCalls[0].cols.some((c) => c.key === "tdover")
+     && gridCalls[0].cols.some((c) => c.key === "resid")
+     && gridCalls[0].cols.some((c) => c.key === "offer"),
+     "the spec's columns are all present");
+  ok(gridCalls[0].cols !== gridCalls[1].cols,
+     "each grid gets fresh column objects - grid() keeps sort state per id");
+
+  // The row renderer must be exercised directly; a recorder never calls it.
+  const rowHtml = gridCalls[0].o.row({ ...view.table.rows.get(105), owner: "Mine",
+    name: 'x"><img src=x>', pos: 'RB"><img src=x>' });
+  ok(!/<img src=x>/.test(rowHtml), "the row escapes a hostile name and position");
+  ok(/&lt;img/.test(rowHtml), "…by entity-encoding rather than by stripping");
+
+  gridCalls.length = 0;
+  const dead = assetsSection(eng, model, null, { myTeam: "Mine", grid: fakeGrid, trades: [] });
+  ok(dead.startsWith("<section") && gridCalls.every((g) => g.rows.length === 0),
+     "with no feed the section still renders, with empty grids");
+  ok(gridCalls.every((g) => /unavailable/i.test(g.o.empty)),
+     "…and says why rather than reading as 'nobody qualifies'");
+
+  gridCalls.length = 0;
+  breakoutSection(eng, model, view, { myTeam: "Mine", grid: fakeGrid });
+  ok(gridCalls.length === 1 && gridCalls[0].rows.map((r) => r.name).join(",") === "A4,R2",
+     "breakout watch lists the snap jumps, ordered");
+  const bRow = gridCalls[0].o.row({ ...gridCalls[0].rows[0], name: '<b>x</b>' });
+  ok(!/<b>x<\/b>/.test(bRow), "the breakout row escapes too");
+
+  /* the two free-agent columns */
+  const ups = [{ fa: 3, gain: 2.0 }, { fa: 9, gain: 0.4 }];
+  const wv = waiverView(ups, view, eng,
+    { budget: 100, myRemaining: 100, weeksLeft: 10 });
+  ok(wv.mode === "faab" && wv.live === true, "a live feed and a budget give real bids");
+  ok(faCrowdCols(wv).length === 2, "the free-agent grid gains exactly two columns");
+  ok((faCrowdCells(ups[0], wv).match(/<td/g) ?? []).length === 2,
+     "…and exactly two cells");
+  const deadWv = waiverView(ups, null, eng, { budget: 100, myRemaining: 100, weeksLeft: 10 });
+  ok((faCrowdCells(ups[0], deadWv).match(/<td/g) ?? []).length === 2,
+     "a dead feed still renders two cells, so the column count never shifts");
+  ok(/—/.test(faCrowdCells(ups[0], deadWv)), "…both showing a dash");
+  const noBudget = waiverView(ups, view, eng, { budget: 0, myRemaining: 0, weeksLeft: 10 });
+  ok(noBudget.mode === "priority" && /—/.test(faCrowdCells(ups[0], noBudget).split("</td>")[1]),
+     "a no-FAAB league shows no bid");
+  ok((faCrowdCells(ups[0], null).match(/<td/g) ?? []).length === 2,
+     "…and so does no waiver view at all");
+
+  /* the loaders swallow every failure */
+  const say = []; const rec = (t, c) => say.push([t, c]);
+  ok(await usageOrNull({ settings: { currentWeek: 1 } }, 2026, rec,
+       { fetchImpl: deadFetch(), storage: mkStorage(), now: 0 }) === null,
+     "before any game is played there is no usage to load");
+  ok(await usageOrNull(model, 2026, rec,
+       { fetchImpl: deadFetch(), storage: mkStorage(), now: 0 }) === null,
+     "a dead feed returns null rather than throwing");
+  ok(say.some(([, c]) => c === "err"), "…and says so once, in the log");
+  const stuck = await usageOrNull(model, 2026, rec,
+    { fetchImpl: stuckFetch(), storage: mkStorage(), now: 0, timeoutMs: 20 });
+  ok(stuck === null, "a feed that accepts the connection and never answers gives up");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
