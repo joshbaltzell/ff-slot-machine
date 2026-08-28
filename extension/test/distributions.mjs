@@ -484,7 +484,12 @@ const mkEngine = (model) =>
     ok(feasible(e, gp.lineupBest), "and legal");
   }
 
-  // lineupStats agrees with rosterSigma on the lineup rosterSigma would pick.
+  // lineupStats agrees with rosterSigma on the lineup rosterSigma would pick - the
+  // drift guard for the deliberate arithmetic duplication between the two functions.
+  // Ids 1, 6 and 7 are all put on "KC" and id 1 is a TQB (a QB for correlation
+  // purposes), so this fixture already has a genuine stack: the assertion on
+  // e.stacks() below confirms the covariance term this guard is meant to cover is
+  // actually non-zero at runtime, not just term-for-term identical on paper.
   {
     const T0 = F.teams[0];
     const m = mkModel((i) => ([1, 6, 7].includes(i) ? "KC" : "X"));
@@ -499,6 +504,27 @@ const mkEngine = (model) =>
          "the two spread calculations agree on the optimal lineup - a drift guard");
     near(lineupStats(e, on, 0).mu, e.baseline.get(T0)[0], 1e-9,
          "and so do the means");
+    ok(e.stacks(e.roster.get(T0), 0).length > 0,
+       "the fixture's stacked players do co-start, so the covariance term above is " +
+       "genuinely summed, not hollow");
+
+    // Everything above ran with eng.avail === null, so both functions took their
+    // p === 1 fast path - the availability scaling of each starter's variance was
+    // never exercised. Re-run with one of the co-starting stack members (id 1, the
+    // TQB) available at 60% rather than certainly: still >= 0.5, so he stays a modal
+    // starter and the lineup itself is unchanged, but the p-scaling inside both the
+    // variance term and the covariance term (sqrt(p) * sigma) is now live. If that
+    // scaling were changed in one function and not the other - p vs p*p, p vs
+    // sqrt(p) - this is the assertion that would catch it.
+    const av = new Map([[1, new Float64Array(e.NW).fill(1)]]);
+    av.get(1)[0] = 0.6;
+    e.setAvailability(av);
+    const sm2 = e.starterMask(e.roster.get(T0));
+    const on2 = [...sm2].filter(([, mm]) => mm[0]).map(([i]) => i);
+    ok(on2.join(",") === on.join(","),
+       "a starter at 60% is still a modal starter, so the lineup itself did not change");
+    near(lineupStats(e, on2, 0).sigma, e.rosterSigma(e.roster.get(T0))[0], 1e-9,
+         "and the two spreads still agree once availability scaling is actually live");
   }
 
   // No opponent, no plan.

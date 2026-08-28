@@ -75,6 +75,14 @@ const sig = (s) => (s > 0 ? s : FALLBACK_SIGMA);
  * The week's plan: the mean-optimal lineup, the P(win)-optimal one, and the swaps
  * between them.
  *
+ * Our side and the opponent's are priced by two DIFFERENT estimators, and that is
+ * deliberate rather than an oversight - see the comment on `them` below for why.
+ *
+ * There is no `dist` parameter here, unlike the spec's signature. The team total is
+ * a normal around the lineup mean; nothing in this function reads a per-player
+ * quantile, so a `dist` argument would be an unused parameter - a lie about what the
+ * function actually depends on. Same reasoning as dropping it from `lineupRange`.
+ *
  * @param w engine week index
  * @returns null when volatility is unmeasured or nobody is scheduled that week
  */
@@ -97,6 +105,17 @@ export function gameplan(eng, team, w, { maxRounds = 24, minDelta = 1e-9 } = {})
   const seatOf = bestLineupSeats(order, vals, eng.mask, eng.starters);
   const lineupMean = [...seatOf].filter((p) => p >= 0).sort((a, b) => a - b);
 
+  // The opponent is priced from eng.baseline/eng.teamSigma - his EXPECTED OPTIMAL
+  // lineup under in-week substitution - while our own candidates are priced by
+  // lineupStats over one FIXED, GIVEN lineup (see pOf below). Those are different
+  // estimators: eng.baseline enumerates the outcomes of his uncertain players and
+  // takes the mean of his best lineup in each; lineupStats just discounts a chosen
+  // lineup's own starters by their play probability. So pWinMean can differ slightly
+  // from eng.weekWins for this same matchup and week - that is expected, not a bug.
+  // It is correct anyway, because every lineup INSIDE one gameplan (the mean-optimal
+  // seed and every swap candidate) is priced by the same lineupStats call. That
+  // internal consistency, not agreement with eng.weekWins, is what makes the swap
+  // deltas comparable to each other.
   const them = {
     mu: eng.baseline.get(opponent)?.[w] ?? 0,
     sigma: sig(eng.teamSigma(opponent)?.[w] ?? 0),
@@ -113,7 +132,9 @@ export function gameplan(eng, team, w, { maxRounds = 24, minDelta = 1e-9 } = {})
 
   // Repeated best single swap. Each accepted move strictly increases P(win) and the
   // set of lineups is finite, so this terminates; maxRounds is a belt against a
-  // future change that makes the objective non-strict.
+  // future change that makes the objective non-strict. It is also a bound on effort,
+  // not only a safety net: a genuinely long improving chain of swaps would be cut
+  // short at the cap rather than run to convergence.
   for (let round = 0; round < maxRounds; round++) {
     let pick = null;
     const bench = pool.filter((i) => !cur.includes(i));
