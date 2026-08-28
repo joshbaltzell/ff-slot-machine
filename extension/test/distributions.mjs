@@ -15,6 +15,8 @@ import { fileURLToPath } from "url";
 import { buildSlots, seatMask } from "../engine/lineup.js";
 import { Engine } from "../engine/search.js";
 import { measureVolatility } from "../engine/league.js";
+import { CORR, Z90, quantiles, buildDistribution, playerRange, cv, rho, isRealTeam,
+         posFamily } from "../engine/distribution.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const F = JSON.parse(fs.readFileSync(path.join(here, "fixture.json")));
@@ -91,6 +93,110 @@ const mkEngine = (model) =>
   ok(vol.byPosResiduals.get("WR")?.length === 8,
      "the positional pool takes only players who cleared minWeeks");
   ok(!vol.byPosResiduals.has("TE"), "a position with no qualifying player has no pool");
+}
+
+/* ---- 2. quantiles, ranges and the correlation table ---- */
+{
+  const S = [-10, -5, 0, 5, 10];
+  const TO = { p10: -20, p50: 0, p90: 20 };
+
+  // n = 0 is pure prior.
+  const none = quantiles([], TO);
+  ok(none.p10 === -20 && none.p50 === 0 && none.p90 === 20,
+     "with no sample the quantiles are the positional ones");
+
+  // n = 5, n0 = 10 -> weight 1/3 on the sample. Linear-interpolated sample
+  // quantiles of [-10,-5,0,5,10] are -8, 0, 8, so the shrunk values are exactly
+  // (1/3)(-8) + (2/3)(-20) = -16, 0, and +16.
+  const five = quantiles(S, TO);
+  near(five.p10, -16, 1e-9, "n = 5 shrinks a third of the way to the sample");
+  near(five.p50, 0, 1e-12, "the median of a symmetric sample and prior is zero");
+  near(five.p90, 16, 1e-9, "and symmetrically on the ceiling");
+
+  // n -> infinity is the sample's own. 200 copies of S has sample quantiles
+  // -10, 0, 10 (the interpolation lands inside a run of equal values), and a
+  // weight of 1000/1010, so p90 = 10.0990099...
+  const big = [];
+  for (let k = 0; k < 200; k++) big.push(...S);
+  const many = quantiles(big, TO);
+  near(many.p90, 10.099009900990099, 1e-9, "a large sample all but ignores the prior");
+  ok(Math.abs(many.p90 - 10) < Math.abs(five.p90 - 8),
+     "and is closer to its own quantile than a small one is to hers");
+  ok(many.p10 < many.p50 && many.p50 < many.p90, "quantiles stay ordered");
+
+  // playerRange floors at zero and keeps its order.
+  const dist = { of: new Map([[7, { p10: -10, p50: -1, p90: 12, n: 8 }]]),
+                 byPos: new Map([["WR", { p10: -6, p50: 0, p90: 6 }]]),
+                 global: { p10: -5, p50: 0, p90: 5 },
+                 cvOf: new Map(), byPosCv: new Map(), n0: 10 };
+  const low = playerRange({ id: 7, pos: "WR", proj: { 3: 3 } }, 3, dist);
+  ok(low.floor === 0, "a floor below zero is zero - nobody scores negative points");
+  near(low.median, 2, 1e-12, "the median is the projection plus the median residual");
+  near(low.ceiling, 15, 1e-12, "and the ceiling the projection plus p90");
+  ok(low.floor <= low.median && low.median <= low.ceiling, "floor <= median <= ceiling");
+
+  const high = playerRange({ id: 7, pos: "WR", proj: { 3: 14 } }, 3, dist);
+  near(high.floor, 4, 1e-12, "a bigger projection lifts the floor off zero");
+  near(high.ceiling, 26, 1e-12, "and the ceiling with it");
+
+  const unknown = playerRange({ id: 99, pos: "WR", proj: { 3: 10 } }, 3, dist);
+  near(unknown.floor, 4, 1e-12, "a player with no residuals falls back to his position");
+  const alien = playerRange({ id: 99, pos: "HC", proj: { 3: 10 } }, 3, dist);
+  near(alien.floor, 5, 1e-12, "and a position with no pool falls back to the league");
+
+  // The correlation table. Real pro teams only.
+  const P = (pos, nfl) => ({ pos, nfl });
+  ok(rho(P("TQB", "KC"), P("WR", "KC")) === CORR.qbToPass, "QB to his own WR");
+  ok(rho(P("QB", "KC"), P("TE", "KC")) === CORR.qbToPass, "QB to his own TE");
+  ok(rho(P("WR", "KC"), P("TE", "KC")) === CORR.sameTeam, "two non-QB teammates");
+  ok(rho(P("RB", "KC"), P("WR", "KC")) === 0, "a RB is uncorrelated with anyone");
+  ok(rho(P("RB", "KC"), P("RB", "KC")) === 0, "including another RB");
+  ok(rho(P("QB", "KC"), P("K", "KC")) === 0, "QB to a non-receiver is not in the table");
+  ok(rho(P("WR", "KC"), P("WR", "BUF")) === 0, "different teams, different games");
+  ok(rho(P("WR", "KC"), P("WR", "BUF"), { sameGame: true }) === CORR.sameGame,
+     "opponents in the same game pull apart");
+  ok(rho(P("TQB", "X"), P("WR", "X")) === 0,
+     "the fixture's placeholder team is never correlated - this is what keeps parity green");
+  ok(rho(P("TQB", "?"), P("WR", "?")) === 0, "nor is an unknown team");
+  ok(rho(P("D/ST", "FA"), P("WR", "FA")) === 0, "nor a free agent");
+  ok(!isRealTeam("X") && !isRealTeam("?") && !isRealTeam("FA") && isRealTeam("KC"),
+     "isRealTeam names exactly the three placeholders");
+  ok(CORR.qbToPass === 0.25 && CORR.sameTeam === 0.10 && CORR.rb === 0
+       && CORR.sameGame === -0.05,
+     "the constants are the ones the spec fixed");
+  ok(posFamily("TQB") === "QB" && posFamily("QB") === "QB" && posFamily("RB") === "RB"
+       && posFamily("WR") === "PASS" && posFamily("TE") === "PASS"
+       && posFamily("D/ST") === "OTHER" && posFamily("K") === "OTHER",
+     "a team quarterback is a quarterback; a kicker is neither passer nor runner");
+  ok(Z90 > 1.28 && Z90 < 1.282, "z90 is the tenth-percentile normal deviate");
+
+  // buildDistribution wires the three tiers together.
+  {
+    const vol = {
+      bySigma: new Map([[1, 6]]),
+      byPos: new Map([["WR", 6]]),
+      global: 6,
+      measured: 1,
+      residuals: new Map([[1, [-6, -3, 0, 3, 6]], [2, [-2, 2]]]),
+      byPosResiduals: new Map([["WR", [-6, -3, 0, 3, 6]]]),
+    };
+    const players = new Map([
+      [1, { id: 1, pos: "WR", nfl: "KC", proj: { 1: 10, 2: 10, 3: 0 } }],
+      [2, { id: 2, pos: "WR", nfl: "KC", proj: { 1: 8, 2: 8, 3: 0 } }],
+    ]);
+    const d = buildDistribution(vol, players);
+    ok(d.of.get(1).n === 5, "the sample size rides along");
+    ok(d.byPos.has("WR"), "the positional prior is built from the pooled residuals");
+    ok(d.of.get(2).p90 < d.of.get(1).p90,
+       "a two-week sample is pulled harder toward a wider prior than a five-week one");
+    ok(d.global.p10 < 0 && d.global.p90 > 0, "the league-wide prior exists as a last resort");
+    ok(cv(players.get(1), d) > 0, "a measured player has a coefficient of variation");
+    near(cv(players.get(1), d), 0.6, 0.35,
+         "and it is sigma over the mean projection, shrunk - 6/10 before shrinkage");
+    ok(cv({ id: 404, pos: "WR" }, d) === d.byPosCv.get("WR"),
+       "an unmeasured player falls back to his position's");
+    ok(cv({ id: 404, pos: "HC" }, d) === 0, "and to zero when even that is missing");
+  }
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
