@@ -30,15 +30,24 @@ extension/
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
   engine/
-    sources/         one module per external feed (cache.js, sleeper.js, ...)
-    league.js        ESPN API -> normalized model; settings; volatility
+    league.js        ESPN API -> normalized model; settings; volatility; injury status
     lineup.js        optimal lineup for any slot configuration
     search.js        swap table, shapes, N-sided trades, three-way, free agents
+    availability.js  injury status -> play probability; the remaining-weeks horizon
     winprob.js       normal CDF, P(win), per-week leverage
     calibrate.js     positional shrinkage of ESPN projections
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
-  test/parity.mjs    605 assertions against a frozen league
+    sources/
+      cache.js       TTL-cached fetch for external feeds, storage-injectable
+      sleeper.js     Sleeper players, trending, NFL state
+  panel/
+    availability.js  status codes, cells, badges, log lines, the season note
+  test/
+    parity.mjs       605 assertions against a frozen league — the engine contract
+    availability.mjs availability, the horizon, record-seeded seasons, UI strings
+    sources.mjs      cache semantics and the Sleeper client, offline
+    run-all.mjs      runs every *.mjs in the directory
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -61,12 +70,46 @@ valid for nested eligibility and was measured wrong 8% of the time when `RB/WR` 
 `WR/TE` coexist. Do not reintroduce it as a fast path; the matroid solver runs at
 ~1 µs per team-week.
 
-**Nothing in the search is approximated.** Three-way is exhaustive via the swap table in `search.js`.
-A marginal-value pruning heuristic was measured at 57% recall and rejected.
+**Nothing in the search is approximated, with one named exception.** Three-way is
+exhaustive via the swap table in `search.js`. A marginal-value pruning heuristic was
+measured at 57% recall and rejected. The exception is availability: above six
+uncertain players in a week, `weekly` samples 64 fixed-seed outcomes instead of
+enumerating all `2^k`. It is deterministic, it is confined to the current week, and
+it is the only estimate in the search — keep it the only one.
 
 **Time windows stay separate.** `gain` / `reg` / `playoff` / `bye` / `full` disagree
 with each other, and that is the point: a trade can be positive on the season
 average while hurting the record that decides seeding. Never collapse them.
+
+**Availability lives inside `weekly`, and it enumerates.** Optimal lineup value is a
+max over assignments, so it is convex in the projections and not linear in
+availability: `E[L]` is not `L(E[proj])`. Two players at 50% are not one certain
+starter — a bench absorbs one absence far better than two — so blending a probability
+into a projection understates the damage. `weekly` splits each week into certain and
+uncertain players, enumerates the `2^k` outcomes for `k ≤ 6` and weights them, and
+falls back to 64 fixed-seed draws above that. Only the current week can hold
+uncertain players, so the cost is confined to one week per solve. Two rules protect
+it: when no availability is attached the function takes the original path
+character-for-character, because 2-for-2 calls it millions of times and the golden
+set depends on it; and an unavailable player is *removed from the pool*, never valued
+at zero — `bestLineup` seats players in the order it is given and never unseats one,
+so a zeroed star still takes a seat and blocks the man who would have started.
+`starterMask`, `startRates` and `explain` show the *modal* lineup (everyone at
+`p ≥ 0.5`) instead, because a usage strip has to name actual players.
+
+**The horizon is the weeks that remain.** `restrictToRemaining` trims `model.weeks`
+and the settings week arrays to `w >= settings.currentWeek` before the engine is
+built. A trade proposed in week nine used to be scored partly on eight weeks nobody
+could change, which is not a small distortion: a deal that is mildly positive across
+a whole season is often strongly positive across the part of it that is left, and
+occasionally the reverse. A season already over keeps every week and says so.
+
+**Records seed the season simulation.** `projectSeason` takes
+`records: Map<team, {wins, losses, ties, pointsFor}>` from ESPN's `t.record.overall`
+and starts every simulated season there rather than at 0-0, counting a tie as half a
+win exactly as the simulation scores one; `games` becomes played + remaining. Adding
+a starting value adds no call to `gauss(rand)` and moves none, so the common random
+numbers `odds.js` depends on are unaffected — keep it that way.
 
 **Wins are scored after the search, never inside it.** `Engine.enrich` and
 `attachOdds` re-score the survivors of the exact search; they need an extra lineup
@@ -115,6 +158,12 @@ verified line for line before it was retired, so they are now the contract rathe
 than a convenience. A mismatch means the engine changed — regenerate them only on a
 deliberate decision that the new behaviour is right.
 
+`parity.mjs` is the contract and is never edited by a feature branch. Everything a
+new phase adds goes in its own `extension/test/<name>.mjs` using the `ok()` pattern,
+and `run-all.mjs` runs them all. Phase 2's file also asserts the contract from the
+other side: an engine given an all-ones availability table must reproduce
+`fixture.json`'s baseline exactly.
+
 ## The daily reminder
 
 `content.js` injects a notice on `fantasy.espn.com/football/*`; `background.js` runs
@@ -131,4 +180,6 @@ uninstalled.
 ## Privacy
 
 Everything runs locally against ESPN's read API using the browser's own session. No
-backend, no analytics, no league data leaves the machine. Keep it that way.
+backend, no analytics, no league data leaves the machine. The one other host is
+`api.sleeper.app`, which is asked only for its public league-agnostic player list —
+no league id, no team, no roster is sent with the request. Keep it that way.
