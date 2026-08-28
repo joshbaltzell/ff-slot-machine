@@ -30,15 +30,19 @@ extension/
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
   engine/
-    sources/         one module per external feed (cache.js, sleeper.js, ...)
+    sources/         one module per external feed (cache, sleeper, vegas, weather, stadiums)
     league.js        ESPN API -> normalized model; settings; volatility
     lineup.js        optimal lineup for any slot configuration
     search.js        swap table, shapes, N-sided trades, three-way, free agents
     winprob.js       normal CDF, P(win), per-week leverage
     calibrate.js     positional shrinkage of ESPN projections
+    environment.js   Vegas + weather -> a factor on this week's and next week's proj
+    streaming.js     three-week hold-or-churn plan for K, D/ST, QB and TE slots
     odds.js          paired season sims: a trade's change in playoff/bye/title odds
     season.js        Monte Carlo season projection
   test/parity.mjs    605 assertions against a frozen league
+  panel/environment.js  the environment column, chips and streaming section
+  test/environment.mjs  141 assertions for lines, weather, factors and streaming
 ```
 
 **Fetching happens in the page, not the service worker.** MV3 terminates idle
@@ -102,10 +106,31 @@ the same scoring period alongside the current one. Matching on `statSourceId`,
 built; fixture tests run with it off. `measureVolatility` reads `rawStats`, so sigma
 is unaffected.
 
+**Game environment is an input adjustment, and only ever to this week and next.**
+`environment.js` scales `p.proj[w]` by an implied-total and weather factor for
+`currentWeek` and `currentWeek + 1`, in `start()`, after shrinkage and before the
+`Engine` is constructed. It composes with shrinkage on purpose: shrinkage is about
+how far a projection sits from its positional mean, this is about which game it is
+for. Three rules keep it safe. It never enters lineup logic — the solver still runs
+entirely on `eligibleSlots`, and the position strings `envGroup` reads are the one
+sanctioned exception in the codebase, because they choose a coefficient and nothing
+else. It never touches a week without a line, so a dead feed is identity rather than
+a distortion. And it never reaches past next week, because a season-long trade
+evaluation must not be tilted by two weeks of weather. Factors clamp to
+[0.6, 1.4]; retractable roofs count as covered, since no feed says whether the roof
+was shut and closing it is the common case.
+
 **Volatility is measured, not assumed.** `statSourceId: 0` gives the prior season's
 actual weekly scores in the same payload as projections; the residual is real
 league-scored volatility. Team sigma is the root of the summed variance of that
 week's starters, so it follows roster composition.
+
+**Defence-versus-position is deferred, deliberately.** Ranking playoff-week matchups
+by how each defence performs against a position needs nflverse release assets, which
+are not CORS-open and would need either a host permission for a redirecting CDN or a
+copy of the data in the repo. The measured effect is also small next to the implied
+total, which the environment factor already carries. Revisit only with a CORS-open
+source.
 
 ## Testing
 
