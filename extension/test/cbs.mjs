@@ -17,8 +17,9 @@ import { fileURLToPath } from "url";
 import cbs, {
   SLOT, BENCH_SLOT, IR_SLOT, POS_ID, MEMBERS, TEAM_ABBR, STATUS, CBS_HOST_RE,
   cbsUrl, publicUrl, parseLeagueUrl, expandEligibility, readSettings, normalizeStatus, flexSlotFor,
-  teamAbbr, posOf, num, eligibleCodes, configuredCodes, extractToken, openSession,
+  teamAbbr, posOf, num, eligibleCodes, configuredCodes, extractToken, openSession, pageUrl,
 } from "../engine/platforms/cbs.js";
+import * as CBS from "../engine/platforms/cbs.js";
 import { IDS_URL, IDS_KEY, trimIds, loadCrosswalk } from "../engine/sources/fantasypros.js";
 import { hashRosters } from "../engine/platforms/hash.js";
 import { PRO_TEAM, SLOT_LABEL } from "../engine/league.js";
@@ -437,9 +438,10 @@ const CSV = ["fantasypros_id,espn_id,cbs_id,name",
   `,999999,${MAPPED[0][0]},duplicate`,
   `199,NA,${NA_ID},unmapped`].join("\n") + "\n";
 
-function cbsTable({ crosswalk = true, injuries = true, page = PAGE, details = env("details.json"), weeks = WEEKS } = {}) {
+function cbsTable({ crosswalk = true, injuries = true, page = PAGE, details = env("details.json"),
+                    weeks = WEEKS, ref = REF } = {}) {
   const t = {};
-  const put = (route, params, value) => { for (const s of SESSIONS) t[cbsUrl(REF, route, params, s)] = value; };
+  const put = (route, params, value) => { for (const s of SESSIONS) t[cbsUrl(ref, route, params, s)] = value; };
   put("league/details", {}, details);
   put("league/rules", {}, env("rules.json"));
   put("league/scoring/rules", {}, env("scoring-rules.json"));
@@ -449,7 +451,7 @@ function cbsTable({ crosswalk = true, injuries = true, page = PAGE, details = en
         env(w === 2 ? "stats-week2.json" : "stats-week1.json"));
   if (injuries) t[publicUrl("players/injuries")] = file("public/players-injuries.json");
   if (crosswalk) t[IDS_URL] = CSV;
-  if (page !== null) t[`https://${REF.leagueId}.football.cbssports.com/`] = page;
+  if (page !== null) t[pageUrl(ref)] = page;
   return t;
 }
 // Everything the league proxy would answer, refused the way CBS refuses it: HTTP 400
@@ -477,12 +479,13 @@ const countingFetch = (table) => {
   };
   f.maxStatsInflight = 0; f.calls = calls; f.inits = inits; return f;
 };
-const load = async (table, over = {}) => {
+const load = async (table, over = {}, base = REF) => {
   const fetchImpl = countingFetch(table);
   const progress = [];
-  const model = await cbs.loadLeague({ ...REF }, (d, t, l) => progress.push([d, t, l]),
+  const ref = { ...base };
+  const model = await cbs.loadLeague(ref, (d, t, l) => progress.push([d, t, l]),
     { fetchImpl, storage: mkStorage(), now: 0, ...over });
-  return { model, fetchImpl, progress };
+  return { model, fetchImpl, progress, ref };
 };
 
 {
@@ -650,6 +653,159 @@ const load = async (table, over = {}) => {
 
   const opened = await openSession({ ...REF }, { session: { mode: "token", token: "T" }, fetchImpl: deadFetch() });
   ok(opened.mode === "token" && opened.token === "T", "a session handed in is used as it is, with no probe");
+}
+
+/* session: the four sanctioned routes, in order, and no fifth (D-10, D-11) */
+// The scrubbed page carries `REDACTED` where its token was, so a test token is a
+// string the fixture can never contain: substitute it in and the page is "tokened",
+// substitute nothing and the page is a signed-in page with no token in it.
+const TESTTOKEN = "TESTTOKEN-xyz-123";
+const TOKENED = PAGE.replace(/REDACTED/g, TESTTOKEN);
+const TOKENLESS = PAGE.replace(/REDACTED/g, "");
+const isApiLeague = (u) => u.startsWith("https://api.cbssports.com/fantasy/league/");
+// A load that is expected to succeed, reported as a failed assertion rather than a
+// stack trace when it does not: this suite's contract is "N assertions, M failures".
+const tryLoad = async (...args) => {
+  try { return await load(...args); }
+  catch (e) { return { model: null, error: e, ref: {}, progress: [], fetchImpl: { calls: [], inits: [] } }; }
+};
+const isProxy = (u) => u.includes(".football.cbssports.com/api/");
+const authOf = (f, k) => f.inits[k]?.headers?.Authorization;
+{
+  ok(extractToken(TOKENED)?.token === TESTTOKEN && extractToken(TOKENLESS) === null,
+     "the tokened page carries the test token and the tokenless one carries none");
+
+  // Route 2 (the README's primary): the cookie answers, so nothing else is tried.
+  const { fetchImpl: f1, ref: r1 } = await load(cbsTable({ page: TOKENED }));
+  ok(r1.session?.mode === "cookie" && r1.session.token === null, "the cookie route opens a token-free session");
+  ok(!f1.calls.includes(pageUrl(REF)), "...the league page is never read");
+  ok(f1.inits.every((i) => !i?.headers?.Authorization), "...and no request carries an Authorization header");
+
+  // Route 3: the cookie is refused, the page carries a token.
+  const { model: m2, fetchImpl: f2, ref: r2 } = await load(refuseCookie(cbsTable({ page: TOKENED })));
+  ok(m2.players.size === ROSTER_IDS.length, "a refused cookie falls back to the page token and the league still loads");
+  ok(r2.session?.mode === "token" && r2.session.token === TESTTOKEN, "...the session holds that token, in memory on the ref");
+  ok(f2.calls.filter(isApiLeague).length > 3 && f2.calls.every((u, k) => !isApiLeague(u) || authOf(f2, k) === TESTTOKEN),
+     "...every league request carries exactly it in an Authorization header");
+  ok(f2.calls.every((u, k) => isApiLeague(u) || !authOf(f2, k)),
+     "...and nothing else does: not the crosswalk, not CBS's own public feeds, not the page");
+  ok(r2.session.teamHint === 16, "...and the page read on the way past yields the viewer's team id");
+  ok(f2.calls.filter((u) => u === pageUrl(REF)).length === 1, "...from one page read, not one per request");
+
+  // Route 4: no token in the page, a content script answers instead (11-07 replies).
+  const { model: m3, fetchImpl: f3, ref: r3 } =
+    await tryLoad(refuseCookie(cbsTable({ page: TOKENLESS })), { handover: async () => "TESTTOKEN-h" });
+  ok(m3?.players.size === ROSTER_IDS.length && r3.session?.token === "TESTTOKEN-h",
+     "a hand-over token opens the session when the page has none");
+  ok(f3.calls.every((u, k) => !isApiLeague(u) || authOf(f3, k) === "TESTTOKEN-h"),
+     "...and rides the same header on every league request");
+
+  // Route 5 does not exist: nothing left is an AUTH error, not a password prompt
+  // (probe NO-PASSWORD/empty).
+  let err = null;
+  try { await load(refuseCookie(cbsTable({ page: TOKENLESS })), { handover: async () => null }); } catch (e) { err = e; }
+  ok(err instanceof Error && err.code === "AUTH",
+     "a refused cookie, a tokenless page and a silent hand-over reject with code AUTH");
+  ok(/CBS/.test(err?.message ?? "") && !/password/i.test(err?.message ?? ""),
+     "...naming the platform and never asking for a password");
+  err = null;
+  try { await load(refuseCookie(cbsTable({ page: null })), { handover: async () => { throw new Error("no listener"); } }); } catch (e) { err = e; }
+  ok(err?.code === "AUTH", "a hand-over that rejects (a tab with no listener) is a null answer, not a crash");
+
+  // A hand-over token CBS then refuses is still an AUTH failure: every non-cookie
+  // route re-probes league/details before its session is accepted.
+  err = null;
+  try { await load(refuseAll(cbsTable({ page: TOKENLESS })), { handover: async () => "TESTTOKEN-stale" }); } catch (e) { err = e; }
+  ok(err?.code === "AUTH", "a stale hand-over token is re-probed and refused, not trusted");
+
+  // Route 1: a token the user pasted arrives on the ref (11-07 sets it).
+  const pasted = { mode: "token", token: "TESTTOKEN-p", teamHint: null };
+  const { model: m4, fetchImpl: f4 } =
+    await load(refuseCookie(cbsTable({ page: TOKENED })), {}, { ...REF, session: pasted });
+  ok(m4.players.size === ROSTER_IDS.length, "a pasted token loads the league");
+  ok(!f4.calls.includes(pageUrl(REF)), "...with no page read");
+  ok(!f4.calls.some(isProxy), "...and no probe of the cookie route");
+  ok(f4.calls.every((u, k) => !isApiLeague(u) || authOf(f4, k) === "TESTTOKEN-p"), "...only that token, in the header");
+
+  // The order of the extraction table is fixed: the first pattern that matches wins,
+  // wherever in the page the matches sit (the NO-PASSWORD/ordering backstop item).
+  const both = `<script>var cfg = {'access_token': 'SECOND-P2'};\nCBSi.token = "FIRST-P1";</script>`;
+  ok(extractToken(both)?.token === "FIRST-P1" && extractToken(both)?.pattern === "P1",
+     "a P2 match ahead of a P1 match still returns the P1 match: order is the table's, not the page's");
+  ok(extractToken('CBSi.token = "A";\nCBSi.token = "B";')?.token === "A",
+     "...and the first match of the winning pattern is the one taken");
+
+  // The viewer hint (D-16), read from the same page and nothing else.
+  ok(typeof CBS.viewerHint === "function", "viewerHint is exported");
+  ok(CBS.viewerHint?.(PAGE) === 16, "viewerHint reads the viewer's team id from the league page");
+  ok(CBS.viewerHint?.(PAGE) === Number(/myTeamId\s*=\s*(\d+)/.exec(PAGE_META.viewerHints[0].context)[1]),
+     "...the same id the capture recorded in page-meta");
+  ok(ROSTER_TEAMS.some((t) => Number(t.id) === CBS.viewerHint?.(PAGE)),
+     "...and it is a real team in the rosters payload");
+  ok(CBS.viewerHint?.("<html>nothing</html>") === null && CBS.viewerHint?.(null) === null
+     && CBS.viewerHint?.("") === null, "a page with no hint is null, not a guess");
+}
+
+/* token hygiene: the token reaches a header and nothing else (D-10, T-11-06-01/02/04) */
+{
+  const st = mkStorage();
+  const fetchImpl = countingFetch(refuseCookie(cbsTable({ page: TOKENED })));
+  const ref = { ...REF };
+  const model = await cbs.loadLeague(ref, () => {}, { fetchImpl, storage: st, now: 0 });
+  ok(fetchImpl.calls.every((u) => !u.includes("TESTTOKEN")), "no URL the adapter requested carries the token");
+  ok(fetchImpl.calls.every((u) => !u.includes("access_token")), "...and none carries an access_token parameter at all");
+  ok(!JSON.stringify([...st._m.entries()]).includes("TESTTOKEN"),
+     "nothing the adapter wrote to storage contains the token");
+  ok(!model.notes.join("\n").includes("TESTTOKEN"), "no note carries the token");
+  ok(ref.session.token === TESTTOKEN, "...it lives on the run's ref, and there only");
+
+  // Two runs at once, on two refs, with two different tokens (probe NO-PASSWORD/concurrency).
+  const REF_A = { platform: "cbs", leagueId: "league-a", seasonId: 2026 };
+  const REF_B = { platform: "cbs", leagueId: "league-b", seasonId: 2026 };
+  const TOKEN_A = "TESTTOKEN-a", TOKEN_B = "TESTTOKEN-b";
+  const both = { ...refuseCookie(cbsTable({ ref: REF_A, page: PAGE.replace(/REDACTED/g, TOKEN_A) })),
+                 ...refuseCookie(cbsTable({ ref: REF_B, page: PAGE.replace(/REDACTED/g, TOKEN_B) })) };
+  const f = countingFetch(both);
+  const refA = { ...REF_A }, refB = { ...REF_B };
+  const [mA, mB] = await Promise.all([
+    cbs.loadLeague(refA, () => {}, { fetchImpl: f, storage: mkStorage(), now: 0 }),
+    cbs.loadLeague(refB, () => {}, { fetchImpl: f, storage: mkStorage(), now: 0 }),
+  ]);
+  ok(mA.players.size === ROSTER_IDS.length && mB.players.size === ROSTER_IDS.length, "both leagues load");
+  ok(refA.session.token === TOKEN_A && refB.session.token === TOKEN_B, "each ref holds its own token");
+  const wrong = f.calls.filter((u, k) => isApiLeague(u)
+    && authOf(f, k) !== (u.includes("league_id=league-a") ? TOKEN_A : TOKEN_B));
+  ok(wrong.length === 0 && f.calls.filter(isApiLeague).length > 6,
+     "every league request carries the token of its own league, never the other run's");
+}
+
+/* fingerprint: one rosters request, the same hash, null on anything else (decision 4) */
+{
+  const { model } = await load(cbsTable());
+  const f = countingFetch(cbsTable());
+  let fp = "unset";
+  try { fp = await cbs.fingerprint({ ...REF }, { fetchImpl: f, storage: mkStorage(), now: 0 }); }
+  catch (e) { fp = `threw: ${e.message}`; }
+  ok(fp === model.fingerprint, "fingerprint(ref) is the string loadLeague put in model.fingerprint");
+  ok(f.calls.filter((u) => u.includes("league/rosters")).length === 1, "...from one league/rosters request");
+  ok(!f.calls.some((u) => u.includes("league/stats")), "...and no projection call: this is the daily check, not a league pull");
+
+  let dead = "unset";
+  try { dead = await cbs.fingerprint({ ...REF }, { fetchImpl: deadFetch(), storage: mkStorage(), now: 0 }); }
+  catch (e) { dead = `threw: ${e.message}`; }
+  ok(dead === null, "a dead feed is a null fingerprint, never a throw");
+  let refused = "unset";
+  try { refused = await cbs.fingerprint({ ...REF }, { fetchImpl: countingFetch(refuseAll(cbsTable())), storage: mkStorage(), now: 0 }); }
+  catch (e) { refused = `threw: ${e.message}`; }
+  ok(refused === null, "...and so is a refused session");
+
+  let asked = 0;
+  const handover = async () => { asked++; return "TESTTOKEN-h"; };
+  let viaHandover = "unset";
+  try { viaHandover = await cbs.fingerprint({ ...REF }, { fetchImpl: countingFetch(refuseAll(cbsTable({ page: TOKENLESS }))), storage: mkStorage(), now: 0, handover }); }
+  catch (e) { viaHandover = `threw: ${e.message}`; }
+  ok(asked === 0 && viaHandover === null,
+     "the fingerprint never asks a content script for a token: the service worker has no tab to ask");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
