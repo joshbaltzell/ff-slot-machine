@@ -64,8 +64,13 @@ export const PRO_TEAM = {
  * scored under the league's own rules. Rows are filtered on `season` - the same
  * scoring period exists in every season, and reading the wrong one measures low.
  *
- * Returns {bySigma: Map(playerId -> sigma), byPos: Map(pos -> sigma), global}.
- * Players without enough history fall back to their position, then to the global.
+ * Returns {bySigma: Map(playerId -> sigma), byPos: Map(pos -> sigma), global,
+ * measured, residuals, byPosResiduals, mode, counts}. Players without enough
+ * history fall back to their position, then to the global. `mode` is
+ * "projection-residuals", "actuals-only" (the D-15 fallback below) or "none", and
+ * `counts` says how many players each branch measured - the panel prints which,
+ * because a sigma measured against a forecast and a sigma measured against a mean
+ * are not the same claim and the user should not have to guess which he was shown.
  */
 export function measureVolatility(players, priorSeason, minWeeks = 6) {
   const bySigma = new Map();
@@ -73,6 +78,46 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
   const residuals = new Map();
   const posResiduals = new Map();
   const all = [];
+  // Players measured through the D-15 fallback, and the position each was measured
+  // in. Their sigmas are re-shrunk after the loop, once the priors exist.
+  const actualsOnly = new Map();
+  let nProjection = 0;
+
+  /**
+   * D-15: a platform that publishes what a player actually scored but never what it
+   * projected him for still supports a measurement - just a weaker one. CBS reads
+   * its history out of a points feed, so every CBS row carries `proj: null`; the
+   * spread of a player's weekly scores around his own prior-season mean is then the
+   * only volatility there is to measure.
+   *
+   * Two things differ from the projection branch. A zero week is dropped, because
+   * with no projection beside it a zero and a bye are the same row and counting byes
+   * measures availability rather than volatility - the projection branch does the
+   * same job with its `proj > 1` gate. And the sigma is shrunk toward the positional
+   * prior after the loop, where the projection branch shrinks a sigma not at all: a
+   * spread taken around a mean estimated from the same seven numbers is a softer
+   * claim than a spread around an independent forecast, and the season odds rest on
+   * this number. The quantiles in distribution.js are shrunk by n/(n+10) either way;
+   * this is the same weight applied to sigma, and only for the fallback.
+   */
+  const measureFromActuals = (p, act) => {
+    const weeks = [...act.keys()].filter(w => act.get(w) > 0);
+    if (!weeks.length) return;
+    const vals = weeks.map(w => act.get(w));
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const res = vals.map(v => v - mean);
+    residuals.set(p.id, res);
+    actualsOnly.set(p.id, p.pos);
+    if (weeks.length >= minWeeks) {
+      const sd = Math.sqrt(res.reduce((a, b) => a + b * b, 0) / (res.length - 1));
+      bySigma.set(p.id, sd);
+      all.push(sd);
+      if (!posSamples.has(p.pos)) posSamples.set(p.pos, []);
+      posSamples.get(p.pos).push(sd);
+      if (!posResiduals.has(p.pos)) posResiduals.set(p.pos, []);
+      posResiduals.get(p.pos).push(...res);
+    }
+  };
 
   for (const p of players) {
     const act = new Map(), prj = new Map();
@@ -85,7 +130,15 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
     // in the plan, and counting those measures roster churn rather than volatility.
     const weeks = [...act.keys()].filter(w => prj.has(w) && prj.get(w) > 1
       && act.get(w) != null && prj.get(w) != null);
-    if (!weeks.length) continue;
+    if (!weeks.length) {
+      // Nothing to measure against a projection. If the platform published none at
+      // all for this season, measure what it did publish (D-15); if it published
+      // projections and they were all at or under a point, he was not in the plan
+      // and there is still nothing here.
+      if (prj.size === 0) measureFromActuals(p, act);
+      continue;
+    }
+    nProjection++;
     const res = weeks.map(w => act.get(w) - prj.get(w));
     // Every player with any history keeps his residuals, even below minWeeks: the
     // quantiles are shrunk toward the positional prior by n/(n+n0), so a two-week
@@ -111,8 +164,22 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
     return s[Math.floor(s.length / 2)];
   };
   const byPos = new Map([...posSamples].map(([k, v]) => [k, median(v)]));
-  return { bySigma, byPos, global: median(all) ?? 6, measured: bySigma.size,
-           residuals, byPosResiduals: posResiduals };
+  const global = median(all) ?? 6;
+  // The D-15 shrink, applied here because it needs the priors the loop just built.
+  // byPos and global stay the raw measurements: they are what everything else is
+  // shrunk toward, and shrinking the prior toward itself would be circular.
+  const N0 = 10;
+  for (const [id, pos] of actualsOnly) {
+    const sd = bySigma.get(id);
+    if (sd == null) continue;
+    const n = residuals.get(id).length;
+    bySigma.set(id, (n * sd + N0 * (byPos.get(pos) ?? global)) / (n + N0));
+  }
+  const mode = nProjection ? "projection-residuals"
+             : actualsOnly.size ? "actuals-only" : "none";
+  return { bySigma, byPos, global, measured: bySigma.size,
+           residuals, byPosResiduals: posResiduals,
+           mode, counts: { projection: nProjection, actualsOnly: actualsOnly.size } };
 }
 
 // The ESPN loader, re-exported so panel.js, streaming.js, sources/stadiums.js and the

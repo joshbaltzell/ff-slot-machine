@@ -470,12 +470,19 @@ async function start(ref) {
       const posText = [...vol.byPos].sort()
         .map(([k, v]) => `${k} ${v.toFixed(1)}`).join(", ");
       say(`volatility measured on ${vol.measured} players: ${posText}`, "ok");
+      // A sigma measured around a projection and a sigma measured around a player's
+      // own weekly mean are different claims, and the season odds rest on it, so
+      // the log says which one it is rather than showing both as "measured" (D-15).
+      if (vol.mode === "actuals-only")
+        say(`  those are prior-season actuals around each player's own mean - `
+          + `${platform.label} keeps no prior-season projections, so each sigma is `
+          + `shrunk toward the positional prior`, "");
       Steps.set("vol", "done", `${vol.measured} players`);
       say(`your team's weekly spread: ±${
         (eng.teamSigma(myTeam).reduce((a, b) => a + b, 0) / model.weeks.length).toFixed(1)} pts`, "ok");
     } else {
-      say(`only ${vol.measured} players have prior-season history - `
-        + `season projection will assume ±25 pts`, "err");
+      say(`only ${vol.measured} players have prior-season history on ${platform.label}`
+        + ` - season projection will assume ±25 pts`, "err");
       Steps.set("vol", "warn", "assumed ±25");
     }
     window.__vol = vol;
