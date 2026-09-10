@@ -373,8 +373,10 @@ nothing in `search.js`, `lineup.js`, `season.js`, `odds.js`, `distribution.js`,
 Testing is what proves that, rather than the claim. The contract is fixed: `id`, `label`,
 `hosts`, `acceptsToken`, `signInUrl`, `parseLeagueUrl`, `loadLeague`, `loadFreeAgents`,
 `loadSchedule`, `identify`, `fingerprint`, with `ref = {platform, leagueId, seasonId,
-teamId?, session?}` and `opts = {fetchImpl, storage, now}` so every adapter runs offline
-under Node. A "not signed in / no access" failure throws with `code: "AUTH"` and
+teamId?, session?}` and `opts = {fetchImpl, storage, now, notes?}` so every adapter runs
+offline under Node. `loadLeague` returns its degradations in `model.notes`;
+`loadFreeAgents` returns a plain array, so it writes them to `opts.notes` when the caller
+passes one — a dash costs nothing only when the user can tell which dash is which. A "not signed in / no access" failure throws with `code: "AUTH"` and
 everything else throws a plain `Error`, because the panel switches on the code and a
 message regex was already fragile with one platform. Adapters must not import from
 `index.js` — it reads their default exports while it evaluates — which is why the one

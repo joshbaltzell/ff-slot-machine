@@ -365,6 +365,11 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "a bare value routes on digits to espn and on a slug to cbs");
   ok(/window\.__platform = platform/.test(PANEL),
      "start() publishes the adapter for render to read its label from");
+  // WR-07: an adapter may say which free-agent feed went quiet. The channel is only
+  // worth anything if the panel passes an array and prints what comes back.
+  ok(/loadFreeAgents\(ref, model\.weeks, \{ notes: faNotes \}\)/.test(PANEL)
+     && /for \(const note of faNotes\) say\(/.test(PANEL),
+     "the panel hands loadFreeAgents a notes array and prints what the adapter wrote to it");
   ok(/Reading your league from \$\{platform\.label\}/.test(PANEL),
      "the boot message names the platform as start()'s first UI action");
   ok(/platform\?\.acceptsToken/.test(PANEL) && /signInUrl\(ref\)/.test(PANEL),

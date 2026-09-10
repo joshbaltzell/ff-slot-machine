@@ -321,9 +321,13 @@ async function start(ref) {
     // Free agents are optional: a failure here should not cost you the trade search.
     try {
       Steps.set("agents", "run");
-      const fas = await platform.loadFreeAgents(ref, model.weeks);
+      // An adapter may append to `notes` to say which feed went quiet; one that does
+      // not simply leaves the array empty.
+      const faNotes = [];
+      const fas = await platform.loadFreeAgents(ref, model.weeks, { notes: faNotes });
       for (const fa of fas) model.players.set(fa.id, fa);
       say(`  ${fas.length} available players`, "ok");
+      for (const note of faNotes) say(`  ${note}`, "");
       Steps.set("agents", "done", `${fas.length}`);
     } catch (e) {
       say(`  free agents unavailable (${e.message})`, "err");

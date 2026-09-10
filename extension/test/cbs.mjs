@@ -975,6 +975,42 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
   const dead = await attempt(() => cbs.loadFreeAgents({ ...REF }, WEEKS, { fetchImpl: countingFetch({}), storage: mkStorage(), now: 0 }));
   ok(!Array.isArray(dead) && typeof dead.__error === "string",
      "a dead free-agent route throws: the panel's own catch turns it into one line and no pool");
+
+  // WR-07. Inside loadLeague a dead injuries feed, a dead crosswalk and an empty
+  // projections week each write a note. Inside loadFreeAgents the same three
+  // conditions were unremarked, so the pool simply read healthy, or showed dashes
+  // from every external column, with nothing to say which dash was which. The notes
+  // array is an opt-in channel on opts, the way readSettings takes one: the return
+  // stays the array every caller and the schema test expect.
+  const withNotes = async (table) => {
+    const notes = [];
+    const pool = await attempt(() => cbs.loadFreeAgents({ ...REF }, WEEKS,
+      { fetchImpl: countingFetch(table), storage: mkStorage(), now: 0, notes }));
+    return [Array.isArray(pool) ? pool : [], notes];
+  };
+  const [poolQuiet, quiet] = await withNotes(cbsTable());
+  ok(poolQuiet.length === FA_KEEP && quiet.length === 0,
+     "WR-07: a run where every feed answers returns the same pool and says nothing");
+  const [, injNotes] = await withNotes(cbsTable({ injuries: false }));
+  ok(injNotes.some((n) => /^CBS: the injury feed is unavailable/.test(n)),
+     "WR-07: a dead injuries feed is named, so a pool that reads healthy is not silently healthy");
+  const [poolNoXwalk, xwalkNotes] = await withNotes(cbsTable({ crosswalk: false }));
+  ok(poolNoXwalk.every((p) => p.id < 0) && xwalkNotes.some((n) => /^CBS: id crosswalk unavailable/.test(n)),
+     "WR-07: a dead crosswalk keeps every free agent negative and says why the external columns are dashes");
+  {
+    const t = cbsTable();
+    const emptyWeek = 2;
+    for (const k of Object.keys(t))
+      if (k.includes(`period=week${emptyWeek}`) && k.includes("free_agents"))
+        t[k] = { statusMessage: "OK", statusCode: 200, body: { league_stats: { players: [] } } };
+    const notes = [];
+    await attempt(() => cbs.loadFreeAgents({ ...REF }, WEEKS,
+      { fetchImpl: countingFetch(t), storage: mkStorage(), now: 0, notes }));
+    ok(notes.some((n) => /^CBS: the week 2 free-agent projection route answered with no players/.test(n)),
+       "WR-07: a week that answers 200 with no rows is named, as loadLeague already names it");
+  }
+  ok((await withNotes(cbsTable()))[1].every((n) => n.startsWith("CBS: ")),
+     "WR-07: every free-agent note names the platform, like every other note");
 }
 
 /* schedule: real matchups, by week, keyed on the names the Engine keys on */

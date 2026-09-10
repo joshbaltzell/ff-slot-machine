@@ -974,8 +974,16 @@ export async function fingerprint(ref, opts = {}) {
  * still reaches every flex that accepts running backs). And no free-agent route
  * carries a bye week, so `bye` is 0 - `search.js` reads `p.bye ?? 0` and the ESPN
  * adapter's free agents have never carried one either.
+ *
+ * Degradations are written to `opts.notes` when the caller passes an array, the way
+ * `readSettings` takes one. The return stays the plain array every caller and the
+ * schema test expect: "a dead feed costs a dash, not the run" only works if the user
+ * can tell which dash is which, and three conditions here - a dead injury feed, a
+ * dead crosswalk, a week that answers 200 with no rows - used to be noted inside
+ * `loadLeague` and silent inside this function.
  */
 export async function loadFreeAgents(ref, weeks, opts = {}) {
+  const notes = Array.isArray(opts.notes) ? opts.notes : [];
   await openSession(ref, opts);
   const rules = await get(ref, "league/rules", {}, opts);
   const details = await get(ref, "league/details", {}, opts);
@@ -986,11 +994,17 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
   const remaining = all.filter((w) => w >= currentWeek);
 
   const injuries = await loadInjuries(opts);          // a dead feed costs a dash
+  if (!injuries.available)
+    notes.push(`CBS: the injury feed is unavailable (${injuries.reason}) - every free agent reads healthy`);
   const byCbs = new Map();
   const fetchWeek = async (w) => {
     const stats = await get(ref, "league/stats",
       { stats_type: "projections", period: `week${w}`, player_status: "free_agents" }, opts);
-    for (const row of stats?.league_stats?.players ?? []) {
+    const rows = stats?.league_stats?.players ?? [];
+    if (!rows.length)
+      notes.push(`CBS: the week ${w} free-agent projection route answered with no players `
+                 + "- no free agent projects anything that week");
+    for (const row of rows) {
       const cbsId = num(row?.id);
       if (cbsId == null) continue;
       let pl = byCbs.get(cbsId);
@@ -1022,6 +1036,9 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
     await Promise.all(remaining.slice(i, i + CONCURRENCY).map(fetchWeek));
 
   const crosswalk = await loadCrosswalk(opts);
+  if (!crosswalk.available)
+    notes.push(`CBS: id crosswalk unavailable (${crosswalk.reason}) - every free agent is unmapped; `
+               + "external sources will show dashes for the whole pool");
   const out = [];
   const taken = new Set();
   for (const pl of byCbs.values()) {
