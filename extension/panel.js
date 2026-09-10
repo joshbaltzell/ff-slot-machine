@@ -225,17 +225,37 @@ function pickTeam(teams) {
   });
 }
 
+/**
+ * A typed league, as a ref, or null.
+ *
+ * A URL goes to the registry, which is the only thing that knows which host belongs
+ * to which adapter. A bare value cannot be resolved that way, so it is routed on its
+ * own shape: an ESPN league id is digits, a CBS league id is the subdomain slug of
+ * its page. Digits are tested first, because a slug pattern would also match them.
+ */
+function refFromInput(raw) {
+  const v = String(raw ?? "").trim();
+  if (!v) return null;
+  if (/^https?:\/\//i.test(v)) return detect(v);
+  const season = new Date().getFullYear();
+  if (/^\d+$/.test(v)) return { platform: "espn", leagueId: Number(v), seasonId: season };
+  if (/^[a-z0-9-]+$/i.test(v)) return { platform: "cbs", leagueId: v.toLowerCase(), seasonId: season };
+  return null;
+}
+
 function askForLeague(message) {
   $("#bootmsg").textContent = message;
   $("#bootact").innerHTML = `
-    <input class="lg" id="lid" placeholder="league ID" inputmode="numeric">
+    <input class="lg" id="lid" style="width:280px"
+           placeholder="league URL, ESPN league id or CBS league slug">
     <button class="btn" id="go">Load</button>
     <p style="font-size:12px;color:var(--faint);margin-top:14px">
-      Open your league on fantasy.espn.com and click the toolbar icon there, or paste
-      the <code>leagueId</code> from its URL.</p>`;
+      Open your league on either platform and click the toolbar icon there, or paste
+      the address of the league page in here.</p>`;
   $("#go").onclick = () => {
-    const id = Number($("#lid").value.trim());
-    if (id) start({ platform: "espn", leagueId: id, seasonId: new Date().getFullYear() });
+    const ref = refFromInput($("#lid").value);
+    if (ref) start(ref);
+    else askForLeague("That is not a league address, id or slug.");
   };
 }
 
@@ -256,6 +276,10 @@ async function start(ref) {
   // it, and the engine that follows never learns which one it was.
   const platform = byId(ref?.platform);
   if (!platform) { askForLeague("Which league?"); return; }
+  // Published for render(), which names the platform in the masthead and the footer
+  // and has no other way to reach the adapter.
+  window.__platform = platform;
+  $("#bootmsg").textContent = `Reading your league from ${platform.label}`;
   $("#bootact").innerHTML = "";
   steps.innerHTML = "";
   try {
@@ -581,10 +605,26 @@ async function start(ref) {
       const label = platform?.label ?? "The platform";
       const signIn = platform?.signInUrl(ref) ?? "https://fantasy.espn.com";
       $("#bootmsg").textContent = `${label} did not accept the request.`;
+      // The only credential this page ever accepts is an API token the user already
+      // has, and only from an adapter that says a token is a sanctioned route (D-11).
+      // Nothing here asks for a sign-in secret, and the value below is read once on
+      // the click, handed to start() inside `session`, and never stored or logged.
+      const paste = platform?.acceptsToken
+        ? `<p style="font-size:13px;color:var(--dim);margin-top:16px">Already signed in
+             there? Open your league page, open the DevTools console and paste the value
+             of <code>token</code> here instead. It is held in memory for this run only
+             — never saved, and never sent anywhere but ${esc(label)}.</p>
+           <input class="lg" id="tok" style="width:280px" placeholder="API token">
+           <button class="btn" id="usetok">Use token</button>`
+        : "";
       $("#bootact").innerHTML =
         `<p style="font-size:13px;color:var(--dim)">Sign in at
          <a href="${signIn}" target="_blank">${new URL(signIn).host}</a>,
-         then reload this page.</p>`;
+         then reload this page.</p>${paste}`;
+      if (platform?.acceptsToken) $("#usetok").onclick = () => {
+        const token = $("#tok").value.trim();
+        if (token) start({ ...ref, session: { mode: "token", token, teamHint: null } });
+      };
     } else {
       askForLeague("Could not load that league.");
     }
