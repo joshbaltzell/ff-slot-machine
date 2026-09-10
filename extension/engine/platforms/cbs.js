@@ -836,7 +836,15 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   const fetchWeek = async (w) => {
     const body = await get(ref, "league/stats",
       { stats_type: "projections", period: `week${w}`, player_status: "all" }, opts);
-    for (const row of body?.league_stats?.players ?? []) {
+    const rows = body?.league_stats?.players ?? [];
+    // A week that answers 200 with nothing in it is not an error CBS will report, and
+    // it is not a week of genuine zeros either. It reads as zeros - which is what an
+    // unscored week already reads as - and says so, rather than throwing away the
+    // other sixteen weeks of a league pull over one quiet route.
+    if (!rows.length)
+      notes.push(`CBS: the week ${w} projection route answered with no players `
+                 + "- that week projects zero for everyone");
+    for (const row of rows) {
       const pl = byCbs.get(num(row?.id));
       if (!pl) continue;
       // FPTS is the league-scored figure and equals the roster row's projected_points;
