@@ -32,10 +32,11 @@
  * reason and is re-exported here for everyone else.
  */
 import espn from "./espn.js";
+import cbs from "./cbs.js";
 export { hashRosters } from "./hash.js";
 
-/** Every adapter, in detection order. 11-05 appends cbs. */
-export const PLATFORMS = [espn];
+/** Every adapter, in detection order. */
+export const PLATFORMS = [espn, cbs];
 
 /** The adapter with this id, or null. */
 export const byId = (id) => PLATFORMS.find((p) => p.id === id) ?? null;

@@ -9,6 +9,12 @@
  *  - `db_playerids.csv`      `fantasypros_id` -> `espn_id`, cached a week because
  *    ids do not move.
  *
+ * Two files, three readers: the id file also carries `cbs_id`, which the CBS adapter
+ * needs to turn a CBS roster into canonical ESPN ids (D-05). It reads it through
+ * `loadCrosswalk` from this same download rather than fetching the file twice, so
+ * `trimIds` keeps both columns and the cache key was bumped to `src.fp.ids.v2` - a
+ * week-fresh copy of the old bare array would otherwise be read as the new object.
+ *
  * Current week only: the file carries one week, and a weekly consensus does not
  * extrapolate. Nothing but the two file paths goes over the wire.
  *
@@ -23,6 +29,8 @@ import { parseCsvObjects } from "./csv.js";
 const RAW = "https://raw.githubusercontent.com/dynastyprocess/data/master/files";
 export const WEEKLY_URL = `${RAW}/fp_latest_weekly.csv`;
 export const IDS_URL = `${RAW}/db_playerids.csv`;
+/** Cache key for the id file. v2: the stored value is {fp, cbs}, not a bare array. */
+export const IDS_KEY = "src.fp.ids.v2";
 const SIX_HOURS = 6 * 3600e3;
 const SEVEN_DAYS = 7 * 24 * 3600e3;
 const ID_KEYS = ["fantasypros_id", "fp_id", "id"];
@@ -51,17 +59,54 @@ export function trimWeekly(text) {
   return { rows, idKey, hasPts };
 }
 
-/** @returns [[fantasypros_id, espn_id]] — an array so it survives JSON in storage. */
+/**
+ * @returns {{fp: [string, number][], cbs: [number, number][]}} — arrays, so the
+ *   stored copy survives JSON. `fp` is `[fantasypros_id, espn_id]` as it always was;
+ *   `cbs` is `[cbs_id, espn_id]` for the CBS adapter. Both drop the file's `NA`
+ *   sentinel by way of `Number("NA")` being NaN. A `cbs_id` appears once - the file
+ *   has 15 duplicates and the first row wins, the same rule `loadFantasyProsWeek`
+ *   uses below, so which espn_id a CBS player becomes never depends on row order
+ *   further down the file.
+ */
 export function trimIds(text) {
-  const out = [];
+  const fp = [], cbs = [], seen = new Set();
   for (const r of parseCsvObjects(text)) {
-    const fp = r.fantasypros_id;
     const cell = String(r.espn_id ?? "").trim();      // Number("") is 0, not NaN
     const espn = cell === "" ? NaN : Number(cell);
-    if (!fp || !Number.isFinite(espn)) continue;
-    out.push([String(fp), espn]);
+    if (!Number.isFinite(espn)) continue;
+    if (r.fantasypros_id) fp.push([String(r.fantasypros_id), espn]);
+    const cbsCell = String(r.cbs_id ?? "").trim();
+    const cbsId = cbsCell === "" ? NaN : Number(cbsCell);
+    if (Number.isFinite(cbsId) && !seen.has(cbsId)) { seen.add(cbsId); cbs.push([cbsId, espn]); }
   }
-  return out;
+  return { fp, cbs };
+}
+
+/**
+ * `cbs_id -> espn_id` from the same weekly download (D-05).
+ *
+ * Never throws: a dead feed, a renamed column or an empty file comes back
+ * `available: false` with a reason the adapter turns into one note line and a roster
+ * of `-cbsId` players. That is the whole degradation - the league still loads, and
+ * only the external columns show a dash (D-06).
+ *
+ * @returns {{toEspn: Map<number, number>, available, reason, fromCache, stale}}
+ */
+export async function loadCrosswalk(opts = {}) {
+  let file;
+  try {
+    file = await cached(IDS_KEY, IDS_URL, opts.idTtlMs ?? SEVEN_DAYS,
+      { ...opts, parse: "text", transform: trimIds });
+  } catch (err) {
+    return { toEspn: new Map(), available: false, reason: String(err.message ?? err),
+             fromCache: false, stale: false };
+  }
+  // A pre-v2 cached copy is a bare array; it carries no cbs column at all.
+  const data = file.data;
+  const toEspn = new Map(Array.isArray(data) ? [] : (data?.cbs ?? []));
+  return { toEspn, available: toEspn.size > 0,
+           reason: toEspn.size ? "" : "no cbs_id rows in the crosswalk",
+           fromCache: file.fromCache === true, stale: file.stale === true };
 }
 
 /**
@@ -84,13 +129,14 @@ export async function loadFantasyProsWeek({ week = null, ...opts } = {}) {
 
   let idFile;
   try {
-    idFile = await cached("src.fp.ids", IDS_URL, opts.idTtlMs ?? SEVEN_DAYS,
+    idFile = await cached(IDS_KEY, IDS_URL, opts.idTtlMs ?? SEVEN_DAYS,
       { ...opts, parse: "text", transform: trimIds });
   } catch (err) {
     return { byEspn: new Map(), week, available: false, reason: `crosswalk ${err.message ?? err}` };
   }
 
-  const toEspn = new Map(idFile.data ?? []);
+  // Tolerate either shape: a bare array is a pre-v2 copy, {fp, cbs} is this build.
+  const toEspn = new Map(Array.isArray(idFile.data) ? idFile.data : idFile.data?.fp ?? []);
   const byEspn = new Map();
   for (const r of w.rows) {
     // Fail open on week: a row with no parseable week (no `week` column at all, or a

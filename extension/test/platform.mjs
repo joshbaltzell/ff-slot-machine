@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 import { PLATFORMS, byId, detect, hashRosters, leagueKey, migrateStorageKeys, nextLeagueRecord }
   from "../engine/platforms/index.js";
 import espn, { espnUrl, readSettings, historyOf } from "../engine/platforms/espn.js";
-import cbs, { cbsUrl, readSettings as cbsReadSettings } from "../engine/platforms/cbs.js";
+import cbs, { cbsUrl, publicUrl, readSettings as cbsReadSettings } from "../engine/platforms/cbs.js";
 import { IDS_URL, trimIds } from "../engine/sources/fantasypros.js";
 import { PRO_TEAM, measureVolatility } from "../engine/league.js";
 import { BENCH_SLOTS } from "../engine/lineup.js";
@@ -210,7 +210,7 @@ const CBS_AUTH_ROUTE = (/^- auth_route: (\S+)/m.exec(CBS_README) ?? [])[1] ?? "n
 const CBS_REF = { platform: "cbs", leagueId: "redacted-league",
                   seasonId: new Date(cbsFile("page-meta.json").capturedAt).getFullYear() };
 const CBS_PAGE_URL = `https://${CBS_REF.leagueId}.football.cbssports.com/`;
-const CBS_INJURIES_URL = "https://api.cbssports.com/fantasy/players/injuries?SPORT=football&response_format=JSON&version=3.0";
+const CBS_INJURIES_URL = publicUrl("players/injuries");
 // The settings the adapter will read, computed here first so the table can carry one
 // stats route per week the league actually has.
 const CBS_SETTINGS = cbsReadSettings(cbsBody("rules.json"), cbsBody("details.json"), cbsBody("scoring-rules.json"), []);
@@ -686,8 +686,11 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
   ok(status.show === true && status.changed === true && status.offers === 2 && status.label === "ESPN",
      "ffsm.status with no platform reads the espn record and names the platform");
   const other = await ask({ type: "ffsm.status", platform: "cbs", leagueId: 7, seasonId: 2026 });
-  ok(other.show === true && other.first === true && other.label === null,
-     "another platform with the same league id is a different league with no record yet, and an unregistered adapter has no label");
+  ok(other.show === true && other.first === true && other.label === "CBS",
+     "another platform with the same league id is a different league with no record yet, and is named by its adapter");
+  const unknown = await ask({ type: "ffsm.status", platform: "yahoo", leagueId: 7, seasonId: 2026 });
+  ok(unknown.show === true && unknown.first === true && unknown.label === null,
+     "an adapter this build does not know has no label");
   listeners.message[1]({ type: "ffsm.dismiss", leagueId: 7 }); await settle();
   ok((await store.get(null))["ffsm.dismissed.espn.7"] > 0, "ffsm.dismiss writes the platform-segmented dismissal key");
   ok((await ask({ type: "ffsm.status", leagueId: 7, seasonId: 2026 })).show === false, "...and the notice is then held back for the day");
