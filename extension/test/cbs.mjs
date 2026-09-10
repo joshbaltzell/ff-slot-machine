@@ -17,9 +17,10 @@ import { fileURLToPath } from "url";
 import cbs, {
   SLOT, BENCH_SLOT, IR_SLOT, POS_ID, MEMBERS, TEAM_ABBR, STATUS, CBS_HOST_RE,
   cbsUrl, publicUrl, parseLeagueUrl, expandEligibility, readSettings, normalizeStatus,
-  teamAbbr, posOf, num, eligibleCodes, configuredCodes, extractToken,
+  teamAbbr, posOf, num, eligibleCodes, configuredCodes, extractToken, openSession,
 } from "../engine/platforms/cbs.js";
 import { IDS_URL, IDS_KEY, trimIds, loadCrosswalk } from "../engine/sources/fantasypros.js";
+import { hashRosters } from "../engine/platforms/hash.js";
 import { PRO_TEAM, SLOT_LABEL } from "../engine/league.js";
 import { normStatus } from "../engine/availability.js";
 
@@ -361,6 +362,241 @@ const REF = { platform: "cbs", leagueId: "redacted-league", seasonId: 2026 };
   ok(!/chrome\./.test(CODE), "no chrome.* anywhere in the adapter, so a module service worker can import it");
   ok(!/storage\.set|localStorage|sessionStorage/.test(CODE),
      "the adapter writes nothing to storage: the token lives on the ref for the run and nowhere else (D-10)");
+}
+
+/* loadLeague */
+// The same fetch table platform.mjs builds, with the counters this section needs:
+// which URLs were asked for, in what order, and how many stats requests were ever in
+// flight at once. Both auth modes are keyed, so a table never decides which one the
+// adapter picks - the session probe does.
+const SESSIONS = [{ mode: "cookie", token: null }, { mode: "token", token: "TOKEN-VALUE" }];
+const SETTINGS = readSettings(body("rules.json"), body("details.json"), body("scoring-rules.json"), []);
+const WEEKS = [...SETTINGS.regularSeasonWeeks, ...SETTINGS.playoffWeeks];
+const ROSTER_TEAMS = body("rosters.json").rosters.teams;
+const ROSTER_IDS = ROSTER_TEAMS.flatMap((t) => t.players.map((p) => Number(p.id)));
+
+// Five rostered players mapped, one given the file's NA sentinel, and the first id
+// repeated with a different espn_id so "first row wins" is visible in the model.
+const MAPPED = ROSTER_IDS.slice(0, 5).map((cbsId, i) => [cbsId, 900001 + i]);
+const NA_ID = ROSTER_IDS[5];
+const CSV = ["fantasypros_id,espn_id,cbs_id,name",
+  ...MAPPED.map(([c, e], i) => `${100 + i},${e},${c},p${i}`),
+  `,999999,${MAPPED[0][0]},duplicate`,
+  `199,NA,${NA_ID},unmapped`].join("\n") + "\n";
+
+function cbsTable({ crosswalk = true, injuries = true, page = PAGE, details = env("details.json"), weeks = WEEKS } = {}) {
+  const t = {};
+  const put = (route, params, value) => { for (const s of SESSIONS) t[cbsUrl(REF, route, params, s)] = value; };
+  put("league/details", {}, details);
+  put("league/rules", {}, env("rules.json"));
+  put("league/scoring/rules", {}, env("scoring-rules.json"));
+  put("league/rosters", { team_id: "all" }, env("rosters.json"));
+  for (const w of weeks)
+    put("league/stats", { stats_type: "projections", period: `week${w}`, player_status: "all" },
+        env(w === 2 ? "stats-week2.json" : "stats-week1.json"));
+  if (injuries) t[publicUrl("players/injuries")] = file("public/players-injuries.json");
+  if (crosswalk) t[IDS_URL] = CSV;
+  if (page !== null) t[`https://${REF.leagueId}.football.cbssports.com/`] = page;
+  return t;
+}
+// Everything the league proxy would answer, refused the way CBS refuses it: HTTP 400
+// with a text body, not a 401.
+const refuseCookie = (t) => Object.fromEntries(Object.entries(t).map(([k, v]) =>
+  [k, k.includes(".football.cbssports.com/api/") ? httpError(400, "User not signed in") : v]));
+const refuseAll = (t) => Object.fromEntries(Object.entries(t).map(([k, v]) =>
+  [k, /cbssports\.com\/(api|fantasy)\//.test(k) ? httpError(400, "User not signed in") : v]));
+
+const countingFetch = (table) => {
+  const calls = [], inits = []; let inflight = 0;
+  const f = async (url, init) => {
+    calls.push(url); inits.push(init);
+    const stats = url.includes("/league/stats");
+    if (stats) { inflight++; f.maxStatsInflight = Math.max(f.maxStatsInflight, inflight); }
+    await Promise.resolve();
+    const hit = table[url];
+    if (stats) inflight--;
+    if (hit === undefined) return { ok: false, status: 404 };
+    if (hit instanceof Error) throw hit;
+    if (hit && typeof hit.__http === "number")
+      return { ok: hit.__http >= 200 && hit.__http < 300, status: hit.__http,
+               json: async () => JSON.parse(hit.text), text: async () => hit.text };
+    return { ok: true, status: 200, json: async () => hit, text: async () => String(hit) };
+  };
+  f.maxStatsInflight = 0; f.calls = calls; f.inits = inits; return f;
+};
+const load = async (table, over = {}) => {
+  const fetchImpl = countingFetch(table);
+  const progress = [];
+  const model = await cbs.loadLeague({ ...REF }, (d, t, l) => progress.push([d, t, l]),
+    { fetchImpl, storage: mkStorage(), now: 0, ...over });
+  return { model, fetchImpl, progress };
+};
+
+{
+  const { model, fetchImpl, progress } = await load(cbsTable());
+  const stats = fetchImpl.calls.filter((u) => u.includes("/league/stats"));
+  const rosters = fetchImpl.calls.filter((u) => u.includes("/league/rosters"));
+
+  // Cadence (D-14): one roster pull, one projection call per remaining week, three at a time.
+  ok(rosters.length === 1 && rosters[0].includes("team_id=all"),
+     "one league/rosters?team_id=all request for the whole league");
+  ok(stats.length === WEEKS.length, `one league/stats request per remaining week (${WEEKS.length})`);
+  ok(stats.every((u) => u.includes("player_status=all") && u.includes("stats_type=projections")),
+     "...each one asking for projections over every player, not just free agents");
+  ok(same(stats.map((u) => Number(/period=week(\d+)/.exec(u)[1])).sort((a, b) => a - b), WEEKS),
+     "...exactly once for each week, with no week asked for twice");
+  ok(fetchImpl.maxStatsInflight === 3, "never more than three projection requests are in flight at once");
+  ok(fetchImpl.maxStatsInflight > 1, "...and more than one, so the weeks are not fetched one at a time");
+  ok(same(progress[0], [0, 1, "settings"]), "onProgress opens on the settings step");
+  ok(progress.length === WEEKS.length + 1 && progress.slice(1).every(([, t, l]) => t === WEEKS.length && /^week \d+$/.test(l)),
+     "...then reports once per week, against the week total");
+  ok(same(progress.at(-1), [WEEKS.length, WEEKS.length, `week ${progress.at(-1)[2].split(" ")[1]}`]),
+     "...and ends at total of total");
+
+  // Ids (D-05, D-06).
+  const players = [...model.players.values()];
+  ok(players.length === ROSTER_IDS.length, "every rostered player is in the model");
+  ok(players.every((p) => typeof p.id === "number" && Number.isInteger(p.id)), "every id is an integer Number, never a string");
+  ok(MAPPED.every(([, espnId]) => model.players.get(espnId)?.id === espnId), "a crosswalked player takes his ESPN id");
+  ok(model.players.get(MAPPED[0][1]) !== undefined && !model.players.has(999999),
+     "a duplicate cbs_id row resolves to the first espn_id, not the last");
+  const mappedIds = new Set(MAPPED.map(([, e]) => e));
+  const unmapped = players.filter((p) => !mappedIds.has(p.id));
+  ok(unmapped.every((p) => p.id < 0), "every player the crosswalk misses has a negative id");
+  ok(same(unmapped.map((p) => -p.id).sort((a, b) => a - b),
+          ROSTER_IDS.filter((id) => !MAPPED.some(([c]) => c === id)).sort((a, b) => a - b)),
+     "...and it is exactly -cbsId");
+  ok(unmapped.some((p) => -p.id === NA_ID), "an NA in the espn_id column is not a mapping");
+  ok([...model.teams.values()].every((t) => [...t.roster].every((id) => model.players.has(id))),
+     "every roster holds the ids the players are keyed on, after the crosswalk renamed them");
+  ok([...model.teams.values()].reduce((a, t) => a + t.roster.size, 0) === ROSTER_IDS.length,
+     "...and no player was lost or duplicated in the renaming");
+
+  // The fingerprint hashes CBS's own ids, computed here from the payload directly.
+  const want = hashRosters(ROSTER_TEAMS.map((t) => ({ id: Number(t.id), ids: t.players.map((p) => Number(p.id)) })));
+  ok(model.fingerprint === want, "model.fingerprint is hashRosters over the rosters payload's own CBS ids");
+  const moved = ROSTER_TEAMS.map((t, i) => ({ id: Number(t.id),
+    ids: t.players.map((p, j) => (i === 0 && j === 0 ? 1 : Number(p.id))) }));
+  ok(hashRosters(moved) !== want, "...and a single changed roster id hashes differently");
+
+  // Projections.
+  ok(players.every((p) => WEEKS.every((w) => typeof p.proj[w] === "number" && Number.isFinite(p.proj[w]))),
+     "every week carries a finite projection");
+  ok(players.filter((p) => p.proj[1] > 0).length === 148,
+     "the 148 rostered players the week-1 stats route scores get their FPTS");
+  const maye = players.find((p) => p.name === "Drake Maye");
+  ok(maye && maye.proj[1] === 16.8 && maye.proj[2] === 20.1,
+     "a named player's week-1 and week-2 projections are the recorded FPTS, not TP");
+  ok(maye && maye.eligibleSlots.includes(0) && maye.pos === "QB" && maye.nfl === "NE" && maye.bye === 11,
+     "...and his slot, position, pro team and bye come from the roster row");
+
+  // Statuses, from the public feed with pro_status behind it.
+  ok(players.some((p) => p.injuryStatus === "QUESTIONABLE") && players.some((p) => p.injuryStatus === "OUT"),
+     "the injuries feed reaches the model");
+  ok(players.some((p) => p.injuryStatus === "INJURY_RESERVE"), "...and so does an IR player");
+  ok(players.filter((p) => p.injuryStatus === null).length > players.length / 2,
+     "most players are healthy and carry null, keeping weekly on its fast path");
+  ok(players.every((p) => (p.injuryStatus === null) === (p.injured === false) || p.injuryStatus === "SUSPENSION"),
+     "injured tracks the status, and a suspension is not an injury");
+
+  // The horizon: a league in week 5 is not asked about weeks 1 to 4.
+  const late = structuredClone(env("details.json"));
+  late.body.league_details.current_period = "5";
+  const { model: m5, fetchImpl: f5 } = await load(cbsTable({ details: late }));
+  const periods = f5.calls.filter((u) => u.includes("/league/stats")).map((u) => Number(/period=week(\d+)/.exec(u)[1]));
+  ok(m5.settings.currentWeek === 5, "the current period is read from the payload");
+  ok(same(periods.sort((a, b) => a - b), WEEKS.filter((w) => w >= 5)),
+     "only the weeks that remain are fetched");
+  ok([...m5.players.values()].every((p) => [1, 2, 3, 4].every((w) => p.proj[w] === 0)),
+     "a week already played projects zero rather than a number nobody can trade for");
+  ok([...m5.players.values()].every((p) => WEEKS.every((w) => Number.isFinite(p.proj[w]))),
+     "...and every week of the model still carries a number");
+}
+
+/* degradation: a dead optional feed costs a note, never the run */
+{
+  const { model } = await load(cbsTable({ crosswalk: false }));
+  ok(model.players.size === ROSTER_IDS.length, "a crosswalk that will not load still loads the league");
+  ok([...model.players.values()].every((p) => p.id < 0), "...with every player on his -cbsId");
+  ok(model.notes.some((n) => /^CBS: id crosswalk unavailable/.test(n)),
+     "...and a note that says which columns will show a dash");
+  ok(model.notes.every((n) => n.startsWith("CBS: ")), "every note names the platform");
+
+  const { model: m2 } = await load(cbsTable({ injuries: false }));
+  ok(m2.players.size === ROSTER_IDS.length && m2.notes.some((n) => /injury feed is unavailable/.test(n)),
+     "a dead injury feed costs a note, not the run");
+  ok([...m2.players.values()].some((p) => p.injuryStatus === "INJURY_RESERVE"),
+     "...and pro_status still flags the players CBS marks IR");
+
+  const withCrosswalk = await load(cbsTable());
+  ok(withCrosswalk.model.notes.some((n) => /^CBS: id crosswalk maps 5 of 168 rostered players/.test(n)),
+     "a working crosswalk reports how many of the roster it mapped");
+  ok(withCrosswalk.model.notes.some((n) => /no weekly history/.test(n)),
+     "the model says outright that no history is read yet, rather than showing an empty one silently");
+  ok([...withCrosswalk.model.players.values()].every((p) => Array.isArray(p.history) && p.history.length === 0),
+     "...and history is empty for every player (11-06 reads weekly-scoring with player_status=all)");
+}
+
+/* auth */
+{
+  // Cookie refused, no token in the page: there is nothing left to try.
+  let err = null;
+  try { await load(refuseCookie(cbsTable({ page: "<html>no token here</html>" }))); } catch (e) { err = e; }
+  ok(err instanceof Error && err.code === "AUTH", "a refused cookie and a page with no token reject with code AUTH");
+  ok(/CBS/.test(err?.message ?? ""), "...and the message names the platform, so the panel links CBS's sign-in");
+
+  // Cookie refused, token in the page: the adapter switches hosts and carries on.
+  const table = refuseCookie(cbsTable());
+  const { model, fetchImpl } = await load(table);
+  ok(model.players.size === ROSTER_IDS.length, "a refused cookie falls back to the page token and the league still loads");
+  const isLeague = (u) => u.startsWith("https://api.cbssports.com/fantasy/league/");
+  const api = fetchImpl.calls.filter(isLeague);
+  ok(api.length > 3, "...with every league request going to the public API host");
+  ok(api.every((u) => !u.includes("access_token") && !u.includes("token=")),
+     "...and no token in any URL");
+  ok(fetchImpl.calls.every((u, k) => !isLeague(u) || Boolean(fetchImpl.inits[k]?.headers?.Authorization)),
+     "the token rides in an Authorization header on every league request");
+  ok(fetchImpl.calls.every((u, k) => isLeague(u) || !fetchImpl.inits[k]?.headers?.Authorization),
+     "...and on nothing else: not the crosswalk, and not CBS's own public feeds");
+  ok(fetchImpl.calls.some((u) => u.startsWith("https://api.cbssports.com/fantasy/players/")),
+     "...even though a public CBS feed is fetched from the very same host");
+
+  // Cookie refused and the token refused too.
+  err = null;
+  try { await load(refuseAll(cbsTable())); } catch (e) { err = e; }
+  ok(err?.code === "AUTH", "a refused token is an AUTH failure too, not a broken-token error");
+
+  // A real server error is not an auth problem and must not show the sign-in screen.
+  const broken = cbsTable();
+  for (const s of SESSIONS) broken[cbsUrl(REF, "league/rules", {}, s)] = httpError(500, "boom");
+  err = null;
+  try { await load(broken); } catch (e) { err = e; }
+  ok(err instanceof Error && err.code === undefined && /500/.test(err.message),
+     "a 500 rejects with a plain Error carrying the status, and no AUTH code");
+
+  // A 200 whose envelope disagrees with it.
+  const lying = cbsTable();
+  for (const s of SESSIONS)
+    lying[cbsUrl(REF, "league/details", {}, s)] = { statusCode: 401, statusMessage: "User not signed in", body: {} };
+  err = null;
+  try { await load(lying); } catch (e) { err = e; }
+  ok(err?.code === "AUTH", "an envelope that says not-signed-in inside a 200 is still an auth failure");
+
+  // The session is opened once and held in memory for the run.
+  const ref = { ...REF };
+  const cookieFetch = countingFetch(cbsTable());
+  await cbs.loadLeague(ref, () => {}, { fetchImpl: cookieFetch, storage: mkStorage(), now: 0 });
+  ok(ref.session?.mode === "cookie" && ref.session.token === null,
+     "the recorded league authenticates on the session cookie alone: no token is read at all");
+  ok(cookieFetch.calls.filter((u) => u.includes("league/details")).length === 2,
+     "one probe to open the session and one read for the settings");
+  ok(!cookieFetch.calls.some((u) => u === `https://${REF.leagueId}.football.cbssports.com/`),
+     "...and the league page is never fetched when the cookie works");
+  ok(cookieFetch.inits.filter((i) => i?.headers?.Authorization).length === 0,
+     "...and no Authorization header is sent when there is no token");
+
+  const opened = await openSession({ ...REF }, { session: { mode: "token", token: "T" }, fetchImpl: deadFetch() });
+  ok(opened.mode === "token" && opened.token === "T", "a session handed in is used as it is, with no probe");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
