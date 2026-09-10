@@ -72,7 +72,12 @@ team's `short_name` is the word "Draft", and rewriting keys turned `draft_type` 
 After writing, every output file is re-read. If a collected secret survives — whole, or
 as a 12-character fragment of a token — the written files are deleted and the run prints
 `SCRUB FAILED`. `node scrub.mjs --self-test` proves the rules on a synthetic bundle;
-`node scrub.mjs --verify <dir>` re-checks a directory without knowing the secrets.
+`node scrub.mjs --verify <dir>` re-checks a directory without knowing the secrets — every
+pattern P1 to P5, every `access_token=` value and the page-field rule, the same tables the
+write-time check reads, because the run that collected the secrets is gone by then and a
+shape `--verify` omits is a shape nothing checks. `--trim` ends on that same gate, since it
+rewrites committed files and `public/players-list.json` arrived by `curl` rather than
+through the scrubber.
 
 The league-scoped CBS shapes were unrecorded until this spike, so the collector reads
 context from key names rather than a fixed schema and errs toward scrubbing too much.
@@ -95,7 +100,9 @@ owner and league names and the slug: the write-time check knows only what it col
 5. `node extension/test/fixtures/cbs/scrub.mjs --trim extension/test/fixtures/cbs` — trims
    `public/players-list.json` to the ids the league fixtures reference plus every team
    entity (seven keys each), and `prior-season.json`'s weekly scoring to 250 rows. Both are
-   whole objects and the run is idempotent. Without it those two files are 1.7 MB and 5.7 MB.
+   whole objects and the run is idempotent. It ends on the `--verify` gate and prints
+   `TRIM FAILED` rather than `TRIM OK` if anything in the directory fails it. Without it
+   those two files are 1.7 MB and 5.7 MB.
 6. Grep the directory for your own league, team and owner names, your slug and your
    `long_abbr` — the write-time check knows only what it collected.
 7. `rm ~/Downloads/ffsm-cbs-spike-raw.json`

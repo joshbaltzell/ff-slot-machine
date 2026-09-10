@@ -552,7 +552,11 @@ other side: an engine given an all-ones availability table must reproduce
 on recorded or synthesized raw payloads with `fetchImpl` injected. `cbs.mjs` drives the
 CBS adapter on `test/fixtures/cbs/`, nineteen payloads recorded from a real league and
 scrubbed the way `fixture.json` was — the scrub kit is in that directory and its
-`--verify` pass re-checks a re-record without knowing the secrets.
+`--verify` pass re-checks a re-record without knowing the secrets. `--verify` reads the
+same `TOKEN_PATTERNS` table and the same page-field rule the write-time check reads, and
+`--trim` ends on it: those are the only two things standing between a live token and this
+repository, and a shape one of them omits is a shape nothing checks at all, because the
+run that knew the secrets is gone by then.
 
 **"ESPN is unchanged" is a diff, not a promise.** Capture the suite's output with the one
 nondeterministic line masked, the two platform files' blocks dropped and the trailing file

@@ -499,7 +499,10 @@ function listDataFiles(dir) {
   return out;
 }
 
-/** Structural re-check of a fixture directory, without the secrets. */
+/** Structural re-check of a fixture directory, without the secrets. It is the last
+ * step of the re-record recipe and the gate --trim ends on, so it must test every
+ * shape the write-time check tests: it runs after the run that knew the secrets has
+ * gone, and a shape it omits is a shape nothing checks at all. */
 export function verifyDir(dir) {
   const problems = [];
   const at = (f) => path.join(dir, f);
@@ -519,8 +522,19 @@ export function verifyDir(dir) {
   for (const f of files) {
     const text = fs.readFileSync(f, "utf8");
     const rel = path.relative(dir, f);
-    if (/access_token=[^R&"]{8,}/.test(text)) problems.push(`${rel}: an access_token= value survives`);
-    if (/var token\s*=\s*"(?!REDACTED)/.test(text)) problems.push(`${rel}: a var token value survives`);
+    // The same table findLeaks uses, rather than a hand-written subset of it. The
+    // subset tested only P4 and P5, and P1 (`CBSi.token = "…"`) is the shape the
+    // recorded 2026 page actually carries, so a live token in the form CBS emits
+    // passed this gate clean.
+    for (const [name, src] of TOKEN_PATTERNS) {
+      for (const m of text.matchAll(re(src))) if (m[1] && m[1] !== "REDACTED") { problems.push(`${rel}: a ${name} token value survives`); break; }
+    }
+    // P5 covers `access_token=` inside the page; this catches it anywhere else - in a
+    // recorded url, an envelope uri. The lookahead excludes the literal REDACTED
+    // rather than the letter R, which used to let through any real token whose first
+    // eight characters happened to contain one.
+    if (/access_token=(?!REDACTED\b)[^&"\s]{8,}/.test(text)) problems.push(`${rel}: an access_token= value survives`);
+    if (/^page(-meta)?\.(html|json)$/.test(path.basename(rel)) && pageFieldLeaks(text)) problems.push(`${rel}: a name-shaped page field survives`);
     for (const m of text.matchAll(EMAIL_RE)) if (!m[0].endsWith("@example.invalid")) { problems.push(`${rel}: an e-mail address outside example.invalid survives`); break; }
   }
   const readme = fs.existsSync(at("README.md")) ? fs.readFileSync(at("README.md"), "utf8") : "";
@@ -731,6 +745,63 @@ async function selfTest(log) {
       fs.writeFileSync(meta1, saved);
     }
 
+    /* WR-02: --verify is the gate the re-record recipe runs last, and it runs without
+       knowing the secrets. It must therefore test every token shape the write-time
+       check tests - P1 is the shape the live 2026 page actually carries - and the same
+       page-field rule, or a surviving live token passes it clean. */
+    {
+      const planted = (name, inject) => {
+        const d = path.join(tmp, `wr02-${name}`);
+        fs.rmSync(d, { recursive: true, force: true });
+        fs.cpSync(out1, d, { recursive: true });
+        inject(d);
+        return verifyDir(d).problems;
+      };
+      const append = (file, text) => (d) => fs.appendFileSync(path.join(d, file), text);
+      ok(planted("p1", append("page.html", '\n<script>CBSi.token = "LIVE.abc-123456789";</script>\n'))
+         .some((p) => /P1 token value survives/.test(p)),
+         "WR-02: --verify catches a surviving P1 CBSi.token value - the shape the recorded page carries");
+      ok(planted("p2", append("page.html", "\n<script>x({'access_token': 'LIVE.abc-123456789'})</script>\n"))
+         .some((p) => /P2 token value survives/.test(p)),
+         "WR-02: --verify catches a surviving P2 quoted access_token value");
+      ok(planted("p3", append("details.json", '\n{"token" : "0123456789abcdef0123456789abcdef"}\n'))
+         .some((p) => /P3 token value survives/.test(p)),
+         "WR-02: --verify catches a surviving P3 JSON token field");
+      ok(planted("p4", append("page.html", '\n<script>var token = "LIVE.abc-123456789";</script>\n'))
+         .some((p) => /P4 token value survives/.test(p)),
+         "WR-02: --verify still catches the legacy var token form");
+      ok(planted("r", append("details.json", '\n"https://api.cbssports.com/x?access_token=Rk7Qm2ZpLxv9"\n'))
+         .some((p) => /access_token= value survives/.test(p)),
+         "WR-02: an access_token= value whose first characters contain an R is caught, not excluded with the literal REDACTED");
+      ok(planted("field", append("page.html", '\n{"long_abbr":"PatO","id":"16"}\n'))
+         .some((p) => /name-shaped page field survives/.test(p)),
+         "WR-02: --verify runs the same page-field rule the write-time check runs");
+      ok(planted("clean", () => {}).length === 0,
+         "WR-02: and none of that fires on the clean directory");
+    }
+
+    /* WR-03: --trim rewrites committed fixtures in place, and public/players-list.json
+       reached the directory by a raw curl rather than through the scrubber. It must end
+       on the same structural gate rather than printing TRIM OK unconditionally. */
+    {
+      const okDir = path.join(tmp, "wr03-ok");
+      fs.cpSync(out1, okDir, { recursive: true });
+      lines.length = 0;
+      ok((await main(["--trim", okDir], { log: (s) => lines.push(s) })) === 0
+         && lines.some((l) => /^TRIM OK$/.test(l)),
+         "WR-03: --trim still prints TRIM OK and exits 0 on a clean directory");
+      const badDir = path.join(tmp, "wr03-bad");
+      fs.cpSync(out1, badDir, { recursive: true });
+      fs.appendFileSync(path.join(badDir, "page.html"), '\n<script>CBSi.token = "LIVE.abc-123456789";</script>\n');
+      lines.length = 0;
+      const trimCode = await main(["--trim", badDir], { log: (s) => lines.push(s) });
+      ok(trimCode === 1 && lines.some((l) => /^TRIM FAILED$/.test(l))
+         && lines.some((l) => /PROBLEM .*P1 token value survives/.test(l)),
+         "WR-03: --trim exits 1 with TRIM FAILED when a token survives in the directory it just rewrote");
+      ok(!lines.some((l) => l.includes("LIVE.abc-123456789")),
+         "WR-03: and the report names the pattern, never the value");
+    }
+
     /* a page with no token match */
     const out2 = path.join(tmp, "out2");
     const res2 = scrubBundle(syntheticBundle(S, { withToken: false }), out2);
@@ -802,9 +873,16 @@ export async function main(argv, opts = {}) {
   if (argv[0] === "--self-test") return selfTest(log);
   if (argv[0] === "--trim") {
     if (!argv[1]) { log(USAGE); return 1; }
+    const dir = path.resolve(argv[1]);
     let notes;
-    try { notes = trimDir(path.resolve(argv[1])); } catch (e) { log(`TRIM FAILED: ${e.message}`); return 1; }
+    try { notes = trimDir(dir); } catch (e) { log(`TRIM FAILED: ${e.message}`); return 1; }
     for (const n of notes) log(`  ${n}`);
+    // --trim rewrites committed fixtures in place, and public/players-list.json reached
+    // the directory by a raw curl rather than through the scrubber, so nothing had ever
+    // checked it. End on the structural gate: the run that knew the secrets is gone, but
+    // "no token shape and no name-shaped page field survives" is checkable without them.
+    const { problems } = verifyDir(dir);
+    if (problems.length) { for (const p of problems) log(`  PROBLEM ${p}`); log("TRIM FAILED"); return 1; }
     log("TRIM OK");
     return 0;
   }
