@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**FF Slot Machine** — a Chrome extension that finds ESPN fantasy trades and waiver
-adds which raise a team's projected *starting-lineup* points. It is the whole
-project; there is no server, no build step, and no other entry point.
+**FF Slot Machine** — a Chrome extension that finds fantasy trades and waiver adds
+which raise a team's projected *starting-lineup* points, on ESPN and on CBS. It is
+the whole project; there is no server, no build step, and no other entry point.
 
 The name is literal rather than a joke about luck: the engine matches players to
 lineup **slots** through ESPN's `eligibleSlots` and never models positions at all.
@@ -30,7 +30,15 @@ extension/
   panel.html/.js     the UI
   panel.css          the analytics-terminal look
   engine/
-    league.js        ESPN API -> normalized model; settings; volatility; injury status
+    league.js        what every platform shares: slot and position labels, pro teams,
+                     volatility; re-exports platforms/espn.js so old imports still work
+    platforms/
+      index.js       the registry: detect, byId, the D-03 adapter contract, the
+                     five-segment storage keys and their one-time migration
+      hash.js        hashRosters - the one roster fingerprint, over native ids
+      espn.js        the ESPN loader that used to be league.js
+      cbs.js         CBS -> the same model: slot and position tables, eligibility
+                     expansion, the session chain, the id crosswalk
     market.js        FantasyCalc fairness, the pitch sentence, buy low / sell high
     lineup.js        optimal lineup for any slot configuration
     search.js        swap table, shapes, N-sided trades, three-way, 2-for-1, waiver
@@ -77,6 +85,11 @@ extension/
     roster.mjs       replacement level, the 2-for-1 shape, drop ranking
     usage.mjs        usage, breakouts, the crowd split, FAAB bids and the panel HTML
     distributions.mjs distributions, stacks and the weekly plan, offline
+    platform.mjs     the normalized-model schema run against every adapter; the
+                     storage keys; the panel's platform surface and copy census
+    cbs.mjs          the CBS adapter on the recorded league, offline
+    fixtures/cbs/    19 scrubbed payloads from a real CBS league, and the capture
+                     kit that recorded them; run-all is non-recursive, so no test
     run-all.mjs      runs every *.mjs in the directory
 ```
 
@@ -350,6 +363,169 @@ copy of the data in the repo. The measured effect is also small next to the impl
 total, which the environment factor already carries. Revisit only with a CORS-open
 source.
 
+## Platforms
+
+**The engine never learns a second platform exists.** `engine/platforms/index.js` is a
+registry of adapters and the only place that decides which site a league lives on. An
+adapter turns a platform's own API into the model `loadLeague` has always returned, and
+nothing in `search.js`, `lineup.js`, `season.js`, `odds.js`, `distribution.js`,
+`gameplan.js` or any `sources/` module changed for CBS — the masked `run-all` diff under
+Testing is what proves that, rather than the claim. The contract is fixed: `id`, `label`,
+`hosts`, `acceptsToken`, `signInUrl`, `parseLeagueUrl`, `loadLeague`, `loadFreeAgents`,
+`loadSchedule`, `identify`, `fingerprint`, with `ref = {platform, leagueId, seasonId,
+teamId?, session?}` and `opts = {fetchImpl, storage, now}` so every adapter runs offline
+under Node. A "not signed in / no access" failure throws with `code: "AUTH"` and
+everything else throws a plain `Error`, because the panel switches on the code and a
+message regex was already fragile with one platform. Adapters must not import from
+`index.js` — it reads their default exports while it evaluates — which is why the one
+thing they share, `hashRosters`, lives in `platforms/hash.js`.
+
+**ESPN's vocabulary is the model's vocabulary, and every translation table lives in
+`platforms/cbs.js` and nowhere else.** An adapter emits ESPN numeric slot ids in
+`eligibleSlots` and `lineupSlotCounts`, ESPN position ids, ESPN pro-team abbreviations
+(CBS's `JAC` and `WAS` become `JAX` and `WSH`) and ESPN injury strings. Where CBS has
+something ESPN does not — a
+league that splits D/ST into a defence seat and a special-teams seat — the two smallest
+unused ESPN ids, 22 and 25, are theirs and `SLOT_LABEL` names them; the engine still sees
+only ids. A player's `eligibleSlots` is expanded from the league's own configured slot
+codes against his own codes, so a group code accepts its own spelling and its members'
+(`DL` accepts `DL`, `DE` and `DT`). That is what lets one table serve both IDP
+vocabularies without knowing which one a league uses — and it is untested against a real
+IDP league, because the one league ever recorded is offence plus D/ST.
+
+**The canonical player id is the ESPN id, and a player the crosswalk misses takes
+`-cbsId`.** Sleeper, FantasyPros and FantasyCalc all already join on `espn_id`, so that
+stays the key. CBS ids resolve through the DynastyProcess `db_playerids.csv` that
+`sources/fantasypros.js` already downloads; the transform keeps both columns now and the
+cache key moved to `src.fp.ids.v2`, because a week-fresh copy of the old array shape would
+otherwise be read as the new object and break FantasyPros for a week. Coverage is real and
+partial: 9,315 rows carry a `cbs_id` and 7,966 carry both (85.5%), and the 1,349 CBS-only
+rows are not all deep IDP — 275 WR, 240 RB, 122 TE, 98 QB. There is **no name matching**.
+An unmapped player gets `id = -cbsId`, a negative number that cannot collide with an ESPN
+id, and a dash from every external column; he keeps his roster spot and his lineup seat,
+because valuing him at zero or dropping him would change the trade math. That is "a dead
+feed costs a dash, not the run" applied per player. Two CBS players can resolve to one
+ESPN id (the file has 12 duplicate `espn_id` values); the second claimant keeps his
+negative id rather than evicting the first. CBS **team entities stay negative**: the
+crosswalk has no `DST`, `TQB` or `TK` rows at all, so every team defence, team quarterback
+and team kicker shows dashes. Mapping those by pro-team code instead is a real follow-up
+and is deliberately not built.
+
+**`history` replaced the ESPN stat triples before any CBS code landed.** Every player
+carries `history: [{season, week, actual, proj}]`, built by the adapter from whatever the
+platform reports, and `measureVolatility` and `calibration.js` read that rather than a raw
+ESPN stats array. Rows keep their `season` for the same reason ESPN stats are filtered on
+`seasonId` — dropping it re-introduces the ~15%-low bug. A platform that publishes points
+but not the projection that preceded them writes `proj: null`, never `0`: absent and zero
+are different claims, and the volatility fallback below turns on exactly that difference.
+
+**Storage keys carry the platform, and the key is opaque to its readers.**
+`ffsm.league.{platform}.{leagueId}.{season}` and `ffsm.calib.{platform}.{leagueId}.{season}`
+— five segments, so ESPN league 1234 and a CBS league whose slug happens to be `1234`
+cannot share a record. The old four-segment keys are read once as `espn`, rewritten and
+removed; the migration is idempotent by construction, since a five-segment key never
+matches the legacy pattern. `background.js` no longer splits a key on dots: the stored
+value carries its own `{platform, leagueId, seasonId}` and the worker matches the prefix.
+`ffsm.myTeam` is the exception and is **global, not per league** — a user with an ESPN and
+a CBS league shares one saved team name, so a name that exists in both can shadow the
+other's pick. Pre-existing behaviour, out of scope, and worth knowing before debugging it.
+
+**There is one roster fingerprint now, not two.** `hashRosters` is computed by
+`platform.fingerprint(ref)` in the service worker and by `loadLeague` into
+`model.fingerprint`, which is what the panel stores — the same function over the same
+platform-native ids, so the two sides cannot drift. They had drifted: the panel's old
+fingerprint sorted numerically and the worker's sorted lexicographically, so `changed`
+could read true on a roster nobody had touched. Both of those functions are gone. Hashing
+platform-native ids rather than canonical ones also keeps the crosswalk out of the service
+worker, where a 12,000-row CSV has no business. A record migrated from a legacy key stores
+no hash at all, and the worker adopts the first one it computes instead of comparing, so
+the upgrade never lights the badge.
+
+**CBS authenticates on the session cookie, and the fallback chain is cookie, page token,
+hand-over, paste — never a password.** The league subdomain's `/api/` proxy answers on the
+browser's own session with no token at all; that is measured, not assumed. It does **not**
+infer the league from the hostname, so every request must carry an explicit `league_id` or
+it answers 400. When the cookie is refused the chain runs: a session already on the ref (a
+token the user pasted), the cookie, the token in the signed-in league page's own script
+text, then a hand-over from this extension's content script on an open CBS tab. Each
+non-primary route re-probes the cheapest authenticated endpoint before its session is
+accepted, so a stale token is refused at the door rather than four requests later. The
+token lives on the run's `ref` in memory: never in `chrome.storage`, never in a URL, never
+in a log line, never in a note, and never shared between two concurrent runs. The
+password endpoint `general/oauth/mobile/login` is never called and the string does not
+appear in the extension. `acceptsToken` is what puts a paste field on the sign-in screen,
+so an adapter with no sanctioned token route never offers one.
+
+**CBS states a lineup as a per-position range under a cap, and the shared flex is where
+that does not fit. This is the most important CBS limitation in this file.** ESPN
+publishes fixed slot counts; CBS publishes a minimum and a maximum per position plus an
+"Active Players" total. `readSettings` seats each position's `min_active` as dedicated
+slots and spends the remaining seats up to the cap on the narrowest ESPN slot covering
+every position with headroom (`flexSlotFor`), so the recorded league becomes QB 1, RB 1,
+D/ST 1, RB-WR-TE 5 — the 8 starters CBS itself allows. The residual approximation: a
+shared flex can seat more of one position than that position's own maximum allows, five
+RB/WR/TE seats against an RB max of 3, because ESPN slot vocabulary cannot put a
+per-position ceiling on a shared flex. It is permissive inside one position group rather
+than a phantom lineup — every seat exists and the total is right — but an optimal lineup
+may start a fourth running back the league would refuse. The alternative, reading the
+maxima as seats, gave that league 14 starters against a cap of 8 and scored every trade
+against a team nobody can field. This is the better of two imperfect readings, not a good
+one.
+
+**On CBS, volatility is measured around a player's own mean rather than around a
+forecast.** `measureVolatility` keeps its original branch byte-for-byte wherever a prior
+season carries both a projection and an actual. Where it carries actuals only — which is
+every CBS history row, because the route the adapter reads publishes points and nothing
+else — it measures the spread of his weekly scores around his own prior-season mean, drops
+any zero week (with no projection beside it a zero and a bye are the same row), and shrinks
+the resulting sigma toward the positional prior by `n/(n+10)`, where the projection branch
+shrinks a sigma not at all. The return says which: `mode` is `projection-residuals`,
+`actuals-only` or `none`, `counts` reports how many players each branch measured, and the
+panel names the platform and the degradation rather than showing both as "measured". The
+harder shrink is not decoration — sigma is what the season odds rest on, and a spread taken
+around a mean estimated from the same seven numbers is a softer claim than a spread around
+an independent forecast. Note what this is and is not: CBS **does** retain prior-season
+projections (`stats_type=projections&period=week1&timeframe=2025` answered with 271
+players, which overturns the assumption the fallback was designed on), so this is a
+consequence of which route supplies `history`, not of what CBS keeps. Reading those
+projections into `history.proj` would move a CBS league onto the original branch and is
+recorded as unbuilt rather than impossible. The old "assume ±25" path is now the last
+resort it was always meant to be, and its log line names the platform too.
+
+**Three CBS paths are pinned by tests and have never run against a live league.** All
+three are in `.planning/WINDOWS.md` and are explicit steps in
+`docs/superpowers/2026-09-09-phase-11-browser-checklist.md`, whose ESPN half is not
+optional either: phases 1–8 were never browser-verified at all.
+
+- *A rostered player's weekly-scoring history.* `league/fantasy-points/weekly-scoring`
+  defaults to `player_status: free_agents`, and the recorded capture took the default, so
+  the fixture holds 1,809 free agents and **0** of the league's 168 rostered players. The
+  adapter sends `player_status=all` and the builder is proven on the free-agent rows plus
+  one synthetic rostered row. Whether CBS answers with rostered players under that
+  parameter is unconfirmed — and if it does not, the volatility fallback has nothing to
+  measure. No fixture was fabricated to hide this.
+- *The bare `Authorization` header against `api.cbssports.com`.* The spike measured a
+  custom header from a page origin as `Failed to fetch` — a CORS preflight a page origin
+  may not make — and `access_token=` in the query at 200. The header route is therefore
+  **untested, not disproved**: an extension page holding the host permission may manage
+  the preflight. The adapter sends the header, because a token in a URL is the one thing
+  the token posture forbids. If a browser run shows CBS refuses it, move to the query
+  parameter — a change of transport, not of design.
+- *The `ffsm.token` hand-over, and the two-level subdomain wildcard.*
+  `chrome.tabs.sendMessage({type: "ffsm.token"})` and the content script's reply agree by
+  assertion, and a test reads both files as text so the two copies of the host regex and
+  the token pattern cannot drift; no offline test can send a real message across the
+  extension boundary. `https://*.cbssports.com/*` is assumed to match
+  `<slug>.football.cbssports.com`, and both hosts are listed so a wrong assumption costs a
+  redundant permission rather than a broken script.
+
+**Two things that look like bugs and are not.** `sources/vegas.js` fetches from
+`sports.core.api.espn.com` on both platforms: it is a public odds feed, not the fantasy
+platform, and making it platform-aware would break CBS leagues for no reason. And a
+**numeric** CBS slug typed bare into the league prompt routes to ESPN — the prompt tries
+digits first, because an ESPN league id is nothing but digits — so paste the league URL
+rather than the slug in that case, since a URL always goes through `detect()`.
+
 ## Testing
 
 `extension/test/fixture.json` and `golden_1for1.json` are a frozen ten-team league
@@ -364,14 +540,43 @@ and `run-all.mjs` runs them all. Phase 2's file also asserts the contract from t
 other side: an engine given an all-ones availability table must reproduce
 `fixture.json`'s baseline exactly.
 
+`platform.mjs` holds the normalized-model schema and runs it against **every** entry of
+`PLATFORMS`, so a new adapter is held to the same structural assertions the ESPN one is,
+on recorded or synthesized raw payloads with `fetchImpl` injected. `cbs.mjs` drives the
+CBS adapter on `test/fixtures/cbs/`, nineteen payloads recorded from a real league and
+scrubbed the way `fixture.json` was — the scrub kit is in that directory and its
+`--verify` pass re-checks a re-record without knowing the secrets.
+
+**"ESPN is unchanged" is a diff, not a promise.** Capture the suite's output with the one
+nondeterministic line masked, the two platform files' blocks dropped and the trailing file
+count normalised, and diff it against a copy taken before the seam existed (the Phase 11
+baseline is `.planning/phases/11-cbs-platform/run-all-before.txt`):
+
+```bash
+node extension/test/run-all.mjs 2>&1 \
+  | sed -E 's/[0-9]+ ms per trade/N ms per trade/' \
+  | awk '/^=== (platform|cbs)\.mjs ===/{skip=1; next} /^=== /{skip=0} !skip' \
+  | sed -E 's/^[0-9]+ files, /N files, /'
+```
+
+An empty diff means the nine pre-existing files' assertion counts and output are
+byte-identical. Anything else is a behaviour change in ESPN's path, whatever the commit
+message says.
+
 ## The daily reminder
 
-`content.js` injects a notice on `fantasy.espn.com/football/*`; `background.js` runs
-a 12-hourly alarm. **The alarm does not run the trade search.** MV3 kills a service
-worker at five minutes and a league pull is eighteen calls, so the job makes one
-`mRoster` request and compares a roster fingerprint against the one `panel.js` stored
-on its last run. `rosterFingerprint` in `panel.js` and `rosterHash` in `background.js`
-must stay in step — they hash the same thing in two places.
+`content.js` injects a notice on both platforms' league pages —
+`fantasy.espn.com/football/*` and `*.football.cbssports.com/*`, never the CBS lobby and
+never `<all_urls>` — and decides which platform it is on from the page itself, sending
+that with every message. `background.js` runs a 12-hourly alarm and is a **module**
+service worker, so it can import the registry and resolve an adapter by `ref.platform`.
+**The alarm does not run the trade search.** MV3 kills a service worker at five minutes
+and a league pull is eighteen calls, so the job makes one light request through
+`platform.fingerprint(ref)` — `mRoster` on ESPN, `league/rosters?team_id=all` on CBS —
+and compares the hash against the one the panel stored from `model.fingerprint` on its
+last run. Both sides are the same `hashRosters` over the same platform-native ids, so
+there is no second implementation to keep in step; `nextLeagueRecord` is where the
+compare-or-adopt decision lives.
 
 Showing the notice is rate-limited to once per league per day and honours a dismissal
 for 24 hours. Keep that bar high; an extension that announces itself every visit gets
@@ -379,8 +584,15 @@ uninstalled.
 
 ## Privacy
 
-Everything runs locally against ESPN's read API using the browser's own session. No
-backend, no analytics, no league data leaves the machine. The one other host is
-`api.sleeper.app`, which is asked only for its public, league-agnostic player list,
+Everything runs locally against the platform's own read API using the browser's own
+session. No backend, no analytics, no league data leaves the machine. There are two
+platform hosts, `fantasy.espn.com` and `*.cbssports.com`, and each is reached only with
+the user's own cookies — or, on CBS when the cookie is refused, with a token read from
+the page the user is already signed in to and held in memory for the run and nowhere
+else. `api.sleeper.app` is asked only for its public, league-agnostic player list,
 weekly stats and trending-add feeds — no league id, no team, no roster is sent with
-any of those requests. Keep it that way.
+any of those requests — and the same holds for CBS's public `positions`, `pro-teams`,
+`players/injuries` and `players/list` feeds, which carry neither a `league_id` nor the
+token even though they live on the same host as the authenticated league routes. That
+last one is worth a test rather than a promise, and has two: "same host" is exactly the
+condition under which a credential leaks by accident. Keep it that way.
