@@ -21,6 +21,7 @@ import cbs, { CBS_HOST_RE, cbsUrl, publicUrl, readSettings as cbsReadSettings } 
 // load-time SyntaxError that would take the other seven hundred assertions with it.
 import * as cbsExports from "../engine/platforms/cbs.js";
 import { IDS_URL, trimIds } from "../engine/sources/fantasypros.js";
+import { calibrationSection, sourcesChips } from "../panel/projections.js";
 import { PRO_TEAM, measureVolatility } from "../engine/league.js";
 import { BENCH_SLOTS } from "../engine/lineup.js";
 
@@ -375,6 +376,49 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "there is no password field, and no password anything, in the panel");
   ok(/Reading your league<\/p>/.test(HTML) && !/from ESPN/.test(HTML),
      "the boot copy in the markup names no platform: JS fills it in once one is known");
+}
+
+/* the copy sweep: the panel names the platform it is reading (11-07)
+
+   Two ESPN literals are allowed to survive, and only these two. The calibration
+   hint states where the literature slopes were MEASURED, which is a fact about
+   twelve seasons of ESPN projections and stays true in a CBS league. The league
+   prompt's placeholder names both platforms because at that moment no platform is
+   known - there is nothing to substitute yet. Everything else that said ESPN meant
+   "the platform in use" and must now read the adapter's label. */
+{
+  const COPY = ["panel.js", "panel.html", "content.js",
+    ...fs.readdirSync(path.join(here, "..", "panel")).filter((f) => f.endsWith(".js"))
+       .map((f) => `panel/${f}`)]
+    .map((f) => [f, fs.readFileSync(path.join(here, "..", f), "utf8")]);
+
+  // Every string RESEARCH section 3 lists as user-visible and platform-meaning.
+  const FORBIDDEN = /LIVE FROM ESPN|Live from ESPN|ESPN did not accept|ESPN only|using ESPN alone|ESPN reported records|ESPN did not report|from ESPN|ESPN reprojects|fantasy\.espn\.com and click|ESPN's game-status|Share of ESPN leagues|most ESPN leagues|ESPN&#39;s numbers|using ESPN status/;
+  const offenders = COPY.filter(([, src]) => FORBIDDEN.test(src)).map(([f]) => f);
+  ok(offenders.length === 0,
+     `no panel copy still names ESPN where it means the platform in use (${offenders})`);
+
+  // A comment may still say ESPN - it is describing the ESPN adapter, not talking to
+  // the user. Anything else is copy, and there are exactly two lines of it.
+  const isComment = (l) => /^\s*(\/\/|\*|\/\*)/.test(l);
+  const live = COPY.flatMap(([f, src]) => src.split("\n")
+    .filter((l) => l.includes("ESPN") && !isComment(l)).map((l) => [f, l.trim()]));
+  ok(live.length === 2, `exactly two ESPN literals survive in panel copy (${JSON.stringify(live)})`);
+  ok(live.some(([, l]) => l.includes("measured on ESPN projections")),
+     "one is the calibration hint's statement of where the literature slopes were measured");
+  ok(live.some(([, l]) => l.includes("ESPN league id or CBS league slug")),
+     "the other is the league prompt's placeholder, which names both platforms");
+
+  const chips = (label) => sourcesChips({ aggregate: true, label });
+  ok(chips("CBS").includes(">CBS only<") && chips("ESPN").includes(">ESPN only<"),
+     "the Sources chip names whichever platform the run is reading");
+  const grid = (id, cols, rows, opts) => rows.map((r) => opts.row(r, 0)).join("");
+  const calib = (label) => calibrationSection(
+    { summaryRows: [{ source: "espn", pos: "RB", n: 4, mae: 1, bias: 0, slope: 0.8 }],
+      weeksStored: 1, weeksWithActuals: 0, fitted: false, fittedPositions: [] },
+    { grid, esc: (v) => String(v), label });
+  ok(calib("CBS").includes("CBS") && !calib("CBS").includes(">ESPN<"),
+     "and so does the calibration log's first column, though its `espn` key is data and stays");
 }
 
 /* espn reproduces the fixture */
