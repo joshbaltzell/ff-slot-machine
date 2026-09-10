@@ -10,7 +10,7 @@
  * names and owner strings. None of those may reach the repository (D-18). Rules, applied
  * to every string in the bundle — keys, values and URLs alike:
  *
- *   1. every token value P1–P3 find in pageHtml, and every access_token= value  -> REDACTED
+ *   1. every token value P1–P5 find in pageHtml, and every access_token= value  -> REDACTED
  *   2. the slug                                                                  -> redacted-league
  *   3. team names under rosters/standings/schedules team objects                 -> Team A, Team B, …
  *      (first-seen order; the longest name is replaced first)
@@ -37,10 +37,16 @@ const SELF = fileURLToPath(import.meta.url);
 /* ===================== tables shared with capture.js ===================== */
 /* The route keys must stay identical to the ROUTES list in capture.js. */
 
+/* Observed on a signed-in league page, 2026-09-10: the API token is set as CBSi.token = "…"
+ * (106 chars) and passed to the page's own API calls as 'access_token': '…'; a separate,
+ * shorter "token" : "…" sits in the chat/websocket config; var token = "…" is the 2017 form,
+ * kept as a fallback. Order matters: the first match names the API token. */
 export const TOKEN_PATTERNS = [
-  ["P1", 'var token\\s*=\\s*"([^"]+)"'],
-  ["P2", '"access_token"\\s*:\\s*"([^"]+)"'],
-  ["P3", "access_token=([A-Za-z0-9._~%-]+)"],
+  ["P1", 'CBSi\\.token\\s*=\\s*"([^"]+)"'],
+  ["P2", "['\"]access_token['\"]\\s*:\\s*['\"]([^'\"]+)['\"]"],
+  ["P3", '"token"\\s*:\\s*"([^"]+)"'],
+  ["P4", 'var token\\s*=\\s*"([^"]+)"'],
+  ["P5", "access_token=([A-Za-z0-9._~%-]+)"],
 ];
 const re = (src, flags = "g") => new RegExp(src, flags);
 
@@ -78,6 +84,15 @@ export const REQUIRED_FILES = [
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const bounded = (s) => new RegExp(`(?<![A-Za-z0-9])${escapeRe(s)}(?![A-Za-z0-9])`, "gi");
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+/* Page-derived text only (token-context windows, trimmed scripts, viewer-hint contexts): the
+ * signed-in page's chat/websocket config names the viewer next to its token. JSON name-shaped
+ * fields become "SCRUBBED" (not REDACTED, which page.html reserves for token values so that
+ * --verify can tie it to page-meta token.found); an all-digit id (a team id, a D-16 hint) is
+ * kept. Never applied to fixture bodies, whose player names must survive. */
+const PAGE_FIELD_RE = /"(name|short_name|long_name|first_?name|last_?name|full_?name|nick_?name|display_?name|screen_?name|long_abbr|short_abbr|abbr|id|login|email|user|user_?name|owner)"(\s*:\s*)"([^"]*)"/gi;
+const PAGE_FIELD_OK = (k, v) => v === "REDACTED" || v === "SCRUBBED" || (k.toLowerCase() === "id" && /^\d*$/.test(v));
+const pageFields = (t) => (typeof t === "string" ? t.replace(PAGE_FIELD_RE, (m, k, sep, v) => (PAGE_FIELD_OK(k, v) ? m : `"${k}"${sep}"SCRUBBED"`)) : t);
+const pageFieldLeaks = (t) => { for (const m of String(t).matchAll(PAGE_FIELD_RE)) if (!PAGE_FIELD_OK(m[1], m[3])) return true; return false; };
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const letters = (i) => { let s = ""; i += 1; while (i > 0) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; };
 const byLenDesc = (a, b) => b[0].length - a[0].length;
@@ -216,9 +231,7 @@ function makeScrubber(c, skip = new Set()) {
     let t = s;
     if (!skip.has("tokens")) {
       for (const tok of tokens) t = t.split(tok).join("REDACTED");
-      t = t.replace(re(TOKEN_PATTERNS[0][1]), 'var token = "REDACTED"');
-      t = t.replace(re(TOKEN_PATTERNS[1][1]), '"access_token": "REDACTED"');
-      t = t.replace(re(TOKEN_PATTERNS[2][1]), "access_token=REDACTED");
+      for (const [, src] of TOKEN_PATTERNS) t = t.replace(re(src), (m, g1) => (g1 && g1 !== "REDACTED" ? m.replace(g1, "REDACTED") : m));
     }
     for (const [from, to] of named) if (from.length >= 3) t = t.replace(bounded(from), to);
     if (!skip.has("owners")) t = t.replace(EMAIL_RE, (m) => (m.endsWith("@example.invalid") ? m : `owner-x${++extraEmails}@example.invalid`));
@@ -256,8 +269,8 @@ function findLeaks(files, c) {
     }
     for (const [n, label] of named) if (n && n.length >= 3 && bounded(n).test(text)) leaks.push(`${rel}: ${label} survives`);
     for (const m of text.matchAll(EMAIL_RE)) if (!m[0].endsWith("@example.invalid")) { leaks.push(`${rel}: an e-mail address outside example.invalid survives`); break; }
-    if (/access_token=[^R&"]{8,}/.test(text)) leaks.push(`${rel}: an access_token= value survives`);
-    if (/var token\s*=\s*"(?!REDACTED)/.test(text)) leaks.push(`${rel}: a var token value survives`);
+    for (const [name, src] of TOKEN_PATTERNS) for (const m of text.matchAll(re(src))) if (m[1] && m[1] !== "REDACTED") { leaks.push(`${rel}: a ${name} token value survives`); break; }
+    if (/^page(-meta)?\.(html|json)$/.test(path.basename(rel)) && pageFieldLeaks(text)) leaks.push(`${rel}: a name-shaped page field survives`);
   }
   return leaks;
 }
@@ -265,7 +278,8 @@ function findLeaks(files, c) {
 /* ===================== end scrub rules ===================== */
 
 /** page.html: only the <script> element(s) that matched a token pattern, plus the viewer-hint contexts. */
-function buildPageHtml(bundle, scrub) {
+function buildPageHtml(bundle, scrubText) {
+  const scrub = (t) => pageFields(scrubText(t));
   const html = String(bundle.pageHtml ?? "");
   const patterns = TOKEN_PATTERNS.map(([, src]) => src);
   const matched = (s) => patterns.some((p) => re(p).test(s));
@@ -331,7 +345,7 @@ export function scrubBundle(bundle, outDir, opts = {}) {
     capturedAt: bundle.capturedAt ?? null,
     href: bundle.href ?? null,
     token: { found: tok.found === true, pattern: tok.pattern ?? null, length: typeof tok.length === "number" ? tok.length : null },
-    viewerHints: (Array.isArray(bundle.viewerHints) ? bundle.viewerHints : []).map((h) => ({ pattern: String(h?.pattern ?? ""), context: String(h?.context ?? "") })),
+    viewerHints: (Array.isArray(bundle.viewerHints) ? bundle.viewerHints : []).map((h) => ({ pattern: String(h?.pattern ?? ""), context: pageFields(scrub(String(h?.context ?? ""))) })),
   }, scrub)]);
 
   fs.mkdirSync(outDir, { recursive: true });
@@ -433,7 +447,9 @@ function syntheticBundle(S, { withToken }) {
     "league/stats?stats_type=stats&period=week1&timeframe=2025": badRes("league/stats?stats_type=stats&period=week1&timeframe=2025"),
     "league/transaction-list/add-drops": okRes("league/transaction-list/add-drops", { transactions: [{ team: S.teams[1], player: "Player Two", type: "add" }] }),
   };
-  const tokenScript = withToken ? `<script>var token = "${S.token}"; var my_team_id = 2;</script>` : "";
+  const tokenScript = withToken
+    ? `<script>CBSi.token = "${S.token}"; var my_team_id = 2; var chat = { "team" : { "id" : "16", "name" : "${S.teams[0]}", "long_abbr" : "${S.chatAbbr}" }, "name" : "${S.chatName}", "token" : "${S.chat}", "auth" : { "id" : "${S.chatLogin}" } };</script><script>$(function(){ new PlayerSearch({ 'access_token': '${S.token}' }); });</script>`
+    : "";
   const pageHtml = `<!DOCTYPE html><html><head><title>${S.league}</title>${tokenScript}</head><body><h1>${S.teams[0]}</h1>`
     + `<p>${S.first} ${S.last} &lt;${S.owner}&gt;</p><a href="/team/2">${S.teams[1]}</a>`
     + `<script>window.__data = {"owner":{"email":"${S.owner}"}, "teamId": 2};</script></body></html>`;
@@ -445,7 +461,7 @@ function syntheticBundle(S, { withToken }) {
     cookieNames: ["CBS_SESSION", "pid"],
     token: withToken ? { found: true, pattern: "P1", length: S.token.length } : { found: false, pattern: null, length: null },
     viewerHints: [
-      { pattern: "my_team_id", context: withToken ? `<script>var token = "${S.token}"; var my_team_id = 2;</script>` : `<script>var my_team_id = 2;</script>` },
+      { pattern: "my_team_id", context: withToken ? `<script>CBSi.token = "${S.token}"; var my_team_id = 2;</script>` : `<script>var my_team_id = 2;</script>` },
       { pattern: "teamId", context: `{"owner":{"email":"${S.owner}"}, "teamId": 2};</script>` },
     ],
     probes: {
@@ -466,13 +482,26 @@ async function selfTest(log) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ffsm-cbs-scrub-"));
   try {
     const S = {
-      slug: "myleague77", token: "TOKENSECRETabc123XYZ",
+      slug: "myleague77", token: "TOKENSECRETabc123XYZ", chat: "CHATTOKEN9876543210zyxw", chatName: "Pat O", chatAbbr: "PatO", chatLogin: "patownerlogin",
       teams: ["Gridiron Gang", "Bye Week Bandits", "Gang"],
       owner: "pat.owner@example.com", first: "Pat", last: "Ownerson", nick: "bandit_king",
       league: "Sunday Money League",
     };
     const secrets = [[S.slug, "the slug"], [S.token, "the token"], [S.teams[0], "team name 1"], [S.teams[1], "team name 2"], [S.teams[2], "team name 3"],
-      [S.owner, "the owner e-mail"], [S.first, "the owner first name"], [S.last, "the owner last name"], [S.nick, "the owner nickname"], [S.league, "the league name"]];
+      [S.chat, "the chat token"], [S.chatName, "the chat display name"], [S.chatAbbr, "the chat long_abbr"], [S.chatLogin, "the chat auth id"], [S.owner, "the owner e-mail"], [S.first, "the owner first name"], [S.last, "the owner last name"], [S.nick, "the owner nickname"], [S.league, "the league name"]];
+
+    /* the token-pattern table: the 2026 page shapes match, and capture.js carries the identical table */
+    const find = (text) => { for (const [name, src] of TOKEN_PATTERNS) { const m = re(src).exec(text); if (m) return [name, m[1]]; } return null; };
+    ok(find('<script> CBSi.token = "ABC.def-123"; </script>')?.[1] === "ABC.def-123", "a pattern captures CBSi.token = \"…\"");
+    ok(find("new PlayerSearch({ 'access_token': 'ABC.def-123' })")?.[1] === "ABC.def-123", "a pattern captures a single-quoted 'access_token': '…'");
+    ok(find('{"access_token": "ABC.def-123"}')?.[1] === "ABC.def-123", "a pattern captures a double-quoted \"access_token\": \"…\"");
+    ok(find('"name" : "Josh B" }, "token" : "0123456789abcdef0123456789abcdef", "league_type"')?.[1] === "0123456789abcdef0123456789abcdef", "a pattern captures a JSON \"token\" : \"…\" field");
+    ok(find('var token = "ABC.def-123"')?.[1] === "ABC.def-123", "the legacy var token = \"…\" form still matches");
+    ok(find("params={payload:x,access_token:CBSi.token,method:\"PUT\"}") === null, "an unquoted access_token:CBSi.token reference is not mistaken for a value");
+    const captureSrc = fs.readFileSync(path.join(path.dirname(SELF), "capture.js"), "utf8");
+    const capturePatterns = [...captureSrc.matchAll(/^\s*\["(P\d)",\s*\/(.+)\/\],?\s*$/gm)].map((m) => [m[1], m[2]]);
+    ok(capturePatterns.length === TOKEN_PATTERNS.length && capturePatterns.every(([n, src], i) => n === TOKEN_PATTERNS[i][0] && new RegExp(src).source === re(TOKEN_PATTERNS[i][1]).source), "capture.js PATTERNS is the same table as TOKEN_PATTERNS, in the same order");
+    ok(captureSrc.includes("const LID = `league_id=${encodeURIComponent(out.slug)}`") && /const proxy = [^\n]*\$\{LID\}/.test(captureSrc) && /const direct = [^\n]*\$\{LID\}/.test(captureSrc), "capture.js sends league_id on every league-scoped request, proxy and direct alike (the proxy does not infer it from the hostname)");
 
     /* positive case, through the real CLI */
     const bundle = syntheticBundle(S, { withToken: true });
@@ -491,7 +520,11 @@ async function selfTest(log) {
     }
     if (files.includes("page.html")) {
       const page = readText(out1, "page.html");
-      ok(page.includes('var token = "REDACTED"'), "page.html has REDACTED exactly where the token was");
+      ok(page.includes('CBSi.token = "REDACTED"'), "page.html has REDACTED exactly where CBSi.token was");
+      ok(/'access_token':\s*'REDACTED'/.test(page), "page.html has REDACTED where the single-quoted access_token was");
+      ok(/"token"\s*:\s*"REDACTED"/.test(page), "page.html has REDACTED where the chat token was");
+      ok(/"id"\s*:\s*"16"/.test(page), "page.html keeps numeric ids in the token-context window (the viewer's team id is a D-16 hint)");
+      ok(/"long_abbr"\s*:\s*"SCRUBBED"/.test(page) && /"auth"\s*:\s*\{\s*"id"\s*:\s*"SCRUBBED"/.test(page), "page.html scrubs name-shaped fields and non-numeric ids in the token-context window");
       ok(page.includes("my_team_id"), "page.html keeps the viewer-hint context");
       ok(!page.includes("window.__data"), "page.html carries only the token-bearing script, not the other one");
       ok(!page.includes("<h1>"), "page.html drops the rest of the page");

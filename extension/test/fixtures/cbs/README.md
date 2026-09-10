@@ -23,7 +23,7 @@ Each route file is `{ url, status, ok, body }` where `body` is the CBS response 
 it came back — the `{ statusMessage, statusCode, uri, uriAlias, body }` envelope when the
 route answered JSON, or the text (for example `User not signed in`) when it did not.
 
-| File | Route (through `https://redacted-league.football.cbssports.com/api/`, cookie session) |
+| File | Route — every request carries `league_id=<slug>`; sent through the league subdomain's `/api/` proxy with the session cookie when that authenticates, otherwise to `api.cbssports.com/fantasy/` with the page token (`authMode` in the bundle says which) |
 |------|-------|
 | `details.json` | `league/details` |
 | `rules.json` | `league/rules` |
@@ -48,9 +48,9 @@ Everything else in this directory — `capture.js`, `scrub.mjs`, this file — i
 
 Applied by `scrub.mjs` to every string in the bundle, keys and URLs included:
 
-1. Every token value that patterns P1 `var token = "…"`, P2 `"access_token": "…"` or P3
-   `access_token=…` find in the page, and every `access_token=` value anywhere, becomes
-   `REDACTED`.
+1. Every token value that patterns P1 `CBSi.token = "…"`, P2 `'access_token': '…'` (either
+   quote), P3 `"token" : "…"`, P4 `var token = "…"` or P5 `access_token=…` find in the page,
+   and every `access_token=` value anywhere, becomes `REDACTED`.
 2. The league slug (the first label of the hostname) becomes `redacted-league`.
 3. Team names found under rosters/standings/schedules team objects become `Team A`,
    `Team B`, … in first-seen order; the longest name is replaced first so a team called

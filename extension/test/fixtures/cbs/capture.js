@@ -15,7 +15,7 @@
  * Bundle shape, consumed by scrub.mjs (the route keys must stay identical to ROUTE_FILES
  * and PRIOR_SEASON_ROUTES there):
  *   { capturedAt, slug, href, cookieNames, token: {found, pattern, length},
- *     viewerHints: [{pattern, context}], probes: {A, B, C},
+ *     viewerHints: [{pattern, context}], probes: {A, B, C}, authMode: "cookie"|"query"|"header",
  *     responses: {routeKey: {url, status, ok, body}}, pageHtml }
  */
 (async () => {
@@ -41,10 +41,14 @@
 
     // The token, if the page carries one: P1, then P2, then P3. Only {found, pattern, length}
     // is recorded here; the value itself stays inside pageHtml, which scrub.mjs redacts.
+    // Same table as TOKEN_PATTERNS in scrub.mjs, same order (its self-test checks). P1 is what a
+    // signed-in 2026 league page actually carries; P4 is the 2017 form.
     const PATTERNS = [
-      ["P1", /var token\s*=\s*"([^"]+)"/],
-      ["P2", /"access_token"\s*:\s*"([^"]+)"/],
-      ["P3", /access_token=([A-Za-z0-9._~%-]+)/],
+      ["P1", /CBSi\.token\s*=\s*"([^"]+)"/],
+      ["P2", /['"]access_token['"]\s*:\s*['"]([^'"]+)['"]/],
+      ["P3", /"token"\s*:\s*"([^"]+)"/],
+      ["P4", /var token\s*=\s*"([^"]+)"/],
+      ["P5", /access_token=([A-Za-z0-9._~%-]+)/],
     ];
     let token = null;
     for (const [name, re] of PATTERNS) {
@@ -52,7 +56,8 @@
       if (m) { token = m[1]; out.token = { found: true, pattern: name, length: m[1].length }; break; }
     }
 
-    // Viewer hints: where the page might name the viewer's own team id. Contexts are cut
+    // Viewer hints: where the page might name the viewer's own team id, plus the JSON team
+    // object that carries "long_abbr" (observed next to the viewer's name). Contexts are cut
     // from a copy with the token already blanked, so no hint can carry a token fragment.
     const hintHtml = token ? html.split(token).join("REDACTED") : html;
     const hintRe = /(my_team_id|myTeamId|owner_team_id|team_id|teamId)[^0-9]{0,20}\d+/g;
@@ -60,9 +65,20 @@
     while ((m = hintRe.exec(hintHtml)) && out.viewerHints.length < 60) {
       out.viewerHints.push({ pattern: m[1], context: hintHtml.slice(Math.max(0, m.index - 40), m.index + m[0].length + 40) });
     }
+    const abbrRe = /"long_abbr"\s*:/g;
+    let abbrHits = 0;
+    while ((m = abbrRe.exec(hintHtml)) && abbrHits < 5) {
+      abbrHits++;
+      out.viewerHints.push({ pattern: "long_abbr", context: hintHtml.slice(Math.max(0, m.index - 200), m.index + 200) });
+    }
 
     const Q = "version=3.0&SPORT=football&response_format=JSON";
-    const proxy = (route) => `${location.origin}/api/${route}${route.includes("?") ? "&" : "?"}${Q}`;
+    // The league subdomain's /api proxy does NOT infer the league from the hostname: without
+    // league_id every league-scoped route answers 400 "Missing league_id" (observed 2026-09-10).
+    const LID = `league_id=${encodeURIComponent(out.slug)}`;
+    const sep = (route) => (route.includes("?") ? "&" : "?");
+    const proxy = (route) => `${location.origin}/api/${route}${sep(route)}${Q}&${LID}`;
+    const direct = (route) => `https://api.cbssports.com/fantasy/${route}${sep(route)}${Q}&${LID}`;
     const probe = async (url, init) => {
       try {
         const res = await fetch(url, init);
@@ -78,15 +94,25 @@
     out.probes.A = await probe(proxy("league/details"), { credentials: "include" });
     // B and C: api.cbssports.com with the page token, as a bare Authorization header and as a query parameter.
     if (token) {
-      const api = `https://api.cbssports.com/fantasy/league/details?${Q}&league_id=${encodeURIComponent(out.slug)}`;
+      const api = direct("league/details");
       out.probes.B = await probe(api, { headers: { Authorization: token } });
       out.probes.C = await probe(`${api}&access_token=${encodeURIComponent(token)}`);
     } else {
       out.probes.B = null;
       out.probes.C = null;
     }
+    // Which route the bulk capture uses: the cookie proxy when it authenticates, else the page
+    // token as a query parameter (how the page's own scripts call the API), else as a header.
+    // When nothing authenticates the proxy is still used, so the 400 bodies are recorded.
+    const okProbe = (p) => !!(p && p.ok && (p.envelopeStatusCode == null || p.envelopeStatusCode === 200));
+    let mode = "cookie";
+    if (!okProbe(out.probes.A)) { if (okProbe(out.probes.C)) mode = "query"; else if (okProbe(out.probes.B)) mode = "header"; }
+    out.authMode = mode;
+    const request = (route) => (mode === "query" ? [`${direct(route)}&access_token=${encodeURIComponent(token)}`, {}]
+      : mode === "header" ? [direct(route), { headers: { Authorization: token } }]
+        : [proxy(route), { credentials: "include" }]);
     say(`token in page: ${out.token.found ? `${out.token.pattern}, ${out.token.length} chars` : "none"}; probe A ${out.probes.A.status}`
-      + (token ? `; B ${out.probes.B.status}; C ${out.probes.C.status}` : ""));
+      + (token ? `; B ${out.probes.B.status}; C ${out.probes.C.status}` : "") + `; capturing via ${mode}`);
 
     // Every league-scoped route, through the proxy with the session cookie.
     const ROUTES = [
@@ -106,9 +132,9 @@
       "league/transaction-list/add-drops",
     ];
     for (const route of ROUTES) {
-      const url = proxy(route);
+      const [url, init] = request(route);
       try {
-        const res = await fetch(url, { credentials: "include" });
+        const res = await fetch(url, init);
         const text = await res.text();
         let body = text;
         try { body = JSON.parse(text); } catch (_) { /* keep the text */ }
