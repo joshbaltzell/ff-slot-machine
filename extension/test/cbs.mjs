@@ -25,6 +25,10 @@ import { hashRosters } from "../engine/platforms/hash.js";
 import { PRO_TEAM, SLOT_LABEL } from "../engine/league.js";
 import { normStatus } from "../engine/availability.js";
 import { attachActuals } from "../engine/calibration.js";
+import { Engine } from "../engine/search.js";
+import { buildSlots, seatMask } from "../engine/lineup.js";
+import { marketView, marketCell, marketFair } from "../panel/market.js";
+import { usageView } from "../panel/usage.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -1103,6 +1107,90 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
   ok([...hollow.players.values()].some((p) => p.proj[1] > 0), "...and the other weeks are untouched");
   ok(hollow.notes.filter((n) => /^CBS: the week 3 projection/.test(n)).length === 1,
      "...and exactly one note says which week went quiet");
+}
+
+/* degradation: unmapped players (D-06)
+
+   The engine is the point of the whole seam, so it is built here on the CBS model
+   exactly as panel.js builds it on the ESPN one - and an unmapped player, who has no
+   ESPN id for any external feed to join on, has to cost a dash in one column rather
+   than a crash, a zero or a missing seat. `-cbsId` keeps him in the lineup solve; the
+   crosswalk is what he is missing, not a roster spot. */
+{
+  const { model } = await load(cbsTable());
+  const { slots, starters } = buildSlots(model.settings.lineupSlotCounts);
+  const masks = new Map([...model.players].map(([id, p]) => [id, seatMask(p.eligibleSlots, slots)]));
+  const eng = new Engine(model, { starters }, masks);
+
+  ok(eng.teams.length === model.teams.size,
+     "the Engine constructs on the CBS model, with every team in it");
+  ok(eng.teams.every((t) => {
+       const b = eng.baseline.get(t);
+       return b && b.length === model.weeks.length && [...b].every(Number.isFinite);
+     }), "every team's baseline lineup value is finite in every week");
+  ok(eng.teams.every((t) => [...eng.baseline.get(t)].some((v) => v > 0)),
+     "...and not simply zero, so the slot masks really seat CBS players");
+  ok(Array.isArray(eng.freeAgents), "eng.freeAgents is an array");
+  ok([...model.players.values()].filter((p) => p.id < 0).length > 0,
+     "the fixture really does hold unmapped players, or the rest of this proves nothing");
+
+  // A market feed that prices every crosswalked player and, necessarily, none of the
+  // rest: FantasyCalc is keyed on the ESPN id an unmapped player does not have.
+  const priced = new Map(MAPPED.map(([, espnId]) => [espnId, { value: 1000, overall: 1 }]));
+  const mkt = marketView(eng, { byEspn: priced, params: { ppr: 0.5 }, stale: false });
+  ok(mkt && mkt.priced === MAPPED.length && mkt.byIndex.size === MAPPED.length,
+     "marketView bridges the crosswalked players onto engine indices and no one else");
+
+  const idx = (id) => eng.index.get(id);
+  const mappedA = MAPPED[0][1], mappedB = MAPPED[1][1];
+  const unmapped = [...model.players.values()].find((p) => p.id < 0).id;
+  const teamOf = (id) => eng.teams.find((t) => eng.roster.get(t).includes(idx(id))) ?? eng.teams[0];
+
+  const bothPriced = { sides: [{ team: teamOf(mappedA), sent: [idx(mappedA)], received: [idx(mappedB)] }] };
+  const withUnmapped = { sides: [{ team: teamOf(mappedA), sent: [idx(unmapped)], received: [idx(mappedA)] }] };
+
+  ok(typeof marketFair(bothPriced, mkt) === "number",
+     "a trade between two crosswalked players has a real fairness number");
+  ok(!marketCell(bothPriced, mkt).includes("—"),
+     "...so its market cell is a bar, not a dash");
+  ok(marketFair(withUnmapped, mkt) === null,
+     "one unmapped player in the deal is enough to have no fairness at all");
+  ok(marketCell(withUnmapped, mkt).includes("—"),
+     "...and his market cell is a dash");
+  ok(marketCell(withUnmapped, mkt).split("<td").length === 2,
+     "...still exactly one cell, so a dash never shifts the column count");
+
+  ok(marketView(eng, null) === null, "a dead market feed is a null view, not a throw");
+  ok(marketCell(bothPriced, null).includes("—"),
+     "...and then every cell is a dash, including one both of whose players are mapped");
+  const emptyFeed = marketView(eng, { byEspn: new Map(), params: {}, stale: false });
+  ok(emptyFeed && emptyFeed.priced === 0 && marketCell(bothPriced, emptyFeed).includes("—"),
+     "a feed that answered with nothing priced reads the same as a dead one");
+
+  // Usage joins through Sleeper, which is keyed on the ESPN id too.
+  ok(usageView(model, null, model.settings.currentWeek) === null,
+     "a dead usage feed is a null view, not a throw");
+  const sleeperRow = { player_id: "4001", espn_id: String(mappedA), team: "KC",
+                       depth_chart_order: 1, depth_chart_position: "RB" };
+  const rec = { off_snp: 40, tm_off_snp: 60, rec_tgt: 8, rec_air_yd: 90, rush_att: 4,
+                pass_att: 0, rec_td: 1, rush_td: 0, pts_half_ppr: 18, pts_ppr: 20, pts_std: 15, team: "KC" };
+  const loadedUsage = {
+    players: { bySleeper: new Map([["4001", sleeperRow]]), at: 0 },
+    stats: { byWeek: new Map([[1, new Map([["4001", rec]])], [2, new Map([["4001", rec]])]]),
+             weeks: [1, 2], failed: [] },
+    trending: [],
+  };
+  const view = usageView(model, loadedUsage, 3);
+  ok(view && view.table.rows.get(mappedA), "a crosswalked player joins the usage table");
+  ok([...view.table.rows.keys()].every((id) => id > 0),
+     "no unmapped player is ever in it: a negative id is one no external feed can key on");
+  ok(view.table.rows.size === 1 && model.players.size > 1,
+     "...so 1 of the league's players has usage and the rest simply show nothing");
+
+  ok(model.notes.some((n) => /^CBS: id crosswalk/.test(n)),
+     "and the panel is told: one note says how many players the crosswalk mapped");
+  ok(/\bdashes\b/.test(model.notes.find((n) => /^CBS: id crosswalk/.test(n))),
+     "...in the words the user needs - the unmapped ones will show dashes");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);
