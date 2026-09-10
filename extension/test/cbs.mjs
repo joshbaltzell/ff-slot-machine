@@ -24,6 +24,7 @@ import { IDS_URL, IDS_KEY, trimIds, loadCrosswalk } from "../engine/sources/fant
 import { hashRosters } from "../engine/platforms/hash.js";
 import { PRO_TEAM, SLOT_LABEL } from "../engine/league.js";
 import { normStatus } from "../engine/availability.js";
+import { attachActuals } from "../engine/calibration.js";
 
 let checks = 0, failures = 0;
 const ok = (c, what) => { checks++; if (!c) { failures++; console.log(`  FAIL ${what}`); } };
@@ -437,6 +438,11 @@ const SETTINGS = readSettings(body("rules.json"), body("details.json"), body("sc
 const WEEKS = [...SETTINGS.regularSeasonWeeks, ...SETTINGS.playoffWeeks];
 const ROSTER_TEAMS = body("rosters.json").rosters.teams;
 const ROSTER_IDS = ROSTER_TEAMS.flatMap((t) => t.players.map((p) => Number(p.id)));
+const ROSTER_SET = new Set(ROSTER_IDS);
+// The prior season arrives through the same route with a timeframe: one recorded
+// attempt per parameter set, keyed by route in the fixture (README Findings).
+const PRIOR = file("prior-season.json")["league/fantasy-points/weekly-scoring?timeframe=2025"].body;
+const FA_ROWS = body("stats-free-agents-week1.json").league_stats.players;
 
 // Five rostered players mapped, one given the file's NA sentinel, and the first id
 // repeated with a different espn_id so "first row wins" is visible in the model.
@@ -448,16 +454,26 @@ const CSV = ["fantasypros_id,espn_id,cbs_id,name",
   `199,NA,${NA_ID},unmapped`].join("\n") + "\n";
 
 function cbsTable({ crosswalk = true, injuries = true, page = PAGE, details = env("details.json"),
-                    weeks = WEEKS, ref = REF } = {}) {
+                    weeks = WEEKS, ref = REF, freeAgents = true, schedule = true, standings = true,
+                    history = env("weekly-scoring.json"), prior = PRIOR } = {}) {
   const t = {};
   const put = (route, params, value) => { for (const s of SESSIONS) t[cbsUrl(ref, route, params, s)] = value; };
   put("league/details", {}, details);
   put("league/rules", {}, env("rules.json"));
   put("league/scoring/rules", {}, env("scoring-rules.json"));
   put("league/rosters", { team_id: "all" }, env("rosters.json"));
-  for (const w of weeks)
+  for (const w of weeks) {
     put("league/stats", { stats_type: "projections", period: `week${w}`, player_status: "all" },
         env(w === 2 ? "stats-week2.json" : "stats-week1.json"));
+    if (freeAgents)
+      put("league/stats", { stats_type: "projections", period: `week${w}`, player_status: "free_agents" },
+          env("stats-free-agents-week1.json"));
+  }
+  if (schedule) put("league/schedules", { period: "all" }, env("schedules.json"));
+  if (standings) put("league/standings/overall", {}, env("standings.json"));
+  if (history) put("league/fantasy-points/weekly-scoring", { player_status: "all" }, history);
+  if (prior) put("league/fantasy-points/weekly-scoring",
+                 { player_status: "all", timeframe: String(ref.seasonId - 1) }, prior);
   if (injuries) t[publicUrl("players/injuries")] = file("public/players-injuries.json");
   if (crosswalk) t[IDS_URL] = CSV;
   if (page !== null) t[pageUrl(ref)] = page;
@@ -815,6 +831,197 @@ const authOf = (f, k) => f.inits[k]?.headers?.Authorization;
   catch (e) { viaHandover = `threw: ${e.message}`; }
   ok(asked === 0 && viaHandover === null,
      "the fingerprint never asks a content script for a token: the service worker has no tab to ask");
+}
+
+/* free agents (D-14): the unrostered pool, scored under this league's own settings */
+// The recorded free-agent route answers one week; the table serves it for every week,
+// so what is pinned here is the record shape and the cadence, not week-to-week numbers.
+const FA_KEEP = FA_ROWS.filter((r) => Number(r.FPTS) > 0).length;
+const attempt = async (fn) => { try { return await fn(); } catch (e) { return { __error: String(e.message ?? e) }; } };
+{
+  const f = countingFetch(cbsTable());
+  const fas = await attempt(() => cbs.loadFreeAgents({ ...REF }, WEEKS, { fetchImpl: f, storage: mkStorage(), now: 0 }));
+  const list = Array.isArray(fas) ? fas : [];
+  ok(Array.isArray(fas), `loadFreeAgents returns an array (${fas?.__error ?? "ok"})`);
+  ok(list.length === FA_KEEP && FA_KEEP < FA_ROWS.length,
+     `every free agent CBS projects is returned (${FA_KEEP} of ${FA_ROWS.length}) and the rest are dropped`);
+  ok(list.every((p) => p.teamId === null), "a free agent belongs to no team");
+  ok(list.every((p) => typeof p.id === "number" && Number.isInteger(p.id)), "every id is an integer Number");
+  ok(list.every((p) => !ROSTER_SET.has(-p.id)), "...and no rostered player is in the pool");
+  ok(list.every((p) => typeof p.owned === "number" && Number.isFinite(p.owned)), "owned is a number");
+  ok(list.every((p) => Array.isArray(p.history) && p.history.length === 0),
+     "a free agent carries an empty history: weekly scoring is read for the roster, not the pool");
+  ok(list.every((p) => WEEKS.every((w) => typeof p.proj[w] === "number" && Number.isFinite(p.proj[w]))),
+     "every requested week carries a finite projection");
+  ok(list.every((p) => WEEKS.some((w) => p.proj[w] > 0)), "...and every player kept projects something somewhere");
+  ok(list.every((p) => typeof p.bye === "number" && typeof p.nfl === "string" && typeof p.pos === "string"),
+     "the rest of the record is the shape the model already speaks");
+  const ward = list.find((p) => p.name === "Cam Ward");
+  ok(ward && ward.proj[1] === 19.6 && ward.pos === "QB" && ward.nfl === "TEN",
+     "a named free agent carries his recorded FPTS, position and pro team");
+  ok(ward && ward.eligibleSlots.includes(0) && ward.eligibleSlots.includes(20) && ward.eligibleSlots.includes(21),
+     "...and seats where the league's own slots let him, plus bench and IR");
+
+  const fa = f.calls.filter((u) => u.includes("player_status=free_agents"));
+  ok(fa.length === WEEKS.length, `one free-agent request per week (${WEEKS.length})`);
+  ok(fa.every((u) => u.includes("stats_type=projections")), "...each asking for projections");
+  ok(f.maxStatsInflight === 3, "never more than three in flight at once");
+  ok(!f.calls.some((u) => u.includes("player_status=all")), "...and the rostered pool is not fetched again");
+
+  // The horizon: a league in week 5 is asked about weeks 5 onward and no earlier.
+  const late = structuredClone(env("details.json"));
+  late.body.league_details.current_period = "5";
+  const f5 = countingFetch(cbsTable({ details: late }));
+  await attempt(() => cbs.loadFreeAgents({ ...REF }, WEEKS, { fetchImpl: f5, storage: mkStorage(), now: 0 }));
+  const asked = f5.calls.filter((u) => u.includes("player_status=free_agents"))
+    .map((u) => Number(/period=week(\d+)/.exec(u)[1])).sort((a, b) => a - b);
+  ok(same(asked, WEEKS.filter((w) => w >= 5)), "only the weeks that remain are asked for");
+
+  const dead = await attempt(() => cbs.loadFreeAgents({ ...REF }, WEEKS, { fetchImpl: countingFetch({}), storage: mkStorage(), now: 0 }));
+  ok(!Array.isArray(dead) && typeof dead.__error === "string",
+     "a dead free-agent route throws: the panel's own catch turns it into one line and no pool");
+}
+
+/* schedule: real matchups, by week, keyed on the names the Engine keys on */
+{
+  const { model } = await load(cbsTable());
+  const f = countingFetch(cbsTable());
+  const byWeek = await attempt(() => cbs.loadSchedule({ ...REF }, model.teams, { fetchImpl: f, storage: mkStorage(), now: 0 }));
+  const map = byWeek instanceof Map ? byWeek : new Map();
+  ok(byWeek instanceof Map, `loadSchedule returns a Map (${byWeek?.__error ?? "ok"})`);
+  ok(map.size === 14, "one entry per period that has matchups: the 14 regular-season weeks");
+  ok([...map.keys()].every((w) => Number.isInteger(w)), "...keyed on the period number, as a number");
+  ok([...map.values()].every((ms) => ms.length === 6), "six matchups a week in a twelve-team league");
+  const names = new Set([...model.teams.values()].map((t) => t.name));
+  ok([...map.values()].flat().every(([h, a]) => names.has(h) && names.has(a)),
+     "every pair is [homeName, awayName], resolved through teamsById to the names the Engine keys on");
+  const week1 = body("schedules.json").schedule.periods[0].matchups[0];
+  ok(same(map.get(1)?.[0], [model.teams.get(Number(week1.home_team.id)).name,
+                            model.teams.get(Number(week1.away_team.id)).name]),
+     "...home first, away second, as the payload orders them");
+  ok(f.calls.filter((u) => u.includes("league/schedules")).length === 1
+     && f.calls.some((u) => u.includes("period=all")), "one league/schedules?period=all request");
+
+  // An entry with a side missing is a bye or a placeholder, and is skipped.
+  const holed = structuredClone(env("schedules.json"));
+  delete holed.body.schedule.periods[0].matchups[0].away_team;
+  holed.body.schedule.periods[0].matchups[1].home_team.id = "999";
+  const partial = await attempt(() => cbs.loadSchedule({ ...REF }, model.teams,
+    { fetchImpl: countingFetch(cbsTable({ schedule: false, ref: REF })), storage: mkStorage(), now: 0 }));
+  ok(!(partial instanceof Map) && typeof partial.__error === "string",
+     "a failing schedules route rejects, which is what the panel's catch reads as all-play");
+  const holedTable = { ...cbsTable() };
+  for (const s of SESSIONS) holedTable[cbsUrl(REF, "league/schedules", { period: "all" }, s)] = holed;
+  const skipped = await attempt(() => cbs.loadSchedule({ ...REF }, model.teams,
+    { fetchImpl: countingFetch(holedTable), storage: mkStorage(), now: 0 }));
+  ok(skipped instanceof Map && skipped.get(1)?.length === 4,
+     "a matchup with no away side and one naming a team that is not in the league are both skipped");
+}
+
+/* standings and history: the season starts from the record, not from 0-0 */
+{
+  const { model } = await load(cbsTable());
+  const rows = body("standings.json").overall_standings.teams;
+  const teams = [...model.teams.values()];
+  ok(teams.length === rows.length && teams.every((t) => t.record !== undefined),
+     "every team carries a record when the standings answer for every team");
+  ok(teams.every((t) => ["wins", "losses", "ties", "pointsFor"].every((k) => typeof t.record?.[k] === "number")),
+     "...each of them {wins, losses, ties, pointsFor} numbers");
+  const first = rows[0];
+  const mine = model.teams.get(Number(first.id));
+  ok(mine?.record?.wins === Number(first.wins) && mine?.record?.losses === Number(first.losses)
+     && mine?.record?.ties === Number(first.ties) && mine?.record?.pointsFor === Number(first.points_scored),
+     "...read from the standings row for that team, points scored included");
+  ok(!model.notes.some((n) => /standings unavailable/.test(n)), "a working standings route raises no note");
+
+  const { model: noStand } = await load(cbsTable({ standings: false }));
+  ok([...noStand.teams.values()].every((t) => t.record === undefined),
+     "a dead standings route leaves every team with no record at all, never a fabricated 0-0");
+  ok(noStand.notes.filter((n) => /^CBS: standings unavailable/.test(n)).length === 1,
+     "...and says so in exactly one note (panel.js then projects from 0-0 and prints it)");
+  ok(noStand.players.size === ROSTER_IDS.length, "...and the league still loads");
+
+  // The builder, on the rows the recorded feed actually holds: free agents only, so
+  // the rostered path is exercised with a synthetic row of the same shape (README
+  // Findings weekly_scoring_shape - player_status defaults to free_agents).
+  const hist = typeof CBS.historyFromWeeklyScoring === "function"
+    ? CBS.historyFromWeeklyScoring(body("weekly-scoring.json"), 2026) : new Map();
+  ok(hist instanceof Map && hist.size === body("weekly-scoring.json").weekly_scoring.players.length,
+     "historyFromWeeklyScoring returns one entry per player the feed carries");
+  ok(same(hist.get(26698879), [{ season: 2026, week: 1, actual: 1.1, proj: null }]),
+     "...each a {season, week, actual, proj: null} row per period played, keyed on the CBS id");
+  ok([...hist.values()].flat().every((h) => h.proj === null && Number.isInteger(h.season)
+     && Number.isInteger(h.week) && typeof h.actual === "number"),
+     "...CBS publishes no historical projection, so proj is null on every row, never 0");
+  const priorHist = typeof CBS.historyFromWeeklyScoring === "function"
+    ? CBS.historyFromWeeklyScoring(PRIOR.body, 2025) : new Map();
+  ok(priorHist.get(2260977)?.length === 22 && priorHist.get(2260977)?.[0].season === 2025,
+     "the prior season reads the same way through timeframe, 22 periods of it");
+  ok(same(CBS.historyFromWeeklyScoring?.(null, 2026), new Map())
+     || (CBS.historyFromWeeklyScoring?.(null, 2026)?.size === 0),
+     "an empty body is an empty map, not a throw");
+
+  // The wiring: a rostered player's rows reach his record, and the calibration log
+  // can then fill an actual from them.
+  const ROSTERED = ROSTER_IDS[0];
+  const spliced = structuredClone(env("weekly-scoring.json"));
+  spliced.body.weekly_scoring.player_status = "all";
+  spliced.body.weekly_scoring.players.push({
+    id: String(ROSTERED), total: "20.5", avg: "20.5",
+    player: { id: String(ROSTERED), name: "rostered", position: "RB", pro_team: "KC",
+              eligible_positions: ["RB", "RB-WR-TE"], free_agent: 0 },
+    periods: [{ period: "1", score: "20.5" }],
+  });
+  const { model: withHist } = await load(cbsTable({ history: spliced }));
+  const him = withHist.players.get(MAPPED.find(([c]) => c === ROSTERED)?.[1] ?? -ROSTERED);
+  ok(him && same(him.history, [{ season: 2026, week: 1, actual: 20.5, proj: null }]),
+     "a rostered player's weekly scoring reaches his history, on the id the crosswalk gave him");
+  ok([...withHist.players.values()].filter((p) => p.history.length).length === 1,
+     "...and only the players the feed names: the other 167 keep an empty history");
+  const log = { weeks: { 1: { rows: [{ id: him?.id, pos: "RB", espn: 18.2, actual: null }] } } };
+  const filled = attachActuals(log, withHist.players, 2026);
+  ok(filled.filled === 1 && log.weeks[1].rows[0].actual === 20.5,
+     "attachActuals fills the calibration log's actual from that history, unchanged in shape");
+
+  const { model: noHist } = await load(cbsTable({ history: null, prior: null }));
+  ok([...noHist.players.values()].every((p) => p.history.length === 0),
+     "a dead weekly-scoring route leaves every history empty");
+  ok(noHist.notes.filter((n) => /^CBS: weekly scoring/.test(n)).length >= 1,
+     "...and says so, rather than showing an empty history in silence");
+  ok(noHist.players.size === ROSTER_IDS.length, "...and the league still loads");
+  ok(!model.notes.some((n) => /no weekly history/.test(n)),
+     "the 11-05 placeholder note is gone: history and standings are read now");
+}
+
+/* identify (D-16): the team page, then the page hint, then honesty */
+{
+  const { model } = await load(cbsTable());
+  const HINT = 16;
+  const named = model.teams.get(HINT)?.name;
+  const fromPage = await attempt(() => cbs.identify({ ...REF, teamId: HINT }, model, { fetchImpl: deadFetch() }));
+  ok(same(fromPage, { team: named, how: "the team page you came from" }),
+     "the team page the user came from wins");
+  const fromHint = await attempt(() => cbs.identify(
+    { ...REF, session: { mode: "token", token: "TESTTOKEN-x", teamHint: HINT } }, model, { fetchImpl: deadFetch() }));
+  ok(same(fromHint, { team: named, how: "your CBS league page" }),
+     "...then the id the league page embeds");
+  const neither = await attempt(() => cbs.identify(
+    { ...REF, session: { mode: "cookie", token: null, teamHint: null } }, model, { fetchImpl: deadFetch() }));
+  ok(same(neither, { team: null, how: null }),
+     "with neither, it says so rather than guessing: pickTeam asks");
+  const unknown = await attempt(() => cbs.identify({ ...REF, teamId: 4242 }, model, { fetchImpl: deadFetch() }));
+  ok(same(unknown, { team: null, how: null }), "a team id no team has is not a match");
+
+  // The cookie route never reads the page, so the hint is only there to be had if
+  // identify goes and gets it - one credentialed read of the same page openSession
+  // would have read, and nothing else.
+  const f = countingFetch(cbsTable());
+  const cookieRef = { ...REF, session: { mode: "cookie", token: null, teamHint: null } };
+  const fetched = await attempt(() => cbs.identify(cookieRef, model, { fetchImpl: f, storage: mkStorage(), now: 0 }));
+  ok(same(fetched, { team: named, how: "your CBS league page" }),
+     "on the cookie route identify reads the league page for the hint");
+  ok(f.calls.length === 1 && f.calls[0] === pageUrl(REF), "...one page read, and nothing else");
+  ok(cookieRef.session.teamHint === HINT, "...remembered on the ref for the rest of the run");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);

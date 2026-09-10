@@ -217,6 +217,9 @@ const CBS_SETTINGS = cbsReadSettings(cbsBody("rules.json"), cbsBody("details.jso
 const CBS_WEEKS = [...CBS_SETTINGS.regularSeasonWeeks, ...CBS_SETTINGS.playoffWeeks];
 const CBS_ROSTERS = cbsBody("rosters.json").rosters.teams;
 const CBS_IDS = CBS_ROSTERS.flatMap((t) => t.players.map((p) => Number(p.id)));
+// The prior season is the same route with a timeframe; the fixture keys the three
+// recorded attempts by route (11-01 README Findings).
+const CBS_PRIOR = cbsFile("prior-season.json")["league/fantasy-points/weekly-scoring?timeframe=2025"].body;
 
 // A db_playerids.csv with the real header: the first five rostered CBS ids mapped to
 // 900001..900005, the first id repeated with a different espn_id (first row must win),
@@ -246,9 +249,17 @@ function cbsTable({ crosswalk = true, injuries = true, page = CBS_PAGE, routes =
   put("league/rules", {}, routes["league/rules"] ?? cbsEnv("rules.json"));
   put("league/scoring/rules", {}, routes["league/scoring/rules"] ?? cbsEnv("scoring-rules.json"));
   put("league/rosters", { team_id: "all" }, routes["league/rosters"] ?? cbsEnv("rosters.json"));
-  for (const w of CBS_WEEKS)
+  for (const w of CBS_WEEKS) {
     put("league/stats", { stats_type: "projections", period: `week${w}`, player_status: "all" },
         cbsEnv(w === 2 ? "stats-week2.json" : "stats-week1.json"));
+    put("league/stats", { stats_type: "projections", period: `week${w}`, player_status: "free_agents" },
+        cbsEnv("stats-free-agents-week1.json"));
+  }
+  put("league/schedules", { period: "all" }, cbsEnv("schedules.json"));
+  put("league/standings/overall", {}, cbsEnv("standings.json"));
+  put("league/fantasy-points/weekly-scoring", { player_status: "all" }, cbsEnv("weekly-scoring.json"));
+  put("league/fantasy-points/weekly-scoring", { player_status: "all", timeframe: String(CBS_REF.seasonId - 1) },
+      CBS_PRIOR);
   if (injuries) t[CBS_INJURIES_URL] = cbsFile("public/players-injuries.json");
   if (crosswalk) t[IDS_URL] = CBS_IDS_CSV;
   if (page !== null) t[CBS_PAGE_URL] = page;
@@ -367,6 +378,29 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
   ok(players.every((p) => CBS_WEEKS.every((w) => typeof p.proj[w] === "number" && Number.isFinite(p.proj[w]))),
      "every week of the model carries a finite projection");
   ok(players.some((p) => p.proj[1] > 0), "week 1 projections are read from the recorded stats route");
+
+  // Records and history reach the model, so the schema is asserted with them present
+  // and not only on the thinner shape 11-05 could produce.
+  ok([...model.teams.values()].every((t) => t.record
+       && ["wins", "losses", "ties", "pointsFor"].every((k) => typeof t.record[k] === "number")),
+     "every CBS team carries a {wins, losses, ties, pointsFor} record from the standings");
+  ok(players.every((p) => Array.isArray(p.history)), "every CBS player carries a history array");
+
+  // The free-agent pool merged exactly as panel.js merges it, then the whole schema
+  // again: a free agent is a player like any other and must satisfy the same contract.
+  let fas = [], faErr = null;
+  try {
+    fas = await cbs.loadFreeAgents({ ...CBS_REF }, CBS_WEEKS,
+      { fetchImpl: mkFetch(cbsTable()), storage: mkStorage(), now: 0 });
+  } catch (e) { faErr = String(e.message ?? e); }
+  ok(Array.isArray(fas) && fas.length > 0, `loadFreeAgents returns a non-empty pool (${faErr ?? fas.length})`);
+  const merged = { ...model, players: new Map(model.players) };
+  for (const fa of fas) merged.players.set(fa.id, fa);
+  ok(merged.players.size === model.players.size + fas.length,
+     "...and no free agent lands on a key a rostered player already holds");
+  assertModel(merged, "cbs+free agents");
+  ok([...merged.players.values()].filter((p) => p.teamId === null).length === fas.length,
+     "the merged pool is exactly the players belonging to no team, which is what search.js reads as free");
 
   // trimIds keeps both columns from the one download.
   const ids = trimIds(CBS_IDS_CSV);
