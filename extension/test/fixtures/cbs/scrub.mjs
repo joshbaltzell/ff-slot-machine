@@ -7,8 +7,9 @@
  *   node scrub.mjs --verify <dir>        re-check a fixture directory; prints FIXTURES OK
  *
  * The raw bundle capture.js downloads carries a live API token, the league slug, team
- * names and owner strings. None of those may reach the repository (D-18). Rules, applied
- * to every string in the bundle — keys, values and URLs alike:
+ * names and owner strings. None of those may reach the repository (D-18). Rules 1 and 2 are
+ * applied to every string in the bundle — keys, values and URLs alike; rules 3 and 4 stop at
+ * the value boundary, because a key is a schema name (see mapStrings):
  *
  *   1. every token value P1–P5 find in pageHtml, and every access_token= value  -> REDACTED
  *   2. the slug                                                                  -> redacted-league
@@ -97,13 +98,20 @@ const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const letters = (i) => { let s = ""; i += 1; while (i > 0) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; };
 const byLenDesc = (a, b) => b[0].length - a[0].length;
 
-/** Map every string in a JSON value — keys included — through fn. */
+/**
+ * Map every string in a JSON value through fn. Object KEYS go through `fn.key` when the
+ * scrubber provides one, because a key is a schema name and not free text: one real team's
+ * short_name is the word "Draft", and rewriting keys turned `draft_type` into `Team B_type`
+ * (observed 2026-09-10). Keys still get the token and slug rules; only the name tables stop
+ * at the value boundary.
+ */
 function mapStrings(value, fn) {
+  const keyFn = fn.key ?? fn;
   if (typeof value === "string") return fn(value);
   if (Array.isArray(value)) return value.map((v) => mapStrings(v, fn));
   if (value && typeof value === "object") {
     const out = {};
-    for (const [k, v] of Object.entries(value)) out[fn(k)] = mapStrings(v, fn);
+    for (const [k, v] of Object.entries(value)) out[keyFn(k)] = mapStrings(v, fn);
     return out;
   }
   return value;
@@ -201,9 +209,11 @@ function collect(bundle) {
     }
     return s;
   });
-  // league display name from league/details
+  // league display name from league/details. Recorded 2026-09-10: the envelope's body is a
+  // single `league_details` object, so that path comes first.
   const d = bundle.responses?.["league/details"]?.body;
-  for (const cand of [d?.body?.league?.name, d?.body?.name, d?.body?.league_name, d?.league?.name, d?.name, d?.league_name]) {
+  for (const cand of [d?.body?.league_details?.name, d?.body?.league?.name, d?.body?.name, d?.body?.league_name,
+    d?.league_details?.name, d?.league?.name, d?.name, d?.league_name]) {
     if (typeof cand === "string" && cand.trim().length >= 3 && !/^\d+$/.test(cand)) { c.league = cand.trim(); break; }
   }
   // 3. team names (and abbreviations) first, so an owner field holding a team name is not mistaken for a person
@@ -224,19 +234,29 @@ function makeScrubber(c, skip = new Set()) {
   if (c.league && !skip.has("league")) named.push([c.league, "Redacted League"]);
   if (!skip.has("teams")) named.push(...[...c.teams].sort(byLenDesc));
   if (!skip.has("owners")) named.push(...[...c.owners].sort(byLenDesc));
-  if (c.slug && !skip.has("slug")) named.push([c.slug, "redacted-league"]);
+  /* The slug is handled with the tokens below: it is the one name that may legitimately appear
+   * in a key (and it is a DNS label, so it cannot collide with an English word). */
   let extraEmails = 0;
-  return (s) => {
-    if (typeof s !== "string" || !s) return s;
+  /* Tokens and the slug: safe on a key as on a value, and a token in a key would still be a token. */
+  const secrets = (s) => {
     let t = s;
     if (!skip.has("tokens")) {
       for (const tok of tokens) t = t.split(tok).join("REDACTED");
       for (const [, src] of TOKEN_PATTERNS) t = t.replace(re(src), (m, g1) => (g1 && g1 !== "REDACTED" ? m.replace(g1, "REDACTED") : m));
     }
+    if (c.slug && !skip.has("slug") && c.slug.length >= 3) t = t.replace(bounded(c.slug), "redacted-league");
+    return t;
+  };
+  const scrub = (s) => {
+    if (typeof s !== "string" || !s) return s;
+    let t = secrets(s);
     for (const [from, to] of named) if (from.length >= 3) t = t.replace(bounded(from), to);
     if (!skip.has("owners")) t = t.replace(EMAIL_RE, (m) => (m.endsWith("@example.invalid") ? m : `owner-x${++extraEmails}@example.invalid`));
     return t;
   };
+  /* Keys are schema names, not free text: the name tables stop here (see mapStrings). */
+  scrub.key = (s) => (typeof s === "string" && s ? secrets(s) : s);
+  return scrub;
 }
 
 /** Rewrite name-shaped fields in place (covers names too short for the global pass), then every string. */
@@ -254,20 +274,44 @@ function deepScrub(value, c, scrub, key = null) {
   return mapStrings(clone, scrub);
 }
 
+/**
+ * Split a written file into the text the name rules govern (its values) and its keys. A key is a
+ * schema name the scrubber deliberately leaves alone, so a team called "Draft" must not make
+ * `draft_type` read as a leak — but a key that IS a name, exactly, still must.
+ */
+function splitKeysAndValues(text, isJson) {
+  if (!isJson) return { values: text, keys: [] };
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return { values: text, keys: [] }; }
+  const values = [], keys = [];
+  (function walk(v) {
+    if (typeof v === "string") values.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) { keys.push(k); walk(x); }
+  })(parsed);
+  return { values: values.join("\n"), keys };
+}
+
 /** Re-read written files; return one line per surviving secret. Never prints a secret. */
 function findLeaks(files, c) {
   const leaks = [];
-  const named = [[c.slug, "the slug"], [c.league, "the league name"],
+  const named = [[c.league, "the league name"],
     ...[...c.teams.keys()].map((n, i) => [n, `team name ${i + 1}`]),
     ...[...c.owners.keys()].map((n, i) => [n, `owner string ${i + 1}`])];
   for (const f of files) {
     const text = fs.readFileSync(f, "utf8");
     const rel = path.basename(f);
+    const { values, keys } = splitKeysAndValues(text, rel.endsWith(".json"));
     for (const tok of c.tokens) {
       if (text.includes(tok)) { leaks.push(`${rel}: a token value survives`); continue; }
       if (tok.length >= 16) for (let i = 0; i + 12 <= tok.length; i++) if (text.includes(tok.slice(i, i + 12))) { leaks.push(`${rel}: a 12-character token fragment survives`); break; }
     }
-    for (const [n, label] of named) if (n && n.length >= 3 && bounded(n).test(text)) leaks.push(`${rel}: ${label} survives`);
+    if (c.slug && c.slug.length >= 3 && bounded(c.slug).test(text)) leaks.push(`${rel}: the slug survives`);
+    for (const [n, label] of named) {
+      if (!n || n.length < 3) continue;
+      if (bounded(n).test(values)) leaks.push(`${rel}: ${label} survives`);
+      else if (keys.some((k) => k.toLowerCase() === n.toLowerCase())) leaks.push(`${rel}: ${label} survives as a key`);
+    }
     for (const m of text.matchAll(EMAIL_RE)) if (!m[0].endsWith("@example.invalid")) { leaks.push(`${rel}: an e-mail address outside example.invalid survives`); break; }
     for (const [name, src] of TOKEN_PATTERNS) for (const m of text.matchAll(re(src))) if (m[1] && m[1] !== "REDACTED") { leaks.push(`${rel}: a ${name} token value survives`); break; }
     if (/^page(-meta)?\.(html|json)$/.test(path.basename(rel)) && pageFieldLeaks(text)) leaks.push(`${rel}: a name-shaped page field survives`);
