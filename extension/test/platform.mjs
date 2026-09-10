@@ -490,6 +490,91 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "so a record migrated from a legacy key is never flagged on its first check - the upgrade produces no spurious notice");
 }
 
+/* service worker (D-09): a module worker that fingerprints through the adapter */
+{
+  ok(same(manifest.background, { service_worker: "background.js", type: "module" }),
+     "manifest.background is { service_worker: background.js, type: module }");
+
+  // A chrome stub with exactly what background.js touches: listener registration at
+  // load, storage, tabs, the badge. Storage is this file's Map so the worker's writes
+  // can be read back, and fetch is stubbed so the adapter's one request never leaves
+  // Node. The store starts with a legacy record as a pre-11-04 panel run left it.
+  const listeners = {}, badge = [], tabs = [], urls = [];
+  const on = (name) => ({ addListener: (fn) => { (listeners[name] ??= []).push(fn); } });
+  const store = mkStorage();
+  const before = Date.now();
+  await store.set({ "ffsm.league.7.2026": { at: before, offers: 2, team: "T", rosterHash: "legacy", changed: false } });
+  globalThis.chrome = {
+    action: { onClicked: on("click"), setBadgeText: async ({ text }) => { badge.push(text); }, setBadgeBackgroundColor: async () => {} },
+    runtime: { onInstalled: on("installed"), onMessage: on("message"), getURL: (p) => `chrome-extension://ffsm/${p}` },
+    alarms: { create: () => {}, onAlarm: on("alarm") },
+    tabs: { create: async (o) => { tabs.push(o); } },
+    storage: { local: store },
+  };
+  const payload = { teams: [{ id: 1, roster: { entries: [{ playerPoolEntry: { id: 30 } }, { playerPoolEntry: { id: 4 } }] } }] };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { urls.push(String(url)); return { ok: true, status: 200, json: async () => structuredClone(payload) }; };
+  // Every stubbed call resolves in microtasks, so two macrotask turns drain a whole check.
+  const settle = async () => { for (let i = 0; i < 2; i++) await new Promise((r) => setTimeout(r, 0)); };
+  const fire = async (msg) => { for (const fn of listeners.alarm ?? []) fn(msg); await settle(); };
+  const ask = (msg) => new Promise((resolve) => { listeners.message[0](msg, {}, resolve); });
+
+  let loaded = false, loadErr = null;
+  try { await import("../background.js"); loaded = true; } catch (e) { loadErr = e; }
+  ok(loaded, `background.js imports under Node with a chrome stub and no DOM (${loadErr?.message ?? "loaded"})`);
+  ok(listeners.click?.length === 1 && listeners.installed?.length === 1 && listeners.alarm?.length === 1 && listeners.message?.length === 2,
+     "at load it registers the click, install, alarm and two message listeners");
+  ok(urls.length === 0 && badge.length === 0, "and makes no request and paints no badge at load");
+
+  // The daily alarm: migrate first, then one fingerprint per record, adopt on first sight.
+  await fire({ name: "ffsm.daily" });
+  const all = await store.get(null);
+  const rec = all["ffsm.league.espn.7.2026"];
+  ok(!("ffsm.league.7.2026" in all) && same(rec?.ref, { platform: "espn", leagueId: 7, seasonId: 2026 }),
+     "the alarm migrates the legacy key before checking, so the record carries ref");
+  ok(urls.length === 1 && /\/seasons\/2026\/segments\/0\/leagues\/7\?view=mRoster&view=mTeam$/.test(urls[0]),
+     "one request for the league, addressed by the record's ref");
+  const h1 = hashRosters([{ id: 1, ids: [30, 4] }]);
+  ok(rec?.rosterHash === h1 && rec?.latestHash === h1 && rec?.changed === false && rec?.checkedAt >= before,
+     "a migrated record adopts the first hash instead of comparing - no spurious notice after the upgrade");
+  ok(rec?.at === before && rec?.offers === 2 && rec?.team === "T", "what the panel wrote is kept");
+  ok(badge.at(-1) === "", "nothing changed, so the badge is blank");
+
+  // A roster move since: flagged against the adopted hash, which stays the baseline.
+  payload.teams[0].roster.entries.push({ playerPoolEntry: { id: 9 } });
+  await fire({ name: "ffsm.daily" });
+  const rec2 = (await store.get(null))["ffsm.league.espn.7.2026"];
+  ok(rec2?.changed === true && rec2?.rosterHash === h1 && rec2?.latestHash === hashRosters([{ id: 1, ids: [30, 4, 9] }]),
+     "a later roster change is flagged; the adopted hash stays as the baseline");
+  ok(badge.at(-1) === "!", "and the badge lights");
+  ok(urls.length === 2 && same(Object.keys(await store.get(null)), ["ffsm.league.espn.7.2026"]),
+     "still one request per check, and the only key written is the record's");
+
+  // Signed out: the fingerprint is null and the record is left exactly as it was.
+  globalThis.fetch = async () => ({ ok: false, status: 401 });
+  await fire({ name: "ffsm.daily" });
+  ok(rec2 && same((await store.get(null))["ffsm.league.espn.7.2026"], rec2), "a failed fingerprint leaves the record untouched");
+  await fire({ name: "something.else" });
+  ok(urls.length === 2, "another alarm is not the daily check");
+
+  // The content script's question, answered through leagueKey and labelled with the platform.
+  const status = await ask({ type: "ffsm.status", leagueId: 7, seasonId: 2026 });
+  ok(status.show === true && status.changed === true && status.offers === 2 && status.label === "ESPN",
+     "ffsm.status with no platform reads the espn record and names the platform");
+  const other = await ask({ type: "ffsm.status", platform: "cbs", leagueId: 7, seasonId: 2026 });
+  ok(other.show === true && other.first === true && other.label === null,
+     "another platform with the same league id is a different league with no record yet, and an unregistered adapter has no label");
+  listeners.message[1]({ type: "ffsm.dismiss", leagueId: 7 }); await settle();
+  ok((await store.get(null))["ffsm.dismissed.espn.7"] > 0, "ffsm.dismiss writes the platform-segmented dismissal key");
+  ok((await ask({ type: "ffsm.status", leagueId: 7, seasonId: 2026 })).show === false, "...and the notice is then held back for the day");
+  ok(listeners.message[0]({ type: "ffsm.open", from: "u" }, {}, () => {}) === false, "the status listener declines other messages synchronously");
+  listeners.message[1]({ type: "ffsm.open", from: "https://x/y" }); await settle();
+  ok(tabs.at(-1)?.url === "chrome-extension://ffsm/panel.html?from=" + encodeURIComponent("https://x/y"), "ffsm.open opens the panel with the page URL");
+
+  globalThis.fetch = realFetch;
+  delete globalThis.chrome;
+}
+
 /* the helpers this suite lends to later plans */
 {
   const st = mkStorage();
