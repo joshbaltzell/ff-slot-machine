@@ -766,8 +766,12 @@ const load = async (table, over = {}, base = REF) => {
   await cbs.loadLeague(ref, () => {}, { fetchImpl: cookieFetch, storage: mkStorage(), now: 0 });
   ok(sessionFor(ref)?.mode === "cookie" && sessionFor(ref).token === null,
      "the recorded league authenticates on the session cookie alone: no token is read at all");
-  ok(cookieFetch.calls.filter((u) => u.includes("league/details")).length === 2,
-     "one probe to open the session and one read for the settings");
+  // IN-03: the probe that opened the session already asked for league/details, so its
+  // body is what the settings read, rather than a second round trip for the same bytes.
+  ok(cookieFetch.calls.filter((u) => u.includes("league/details")).length === 1,
+     "one league/details request: the session probe's own body is what readSettings reads");
+  ok(cookieFetch.calls.filter((u) => u.includes("league/schedules")).length === 1,
+     "...and one league/schedules request, shared between the season read and the matchups");
   ok(!cookieFetch.calls.some((u) => u === `https://${REF.leagueId}.football.cbssports.com/`),
      "...and the league page is never fetched when the cookie works");
   ok(cookieFetch.inits.filter((i) => i?.headers?.Authorization).length === 0,

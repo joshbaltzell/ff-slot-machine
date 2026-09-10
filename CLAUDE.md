@@ -474,8 +474,12 @@ measures nothing in the weeks that matter most. `loadLeague` therefore reads
 `league/schedules?period=all` before it stamps anything, takes the year from the first
 regular-season period's `start` (`"9/9/26"`), reconciles it onto the ref and notes the
 disagreement. The body is parked for `loadSchedule`, so the route is still read once
-per run. A schedule that publishes no parseable date leaves the guess standing and says
-so — the reconciliation is a nicety and never costs the run.
+per run — the same trick the session probe's `league/details` body uses, since throwing
+away a payload the run has already paid for only to ask for it again is a round trip for
+nothing. Both parked bodies are consumed once, keyed on the ref in a `WeakMap` exactly as
+a session is; anything later fetches, which is the safe direction. A schedule that
+publishes no parseable date leaves the guess standing and says so — the reconciliation is
+a nicety and never costs the run.
 
 **CBS states a lineup as a per-position range under a cap, and the shared flex is where
 that does not fit. This is the most important CBS limitation in this file.** ESPN

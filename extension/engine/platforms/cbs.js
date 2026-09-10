@@ -266,6 +266,19 @@ const authError = () =>
  * token must never ride along (D-10). A session the caller put on the ref is still read —
  * that is how a pasted token arrives. */
 const SESSIONS = new WeakMap();
+
+/* The body of the `league/details` probe that opened the session. `loadLeague` wants
+ * exactly that body a moment later, and throwing away a payload the run has already
+ * paid for only to ask for it again is a round trip for nothing. Consumed once, the
+ * way the parked schedule is: anything later fetches. */
+const PROBED_DETAILS = new WeakMap();
+
+/** `league/details`, taking the session probe's own body if it is still going. */
+async function getDetails(ref, opts) {
+  const parked = PROBED_DETAILS.get(ref);
+  if (parked !== undefined) { PROBED_DETAILS.delete(ref); return parked; }
+  return get(ref, "league/details", {}, opts);
+}
 /* An opened session outranks a candidate: `openSession` probes each route before it
  * accepts one and records the winner here, so a token the caller handed in that CBS
  * refused must not go on being presented for the rest of the run. During the probe
@@ -404,8 +417,9 @@ export async function openSession(ref, opts = {}) {
   // error (a 500, a dead network) is not an auth answer and is not swallowed.
   const accept = async (session) => {
     try {
-      await get(ref, "league/details", {}, { ...opts, session });
+      const body = await get(ref, "league/details", {}, { ...opts, session });
       SESSIONS.set(ref, session);
+      PROBED_DETAILS.set(ref, body);
       return session;
     } catch (err) {
       if (err.code !== "AUTH") throw err;
@@ -772,7 +786,7 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   onProgress(0, 1, "settings");
 
   const rules = await get(ref, "league/rules", {}, opts);
-  const details = await get(ref, "league/details", {}, opts);
+  const details = await getDetails(ref, opts);
   let scoring = null;
   try {
     scoring = await get(ref, "league/scoring/rules", {}, opts);
@@ -1077,7 +1091,7 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
   const notes = Array.isArray(opts.notes) ? opts.notes : [];
   await openSession(ref, opts);
   const rules = await get(ref, "league/rules", {}, opts);
-  const details = await get(ref, "league/details", {}, opts);
+  const details = await getDetails(ref, opts);
   const codes = configuredCodes(rules);
   const d = details?.league_details ?? details ?? {};
   const currentWeek = num(d.current_period) ?? num(d.effective_period) ?? 1;
