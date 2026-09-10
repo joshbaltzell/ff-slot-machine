@@ -717,6 +717,33 @@ const load = async (table, over = {}, base = REF) => {
   try { await load(refuseAll(cbsTable())); } catch (e) { err = e; }
   ok(err?.code === "AUTH", "a refused token is an AUTH failure too, not a broken-token error");
 
+  // WR-10. The capture only ever saw HTTP 400 with a text body, so the wording CBS
+  // uses on a 401 or a 403 is unknown. ESPN maps any 401 to AUTH unconditionally; CBS
+  // required the body to match too, so an empty body, a JSON envelope or different
+  // prose gave the user "Could not load that league" and the askForLeague prompt
+  // instead of the sign-in screen and the paste field - the whole D-11 fallback chain
+  // unreachable from the UI. 401 and 403 are auth answers whatever the body says.
+  for (const [status, body, what] of [[401, "", "an empty body"], [401, '{"error":"nope"}', "a JSON envelope"],
+                                      [403, "Forbidden", "prose the regex does not know"]]) {
+    const t = cbsTable();
+    for (const k of Object.keys(t))
+      if (k.includes("cbssports.com") && /\/league\//.test(k)) t[k] = httpError(status, body);
+    let e = null;
+    try { await load(t); } catch (x) { e = x; }
+    ok(e?.code === "AUTH", `WR-10: HTTP ${status} with ${what} is an AUTH failure`);
+  }
+  {
+    // ...and the ambiguous 400 keeps its text test, because CBS answers 400 for
+    // "Missing league_id" too and that is not a sign-in problem.
+    const t = cbsTable();
+    for (const k of Object.keys(t))
+      if (k.includes("cbssports.com") && /\/league\/rules/.test(k)) t[k] = httpError(400, "Missing league_id");
+    let e = null;
+    try { await load(t); } catch (x) { e = x; }
+    ok(e instanceof Error && e.code === undefined && /400/.test(e.message),
+       "WR-10: a 400 CBS words as something other than not-signed-in stays a plain Error");
+  }
+
   // A real server error is not an auth problem and must not show the sign-in screen.
   const broken = cbsTable();
   for (const s of SESSIONS) broken[cbsUrl(REF, "league/rules", {}, s)] = httpError(500, "boom");

@@ -282,7 +282,15 @@ async function get(ref, route, params = {}, opts = {}) {
   if (!res.ok) {
     let text = "";
     if (typeof res.text === "function") { try { text = await res.text(); } catch { /* no body */ } }
-    if ([400, 401, 403].includes(res.status) && NOT_SIGNED_IN.test(text)) throw authError();
+    // 401 and 403 mean one thing and CBS cannot mean another by them, so they are
+    // auth answers whatever the body says - the way ESPN's 401 always has been. The
+    // capture only ever saw 400 with a text body, so the wording on the other two is
+    // simply unknown, and requiring it to match meant an empty body or a JSON
+    // envelope showed "Could not load that league" and the league prompt instead of
+    // the sign-in screen and the paste field: the D-11 chain unreachable from the UI.
+    // 400 keeps the text test, because CBS answers 400 for "Missing league_id" too.
+    if (res.status === 401 || res.status === 403) throw authError();
+    if (res.status === 400 && NOT_SIGNED_IN.test(text)) throw authError();
     throw new Error(`CBS returned ${res.status}`);
   }
   const env = await res.json();
