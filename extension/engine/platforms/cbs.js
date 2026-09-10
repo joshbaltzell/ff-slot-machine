@@ -305,29 +305,84 @@ export function extractToken(html) {
   return null;
 }
 
-/** `var myTeamId = N` in the league page, when we have already read the page anyway. */
-const teamHintOf = (html) => num((/var myTeamId\s*=\s*(\d+)/.exec(String(html ?? "")) ?? [])[1]);
+/**
+ * The viewer's own team id, if the signed-in league page says which it is (D-16).
+ *
+ * `var myTeamId = N` is what the 11-01 capture recorded, and the id it carried is a
+ * real team in the same league's rosters payload. A page that does not say is null:
+ * `identify` then returns `{team: null}` and the panel's own prompt asks.
+ */
+export function viewerHint(html) {
+  return num((/var\s+myTeamId\s*=\s*(\d+)/.exec(String(html ?? "")) ?? [])[1]);
+}
 
 /**
- * Open a session for this league, cookie first, page token second.
+ * The last sanctioned token route: ask this extension's own content script, on a CBS
+ * tab the user already has open, for the token in the page it is sitting on (D-10).
  *
- * Held in memory on the ref for the run and never persisted (D-10). Nothing here
- * asks for a password, and no password endpoint is referenced anywhere in this file
- * (D-11): when neither route works, that is an AUTH error and the panel offers the
- * sign-in link.
+ * `chrome.tabs` is touched inside this function only, behind a `typeof` guard, so a
+ * module service worker - which has no tabs to ask and passes `handover: null` - can
+ * still import this file. A tab whose content script is not there refuses the
+ * message and the promise rejects; each ask is therefore awaited on its own and a
+ * rejection counts as "this tab does not know", never as an error for the run. The
+ * listener that answers lands in 11-07.
+ */
+export async function defaultHandover() {
+  if (typeof chrome === "undefined" || !chrome.tabs?.sendMessage) return null;
+  let tabs = [];
+  try { tabs = (await chrome.tabs.query({ url: ["https://*.football.cbssports.com/*"] })) ?? []; }
+  catch { return null; }
+  for (const tab of tabs) {
+    try {
+      const reply = await chrome.tabs.sendMessage(tab.id, { type: "ffsm.token" });
+      const token = reply?.token ? String(reply.token) : null;
+      if (token) return token;
+    } catch { /* no listener in that tab: ask the next one */ }
+  }
+  return null;
+}
+
+/**
+ * Open a session for this league (D-10, D-11).
+ *
+ * The privacy contract, in three lines: the token is derived afresh on every run
+ * from the user's own signed-in session; it lives in memory on this run's `ref` and
+ * is never written to storage, a URL, a note or a log; it is sent only as an
+ * `Authorization` header to cbssports.com.
+ *
+ * Four routes, in this order, and no fifth. (1) A session already on the ref - which
+ * is how a token the user pasted arrives. (2) The session cookie through the league
+ * subdomain's proxy: what 11-01 recorded, and the route this league actually takes.
+ * (3) The signed-in league page, read with credentials and regexed for the token it
+ * embeds. (4) A hand-over from the CBS content script, skipped entirely when the
+ * caller passes `handover: null` (the service worker has no tab to ask). Nothing
+ * here asks for a password and no password endpoint is named anywhere in this file:
+ * when every route is exhausted that is an AUTH error, and the panel offers CBS's
+ * own sign-in link.
+ *
+ * Routes 3 and 4 re-probe `league/details` before their session is accepted, so a
+ * stale token from a cached page or a stale tab is refused here rather than turning
+ * into a confusing failure four requests later.
  */
 export async function openSession(ref, opts = {}) {
   if (ref.session) return ref.session;
   if (opts.session) { ref.session = opts.session; return ref.session; }
 
-  const cookie = { mode: "cookie", token: null, teamHint: null };
-  try {
-    await get(ref, "league/details", {}, { ...opts, session: cookie });
-    ref.session = cookie;
-    return cookie;
-  } catch (err) {
-    if (err.code !== "AUTH") throw err;
-  }
+  // The re-probe every non-cookie route goes through. Null means "refused"; a real
+  // error (a 500, a dead network) is not an auth answer and is not swallowed.
+  const accept = async (session) => {
+    try {
+      await get(ref, "league/details", {}, { ...opts, session });
+      ref.session = session;
+      return session;
+    } catch (err) {
+      if (err.code !== "AUTH") throw err;
+      return null;
+    }
+  };
+
+  const cookie = await accept({ mode: "cookie", token: null, teamHint: null });
+  if (cookie) return cookie;
 
   let html = null;
   try {
@@ -338,13 +393,16 @@ export async function openSession(ref, opts = {}) {
 
   const found = html ? extractToken(html) : null;
   if (found) {
-    const token = { mode: "token", token: found.token, teamHint: teamHintOf(html) };
-    try {
-      await get(ref, "league/details", {}, { ...opts, session: token });
-      ref.session = token;
-      return token;
-    } catch (err) {
-      if (err.code !== "AUTH") throw err;
+    const session = await accept({ mode: "token", token: found.token, teamHint: viewerHint(html) });
+    if (session) return session;
+  }
+
+  if (opts.handover !== null) {
+    let handed = null;
+    try { handed = await (opts.handover ?? defaultHandover)(ref); } catch { handed = null; }
+    if (handed) {
+      const session = await accept({ mode: "token", token: String(handed), teamHint: viewerHint(html) });
+      if (session) return session;
     }
   }
   throw authError();
@@ -712,13 +770,32 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   return { settings, weeks, players, teams, fingerprint, notes };
 }
 
+/**
+ * The daily roster fingerprint: one `league/rosters?team_id=all` request, hashed over
+ * CBS's own ids - the same payload and the same function `loadLeague` uses, so the
+ * panel and the service worker can never drift apart.
+ *
+ * The hand-over route is disabled: this also runs in the module service worker, which
+ * has no tab to ask and must not try. Null on any failure, including not being signed
+ * in - a fingerprint is a nicety and must never cost anything.
+ */
+export async function fingerprint(ref, opts = {}) {
+  try {
+    await openSession(ref, { ...opts, handover: null });
+    const rosters = await get(ref, "league/rosters", { team_id: "all" }, opts);
+    return hashRosters((rosters?.rosters?.teams ?? []).map((t) => ({
+      id: num(t?.id),
+      ids: (t?.players ?? []).map((p) => num(p?.id)).filter((id) => id != null),
+    })));
+  } catch { return null; }
+}
+
 /* ---------- not yet built (11-06) ---------- */
 
 const later = (what) => { throw new Error(`CBS ${what} is not implemented until 11-06`); };
 export const loadFreeAgents = async () => later("free agents");
 export const loadSchedule = async () => later("the schedule");
 export const identify = async () => later("team identification");
-export const fingerprint = async () => later("the daily fingerprint");
 
 /* ---------- the adapter ---------- */
 

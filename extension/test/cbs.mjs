@@ -413,7 +413,16 @@ const REF = { platform: "cbs", leagueId: "redacted-league", seasonId: 2026 };
   ok(!/password\s*[:=]/i.test(SRC), "...and never reads, sends or stores a password field");
   // Comments say what the code must do; these two assertions read the code itself.
   const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  ok(!/chrome\./.test(CODE), "no chrome.* anywhere in the adapter, so a module service worker can import it");
+  // The adapter may name chrome.tabs - the content-script hand-over is one of D-10's
+  // four sanctioned routes - but only inside defaultHandover, behind a typeof guard,
+  // and never at module evaluation: a module service worker has to be able to import
+  // this file, and this test file just did, under Node, with no chrome at all.
+  ok((CODE.match(/chrome\.[A-Za-z]+/g) ?? []).every((r) => r === "chrome.tabs"),
+     "the only chrome.* the adapter names is chrome.tabs, in the hand-over");
+  ok(/typeof chrome === "undefined"/.test(CODE),
+     "...behind a typeof guard, so a module service worker can import it");
+  ok(typeof globalThis.chrome === "undefined" && typeof cbs.loadLeague === "function",
+     "...and this file imported the adapter under Node with no chrome defined at all");
   ok(!/storage\.set|localStorage|sessionStorage/.test(CODE),
      "the adapter writes nothing to storage: the token lives on the ref for the run and nowhere else (D-10)");
 }
