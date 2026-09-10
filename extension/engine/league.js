@@ -81,6 +81,9 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
   // Players measured through the D-15 fallback, and the position each was measured
   // in. Their sigmas are re-shrunk after the loop, once the priors exist.
   const actualsOnly = new Map();
+  // Players the main loop found actuals for and no projection. Held, not measured:
+  // the fallback is decided for the league after the loop, never per player.
+  const pending = [];
   let nProjection = 0;
 
   /**
@@ -89,6 +92,18 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
    * its history out of a points feed, so every CBS row carries `proj: null`; the
    * spread of a player's weekly scores around his own prior-season mean is then the
    * only volatility there is to measure.
+   *
+   * The decision is made for the *league*, not for a player. A per-player gate fired
+   * on ESPN too - for any player ESPN scored last season but never published a
+   * prior-season projection for, which is an ordinary rookie or late add - and pushed
+   * a sigma measured around his own mean into the same posSamples and all that build
+   * byPos and global. Those are the priors distribution.js's quantiles, rosterSigma,
+   * P(win) and the season odds all inherit, so two different quantities were being
+   * pooled into one number and ESPN's answers moved. The frozen fixture always carries
+   * both sides of every history row, so no test could see it. The branch now runs only
+   * when the league published no prior-season projection at all, which is the D-15 case
+   * it was written for; an ESPN league with even one projected player takes the
+   * original path, character for character.
    *
    * Two things differ from the projection branch. A zero week is dropped, because
    * with no projection beside it a zero and a bye are the same row and counting byes
@@ -131,11 +146,11 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
     const weeks = [...act.keys()].filter(w => prj.has(w) && prj.get(w) > 1
       && act.get(w) != null && prj.get(w) != null);
     if (!weeks.length) {
-      // Nothing to measure against a projection. If the platform published none at
-      // all for this season, measure what it did publish (D-15); if it published
-      // projections and they were all at or under a point, he was not in the plan
-      // and there is still nothing here.
-      if (prj.size === 0) measureFromActuals(p, act);
+      // Nothing to measure against a projection. Hold him: if the platform turns out
+      // to have published no projection for anybody this season, the D-15 fallback
+      // measures what it did publish. If it published projections and his were all at
+      // or under a point, he was not in the plan and there is nothing here either way.
+      if (prj.size === 0) pending.push([p, act]);
       continue;
     }
     nProjection++;
@@ -158,6 +173,10 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
       posResiduals.get(p.pos).push(...res);
     }
   }
+  // D-15, decided for the league: only a season with no projection anywhere in it
+  // takes the fallback. Run before the medians, because these sigmas are part of the
+  // prior in a league that has no other kind.
+  if (nProjection === 0) for (const [p, act] of pending) measureFromActuals(p, act);
   const median = (a) => {
     if (!a.length) return null;
     const s = [...a].sort((x, y) => x - y);

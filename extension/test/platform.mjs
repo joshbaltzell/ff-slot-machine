@@ -764,21 +764,61 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
   ok(Math.abs(b.bySigma.get(1) - sdOf(projRes)) < 1e-9,
      "and its sigma is the unshrunk sample standard deviation - the projection branch shrinks nothing");
 
-  // 3. one of each, sharing a position
+  // 3. one of each, sharing a position: the fallback is decided for the *league*,
+  //    not per player, so a set holding even one projected player takes the original
+  //    branch for everybody and the actuals-only man is measured not at all.
   const wideAct = [30, 4, 28, 2, 26, 6, 24, 8];
   const wide = { id: 2, pos: "WR", proj: { 1: 10, 2: 12 },
     history: wideAct.map((x, k) => ({ season: 2025, week: k + 1, actual: x, proj: 10 })) };
   const wideSd = sdOf(wideAct.map((x) => x - 10));
   const m = measureVolatility([mkP(1, "WR", hist(null)), wide], 2025);
-  ok(m.mode === "projection-residuals" && m.counts.projection === 1 && m.counts.actualsOnly === 1,
-     "a mixed set counts both branches and reports the projection mode: one measured player is enough");
+  ok(m.mode === "projection-residuals" && m.counts.projection === 1 && m.counts.actualsOnly === 0,
+     "a mixed set reports the projection mode and counts no fallback: the league published projections");
   ok(Math.abs(m.byPos.get("WR") - wideSd) < 1e-9,
      "the shared positional prior is the projection player's own sigma");
-  ok(Math.abs(m.bySigma.get(1) - (7 * fbSd + N0 * wideSd) / (7 + N0)) < 1e-9
-     && m.bySigma.get(1) > fbSd + 1e-9,
-     "the actuals-only player is pulled off his own measurement toward that prior");
+  ok(!m.bySigma.has(1) && !m.residuals.has(1),
+     "the actuals-only player carries no sigma and no residuals: he falls back to his position");
   ok(Math.abs(m.bySigma.get(2) - wideSd) < 1e-9,
      "the projection player beside him is untouched");
+
+  // 3b. WR-01: an ESPN league is full of players ESPN scored last season but never
+  //     published a prior-season projection for - an ordinary rookie or late add. The
+  //     fallback must not measure them, because its sigmas are taken around a player's
+  //     own mean and would move byPos and global, the priors distribution.js, rosterSigma,
+  //     P(win) and the season odds all inherit. Same set, with and without them.
+  const espnish = [
+    { id: 11, pos: "RB", proj: { 1: 10 },
+      history: [14, 9, 11, 16, 8, 13, 12, 10].map((a, k) =>
+        ({ season: 2025, week: k + 1, actual: a, proj: 11 })) },
+    { id: 12, pos: "RB", proj: { 1: 10 },
+      history: [7, 12, 5, 14, 9, 11, 6, 13].map((a, k) =>
+        ({ season: 2025, week: k + 1, actual: a, proj: 10 })) },
+    { id: 13, pos: "WR", proj: { 1: 10 },
+      history: [18, 6, 15, 9, 21, 7, 17, 11].map((a, k) =>
+        ({ season: 2025, week: k + 1, actual: a, proj: 12 })) },
+  ];
+  // Rookies: scored all season, never projected. Their spreads are deliberately wide.
+  const rookies = [41, 42, 43].map((id, j) => ({ id, pos: j === 2 ? "WR" : "RB", proj: { 1: 8 },
+    history: [30, 2, 27, 4, 24, 6, 22, 9].map((a, k) =>
+      ({ season: 2025, week: k + 1, actual: a + j, proj: null })) }));
+  const clean = measureVolatility(espnish, 2025);
+  const mixed = measureVolatility([...espnish, ...rookies], 2025);
+  ok(mixed.counts.projection === 3 && mixed.counts.actualsOnly === 0 && mixed.measured === 3,
+     "WR-01: actuals-only players in a league that published projections are measured not at all");
+  ok(same([...mixed.byPos.keys()].sort(), [...clean.byPos.keys()].sort())
+     && [...clean.byPos].every(([k, v]) => Math.abs(mixed.byPos.get(k) - v) < 1e-12),
+     "WR-01: byPos is identical to the same set without them");
+  ok(Math.abs(mixed.global - clean.global) < 1e-12,
+     "WR-01: and so is global - ESPN's positional priors do not move");
+  ok(espnish.every((p) => Math.abs(mixed.bySigma.get(p.id) - clean.bySigma.get(p.id)) < 1e-12)
+     && rookies.every((p) => !mixed.bySigma.has(p.id)),
+     "WR-01: every projected player keeps his exact sigma and no rookie gains one");
+
+  // 3c. the same rookies with no projected player anywhere: the league published
+  //     nothing, so the fallback is the only measurement there is and it fires.
+  const cbsish = measureVolatility(rookies, 2025);
+  ok(cbsish.mode === "actuals-only" && cbsish.counts.actualsOnly === 3 && cbsish.measured === 3,
+     "with no projections anywhere in the league the fallback still fires for all three");
 
   // 4. no history at all: the panel's assumed +/-25 path
   const none = measureVolatility([{ id: 1, pos: "WR", proj: {}, history: [] }], 2025);

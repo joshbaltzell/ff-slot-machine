@@ -474,9 +474,16 @@ one.
 
 **On CBS, volatility is measured around a player's own mean rather than around a
 forecast.** `measureVolatility` keeps its original branch byte-for-byte wherever a prior
-season carries both a projection and an actual. Where it carries actuals only — which is
-every CBS history row, because the route the adapter reads publishes points and nothing
-else — it measures the spread of his weekly scores around his own prior-season mean, drops
+season carries both a projection and an actual. The fallback is chosen for the **league,
+after the loop, not per player**: it fires only when the season carried no projection for
+anybody, which is every CBS history row, because the route the adapter reads publishes
+points and nothing else. That gate is load-bearing rather than tidy — a per-player gate
+also fires on ESPN, for any player ESPN scored last season and never projected (a rookie,
+a late add), and a sigma taken around a player's own mean then enters the same pool that
+builds `byPos` and `global`, moving the priors `distribution.js`, `rosterSigma`, `P(win)`
+and the season odds all inherit. The frozen fixture carries both sides of every history
+row, so the masked diff cannot see that; `platform.mjs` asserts it directly instead. Where
+the fallback does fire it measures the spread of a player's weekly scores around his own prior-season mean, drops
 any zero week (with no projection beside it a zero and a bye are the same row), and shrinks
 the resulting sigma toward the positional prior by `n/(n+10)`, where the projection branch
 shrinks a sigma not at all. The return says which: `mode` is `projection-residuals`,
