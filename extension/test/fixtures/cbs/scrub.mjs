@@ -680,6 +680,34 @@ async function selfTest(log) {
       ok(verifyDir(out2).problems.length === 0, "--verify passes the no-token directory");
     }
 
+    /* The two trims (--trim), as pure functions. Wrapped: a helper that throws must cost one
+     * named failure, not the other 280 assertions and the footer with them. */
+    try {
+    const ref = new Set(["100", "101"]);
+    const list = [
+      { id: "100", fullname: "Kept Rostered", position: "WR", eligible_positions_display: "WR", pro_team: "KC", pro_status: "A", bye_week: "6", photo: "…", icons: {} },
+      { id: "999", fullname: "Dropped Deep Bench", position: "WR", eligible_positions_display: "WR", pro_team: "NYJ", pro_status: "A", bye_week: "9" },
+      { id: "1901", fullname: "49ers", position: "DST", eligible_positions_display: "DST", pro_team: "SF", pro_status: "A", bye_week: "14" },
+      { id: "1902", fullname: "Chiefs", position: "TQB", eligible_positions_display: "TQB", pro_team: "KC", pro_status: "A", bye_week: "6" },
+    ];
+    const trimmedList = trimPlayerList(list, ref);
+    ok(trimmedList.length === 3 && trimmedList.every((p) => p.id !== "999"), "trimPlayerList keeps referenced players and every team entity, drops the rest");
+    ok(Object.keys(trimmedList[0]).join(",") === PLAYER_LIST_KEYS.join(","), "trimPlayerList keeps exactly the seven named keys, in order");
+    ok(trimmedList.some((p) => p.id === "1901") && trimmedList.some((p) => p.id === "1902"), "trimPlayerList keeps a DST and a TQB team entity no roster references");
+    const weekly = [
+      { id: "100", total: 0, periods: [] },
+      { id: "500", total: 12.4, periods: [] },
+      { id: "501", total: 0, periods: [] },
+      { id: "502", total: -2.2, periods: [] },
+    ];
+    const trimmedWeekly = trimWeekly(weekly, ref, 3);
+    ok(trimmedWeekly.length === 3, "trimWeekly honours the cap");
+    ok(trimmedWeekly[0].id === "100", "trimWeekly keeps a referenced player even when he scored nothing, and first");
+    ok(trimmedWeekly.some((p) => p.id === "500") && trimmedWeekly.some((p) => p.id === "502"), "trimWeekly fills the rest with players who actually scored");
+    ok(!trimmedWeekly.some((p) => p.id === "501"), "trimWeekly drops an unreferenced player who never scored");
+    ok(trimWeekly(weekly, ref, 99).length === 3, "trimWeekly never invents rows: three of four qualify");
+    } catch (e) { ok(false, `the --trim helpers are callable and pure: ${e.message}`); }
+
     /* negative case: a deliberately broken replacement table must fail loudly */
     const out3 = path.join(tmp, "out3");
     const broken = scrubBundle(bundle, out3, { skipRules: ["slug"] });
