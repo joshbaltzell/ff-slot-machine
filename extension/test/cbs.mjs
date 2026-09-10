@@ -1029,6 +1029,33 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
      "...read from the standings row for that team, points scored included");
   ok(!model.notes.some((n) => /standings unavailable/.test(n)), "a working standings route raises no note");
 
+  // WR-04. Divisions are a per-team string, and a half-configured league can leave one
+  // empty while the rest are set. findIndex then answers -1, panel.js hands that to
+  // attachOdds as a division of its own, and that team is guaranteed a division-winner
+  // seed - wrong bye and title odds, silently.
+  {
+    const divided = (assign) => {
+      const src = JSON.parse(JSON.stringify(file("rosters.json")));
+      src.body.body.rosters.teams.forEach((t, i) => { t.division = assign(i); });
+      const t = cbsTable();
+      for (const k of Object.keys(t)) if (k.includes("/league/rosters")) t[k] = src.body;
+      return t;
+    };
+    const { model: clean } = await load(divided((i) => (i % 2 ? "East" : "West")));
+    ok(clean.settings.divisionCount === 2
+       && [...clean.teams.values()].every((t) => t.divisionId === 0 || t.divisionId === 1),
+       "two named divisions give every team a divisionId of 0 or 1");
+    ok(!clean.notes.some((n) => /no division/.test(n)), "...and raise no unassigned note");
+
+    const { model: partial } = await load(divided((i) => (i === 0 ? "" : i % 2 ? "East" : "West")));
+    ok([...partial.teams.values()].every((t) => t.divisionId >= 0),
+       "WR-04: a team with an empty division string never gets divisionId -1");
+    ok(partial.teams.get(Number(body("rosters.json").rosters.teams[0].id))?.divisionId === 0,
+       "...it is seeded with the first division rather than becoming a one-team division of its own");
+    ok(partial.notes.some((n) => /^CBS: 1 team\(s\) carry no division/.test(n)),
+       "...and the note says how many teams that was");
+  }
+
   const { model: noStand } = await load(cbsTable({ standings: false }));
   ok([...noStand.teams.values()].every((t) => t.record === undefined),
      "a dead standings route leaves every team with no record at all, never a fabricated 0-0");

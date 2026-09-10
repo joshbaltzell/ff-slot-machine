@@ -838,8 +838,19 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   if (divisions.size > 1) {
     settings.divisions = [...divisions].map(([name, size], i) => ({ id: i, name, size }));
     settings.divisionCount = settings.divisions.length;
-    for (const t of teams.values())
-      t.divisionId = settings.divisions.findIndex((dv) => dv.name === t._division);
+    // Only non-empty strings became divisions, so a half-configured league - one team
+    // added and not yet placed - would answer -1 here. panel.js buckets teams straight
+    // on divisionId, and a -1 bucket is a one-team division whose member is guaranteed
+    // a division-winner seed: wrong bye and title odds, with nothing on screen to say
+    // so. Seed the unplaced with the first division and name them instead.
+    let unassigned = 0;
+    for (const t of teams.values()) {
+      const i = settings.divisions.findIndex((dv) => dv.name === t._division);
+      t.divisionId = i < 0 ? 0 : i;
+      if (i < 0) unassigned++;
+    }
+    if (unassigned)
+      notes.push(`CBS: ${unassigned} team(s) carry no division - they are seeded with the first division`);
   }
   for (const t of teams.values()) delete t._division;
 
