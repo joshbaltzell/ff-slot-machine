@@ -14,7 +14,8 @@
  *   1. every token value P1–P5 find in pageHtml, and every access_token= value  -> REDACTED
  *   2. the slug                                                                  -> redacted-league
  *   3. team names under rosters/standings/schedules team objects                 -> Team A, Team B, …
- *      (first-seen order; the longest name is replaced first)
+ *      (first-seen order, skipping any label a real team already uses; the longest
+ *      name is replaced first)
  *   4. owner-shaped fields inside team/owner objects                             -> Owner N / owner-n@example.invalid
  *
  * Two extras cost nothing and close obvious gaps: the league's own display name becomes
@@ -184,12 +185,18 @@ const bodiesOf = (bundle) => Object.entries(bundle.responses ?? {})
 /** Collect every secret in the bundle. Returns the replacement tables the scrubber and the check share. */
 function collect(bundle) {
   const c = { slug: String(bundle.slug ?? "").trim(), tokens: new Set(), league: null, teams: new Map(), abbrs: new Map(), owners: new Map() };
-  const addTeam = (v) => {
-    const s = String(v).trim();
-    if (!s || c.teams.has(s) || /^Team [A-Z]+$/.test(s) || /^\d+$/.test(s)) return;
-    c.teams.set(s, `Team ${letters(c.teams.size)}`);
+  /* Names are collected first and lettered second. CBS's own placeholder for a team nobody has
+   * named is `Team <letter>` — the very shape this vocabulary generates — so a value may not be
+   * waved through for looking already-scrubbed, and a generated label may not land on a string a
+   * real team already uses (observed 2026-09-10: two teams would otherwise read the same name). */
+  const rawTeams = [], rawAbbrs = [];
+  const addTeam = (v) => { const s = String(v).trim(); if (s && !/^\d+$/.test(s) && !rawTeams.includes(s)) rawTeams.push(s); };
+  const addAbbr = (v) => { const s = String(v).trim(); if (s && !rawAbbrs.includes(s)) rawAbbrs.push(s); };
+  const letterInto = (raws, map, fmt) => {
+    const taken = new Set([...rawTeams, ...rawAbbrs].map((s) => s.toLowerCase()));
+    let i = 0;
+    for (const s of raws) { let label; do { label = fmt(letters(i++)); } while (taken.has(label.toLowerCase())); map.set(s, label); }
   };
-  const addAbbr = (v) => { const s = String(v).trim(); if (s && !c.abbrs.has(s)) c.abbrs.set(s, `TM${letters(c.abbrs.size)}`); };
   const addOwner = (v) => {
     const s = String(v).trim();
     if (!s || /^\d+$/.test(s) || c.owners.has(s) || c.teams.has(s) || SKIP_WORDS.test(s)) return;
@@ -220,6 +227,8 @@ function collect(bundle) {
   for (const [key, body] of bodiesOf(bundle)) {
     traverse(structuredClone(body), TEAM_ROUTES.has(key) ? ["teams"] : [], (kind, v) => { if (kind === "team") addTeam(v); else if (kind === "abbr") addAbbr(v); });
   }
+  letterInto(rawTeams, c.teams, (l) => `Team ${l}`);
+  letterInto(rawAbbrs, c.abbrs, (l) => `TM${l}`);
   // 4. owner strings
   for (const [key, body] of bodiesOf(bundle)) {
     traverse(structuredClone(body), TEAM_ROUTES.has(key) ? ["teams"] : [], (kind, v) => { if (kind === "owner") addOwner(v); });
@@ -599,7 +608,7 @@ async function selfTest(log) {
     if (files.includes("rosters.json")) {
       const ro = readJson(out1, "rosters.json");
       const t = ro.body.body.teams;
-      ok(t[0].name === "Team A" && t[1].name === "Team B" && t[2].name === "Team C", "rosters.json team names read Team A, Team B, Team C in first-seen order");
+      ok(t[0].name === "Team A" && t[1].name === "Team C" && t[2].name === "Team E", "rosters.json team names are lettered in first-seen order, skipping Team B (a real team already reads that)");
       ok(t[0].abbr === "TMA" && t[1].abbr === "TMB", "rosters.json team abbreviations are replaced too");
       ok(/^Team [A-Z]+$/.test(t[2].short_name), "a team short_name of 'Draft' is replaced where it is a value");
       ok(/^Team [A-Z]+$/.test(t[1].short_name) && t[1].short_name !== "Team B", "a team CBS left named 'Team B' is itself replaced, not mistaken for already-scrubbed output");
@@ -615,12 +624,12 @@ async function selfTest(log) {
     }
     if (files.includes("standings.json") && files.includes("schedules.json") && files.includes("transactions.json") && files.includes("details.json")) {
       const st = readJson(out1, "standings.json").body.body.teams;
-      ok(st[0].name === "Team A" && st[1].name === "Team B" && st[2].name === "Team C", "standings.json uses the same Team letters as rosters.json");
+      ok(st[0].name === "Team A" && st[1].name === "Team C" && st[2].name === "Team E", "standings.json uses the same Team letters as rosters.json");
       ok(/^Owner \d+$/.test(st[0].owner) && /^Owner \d+$/.test(st[1].owner), "standings.json owner strings read Owner N");
       const sc = readJson(out1, "schedules.json").body.body.periods[0].matchups[0];
-      ok(sc.home_team.name === "Team A" && sc.away_team.name === "Team B", "schedules.json home/away team names are replaced consistently");
+      ok(sc.home_team.name === "Team A" && sc.away_team.name === "Team C", "schedules.json home/away team names are replaced consistently");
       const tx = readJson(out1, "transactions.json").body.body.transactions[0];
-      ok(tx.team === "Team B" && tx.player === "Player Two", "transactions.json team string is replaced, player name kept");
+      ok(tx.team === "Team C" && tx.player === "Player Two", "transactions.json team string is replaced, player name kept");
       const de = readJson(out1, "details.json").body.body.league_details;
       ok(de.league_id === "redacted-league" && de.name === "Redacted League", "details.json league id and display name are replaced, nested under league_details");
       ok(/^Owner \d+$/.test(de.commissioner.name) && /^owner-\d+@example\.invalid$/.test(de.commissioner.email), "details.json commissioner is owner-shaped");
