@@ -1029,6 +1029,24 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
      "...read from the standings row for that team, points scored included");
   ok(!model.notes.some((n) => /standings unavailable/.test(n)), "a working standings route raises no note");
 
+  // WR-06. faabSpent is 0 on every CBS team and nothing reads a transaction, so
+  // panel.js's bid column shows the whole budget as remaining all season. The number
+  // is wrong; unlike every other CBS gap it used to be wrong in silence.
+  ok([...model.teams.values()].every((t) => t.faabSpent === 0),
+     "every CBS team's faabSpent is 0: no route read here publishes waiver spend");
+  ok(model.notes.some((n) => /^CBS: waiver spend is not published on any route read here/.test(n)
+                             && n.includes("$100")),
+     "WR-06: ...and a note says so, naming the budget the bid column is assuming");
+  {
+    const noBudget = JSON.parse(JSON.stringify(file("rules.json")));
+    delete noBudget.body.body.rules.transactions.add_drop_faab_starting_budget;
+    const t = cbsTable();
+    for (const k of Object.keys(t)) if (k.includes("/league/rules")) t[k] = noBudget.body;
+    const { model: m } = await load(t);
+    ok(m.settings.faabBudget === 0 && !m.notes.some((n) => /waiver spend/.test(n)),
+       "WR-06: a league with no FAAB budget has no bid column to caveat, and says nothing");
+  }
+
   // WR-04. Divisions are a per-team string, and a half-configured league can leave one
   // empty while the rest are set. findIndex then answers -1, panel.js hands that to
   // attachOdds as a division of its own, and that team is guaranteed a division-winner

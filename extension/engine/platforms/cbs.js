@@ -745,6 +745,11 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
       // rather than inventing a name, and identify() has the page hint instead.
       owners: [],
       divisionId: 0,
+      // No route read here publishes waiver spend. league/transaction-list/add-drops
+      // does carry a per-row `bid_amount` beside a `state` and the bidding team, but
+      // the recorded capture holds one row and its bid is 0, so summing it would be a
+      // guess at semantics dressed as a reading - and it costs a request every run.
+      // The number stays 0 and the note below says the bid column is assuming it.
       faabSpent: 0,
       _division: division,
     };
@@ -832,6 +837,13 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   // Prior-season actuals exist on CBS (README Findings prior_season_actuals: yes),
   // read through the same route with a timeframe.
   if (priorSeason != null) await attachHistory({ timeframe: String(priorSeason) }, priorSeason, `${priorSeason}`);
+
+  // The bid column is `faabBudget - faabSpent`, and faabSpent is 0 on every CBS team
+  // because no route read here publishes waiver spend. A dash would be honest; a full
+  // budget all season is not, so the note is the dash.
+  if (settings.faabBudget > 0)
+    notes.push("CBS: waiver spend is not published on any route read here - the bid column "
+               + `assumes the full $${settings.faabBudget} budget remains`);
 
   // Divisions are a per-team string, so they are read from the rosters rather than
   // from a settings field CBS does not publish.
