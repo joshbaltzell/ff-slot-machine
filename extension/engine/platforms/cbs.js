@@ -605,6 +605,39 @@ export async function loadPlayerList(opts = {}) {
   }
 }
 
+/* ---------- weekly actuals ---------- */
+
+/**
+ * `league/fantasy-points/weekly-scoring` -> the neutral history shape (D-07).
+ *
+ * One row per period the feed reports for a player: `{season, week, actual, proj}`
+ * with `proj` **null**, never 0 - CBS publishes no historical projection, and a zero
+ * there would tell `measureVolatility` the projection was zero rather than absent.
+ * The season is the caller's, because the route says nothing about which season it
+ * answered for: the current one by default, the prior one under `timeframe`.
+ *
+ * The route defaults to `player_status: free_agents`, which is why every caller here
+ * sends `player_status=all`; without it a rostered player has no history at all.
+ *
+ * @returns Map<cbsId, [{season, week, actual, proj: null}]>
+ */
+export function historyFromWeeklyScoring(body, season) {
+  const out = new Map();
+  for (const row of body?.weekly_scoring?.players ?? []) {
+    const id = num(row?.id) ?? num(row?.player?.id);
+    if (id == null) continue;
+    const rows = [];
+    for (const p of row?.periods ?? []) {
+      const week = num(p?.period);
+      const actual = num(p?.score);
+      if (week == null || actual == null) continue;
+      rows.push({ season, week, actual, proj: null });
+    }
+    if (rows.length) out.set(id, (out.get(id) ?? []).concat(rows));
+  }
+  return out;
+}
+
 /* ---------- the loader ---------- */
 
 /**
@@ -693,8 +726,58 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
     rosterIds.push({ id, ids });
   }
   const fingerprint = hashRosters(rosterIds);
-  notes.push("CBS: no weekly history or standings are read yet - volatility falls back to the positional prior " +
-             "and the season projection starts every team at 0-0");
+
+  // The standings so far. Every simulated season starts from them rather than 0-0,
+  // so a dead route costs the seeding, not the run: no team gets a record at all and
+  // panel.js says it is projecting from 0-0 (an invented 0-0 would look like a
+  // reading).
+  try {
+    const standings = await get(ref, "league/standings/overall", {}, opts);
+    let seeded = 0;
+    for (const row of standings?.overall_standings?.teams ?? []) {
+      const t = teams.get(num(row?.id));
+      if (!t) continue;
+      t.record = {
+        wins: num(row?.wins) ?? 0,
+        losses: num(row?.losses) ?? 0,
+        ties: num(row?.ties) ?? 0,
+        pointsFor: num(row?.points_scored) ?? 0,
+      };
+      seeded++;
+    }
+    if (seeded < teams.size)
+      notes.push(`CBS: standings unavailable for ${teams.size - seeded} of ${teams.size} teams - `
+                 + "the season projection starts from 0-0");
+  } catch (err) {
+    notes.push(`CBS: standings unavailable (${err.message ?? err}) - the season projection starts every team at 0-0`);
+  }
+
+  // Weekly actuals, this season and last, through the one route that carries them.
+  // player_status=all is the whole point: the route defaults to free agents, and the
+  // 11-01 capture recorded 0 of 168 rostered players because of it.
+  const attachHistory = async (params, season, label) => {
+    try {
+      const scored = await get(ref, "league/fantasy-points/weekly-scoring",
+        { player_status: "all", ...params }, opts);
+      let seen = 0;
+      for (const [cbsId, rows] of historyFromWeeklyScoring(scored, season)) {
+        const pl = byCbs.get(cbsId);
+        if (!pl) continue;
+        pl.history.push(...rows);
+        seen++;
+      }
+      if (!seen) notes.push(`CBS: weekly scoring for ${label} named none of this league's rostered players `
+                            + "- their history is empty and volatility falls back to the positional prior");
+    } catch (err) {
+      notes.push(`CBS: weekly scoring for ${label} is unavailable (${err.message ?? err}) `
+                 + "- no actuals for the calibration log or for volatility");
+    }
+  };
+  const priorSeason = num(ref.seasonId) != null ? num(ref.seasonId) - 1 : null;
+  await attachHistory({}, num(ref.seasonId) ?? 0, "this season");
+  // Prior-season actuals exist on CBS (README Findings prior_season_actuals: yes),
+  // read through the same route with a timeframe.
+  if (priorSeason != null) await attachHistory({ timeframe: String(priorSeason) }, priorSeason, `${priorSeason}`);
 
   // Divisions are a per-team string, so they are read from the rosters rather than
   // from a settings field CBS does not publish.
@@ -790,12 +873,141 @@ export async function fingerprint(ref, opts = {}) {
   } catch { return null; }
 }
 
-/* ---------- not yet built (11-06) ---------- */
+/**
+ * The unrostered pool, scored under this league's own settings (D-14).
+ *
+ * The same projections route as the roster, asked with `player_status=free_agents`:
+ * one call per remaining week, three at a time. `weeks` is `model.weeks` as the panel
+ * holds it, already trimmed by `restrictToRemaining`, and the current period is read
+ * again here rather than assumed from it - `loadFreeAgents` is a public entry point
+ * and a caller may hand it any week list.
+ *
+ * Two honest thinnesses, both cheap on purpose. A free-agent stats row carries only
+ * `eligible_positions_display`, a single code, where a roster row carries the full
+ * comma-separated list; the array form lives in `fantasy-points/weekly-scoring`,
+ * another megabyte for a distinction the member table mostly absorbs (a lone "RB"
+ * still reaches every flex that accepts running backs). And no free-agent route
+ * carries a bye week, so `bye` is 0 - `search.js` reads `p.bye ?? 0` and the ESPN
+ * adapter's free agents have never carried one either.
+ */
+export async function loadFreeAgents(ref, weeks, opts = {}) {
+  await openSession(ref, opts);
+  const rules = await get(ref, "league/rules", {}, opts);
+  const details = await get(ref, "league/details", {}, opts);
+  const codes = configuredCodes(rules);
+  const d = details?.league_details ?? details ?? {};
+  const currentWeek = num(d.current_period) ?? num(d.effective_period) ?? 1;
+  const all = (weeks ?? []).map(num).filter((w) => w != null);
+  const remaining = all.filter((w) => w >= currentWeek);
 
-const later = (what) => { throw new Error(`CBS ${what} is not implemented until 11-06`); };
-export const loadFreeAgents = async () => later("free agents");
-export const loadSchedule = async () => later("the schedule");
-export const identify = async () => later("team identification");
+  const injuries = await loadInjuries(opts);          // a dead feed costs a dash
+  const byCbs = new Map();
+  const fetchWeek = async (w) => {
+    const stats = await get(ref, "league/stats",
+      { stats_type: "projections", period: `week${w}`, player_status: "free_agents" }, opts);
+    for (const row of stats?.league_stats?.players ?? []) {
+      const cbsId = num(row?.id);
+      if (cbsId == null) continue;
+      let pl = byCbs.get(cbsId);
+      if (!pl) {
+        const codesOf = eligibleCodes(row);
+        const { pos, posId } = posOf(codesOf[0] ?? row?.position);
+        const status = normalizeStatus(injuries.byId.get(cbsId) ?? null, row?.pro_status);
+        pl = {
+          id: -cbsId,                                 // until the crosswalk says otherwise
+          name: String(row?.name ?? `Player ${cbsId}`).trim() || `Player ${cbsId}`,
+          eligibleSlots: expandEligibility(codesOf, codes),
+          pos, posId,
+          injuryStatus: status,
+          injured: status != null && status !== "SUSPENSION",
+          nfl: teamAbbr(row?.pro_team ?? row?.TM),
+          teamId: null,
+          proj: Object.fromEntries(all.map((x) => [x, 0])),
+          history: [],
+          bye: 0,
+          owned: num(row?.roster_trends?.owned_pct) ?? num(row?.percentowned) ?? 0,
+          _cbsId: cbsId,
+        };
+        byCbs.set(cbsId, pl);
+      }
+      pl.proj[w] = Math.round((num(row?.FPTS) ?? 0) * 100) / 100;
+    }
+  };
+  for (let i = 0; i < remaining.length; i += CONCURRENCY)
+    await Promise.all(remaining.slice(i, i + CONCURRENCY).map(fetchWeek));
+
+  const crosswalk = await loadCrosswalk(opts);
+  const out = [];
+  const taken = new Set();
+  for (const pl of byCbs.values()) {
+    // Nothing projected anywhere in the horizon is nothing to add.
+    if (!all.some((w) => pl.proj[w] > 0)) continue;
+    const espnId = crosswalk.toEspn.get(pl._cbsId);
+    if (Number.isFinite(espnId) && !taken.has(espnId)) pl.id = espnId;
+    taken.add(pl.id);
+    delete pl._cbsId;
+    out.push(pl);
+  }
+  return out;
+}
+
+/**
+ * Regular-season matchups: week -> [[homeName, awayName], ...].
+ *
+ * Names, not ids, because the Engine keys its rosters on the team name. A period
+ * with no matchups (the recorded league publishes its three playoff periods empty)
+ * simply has no entry, and a matchup missing a side, or naming a team this league's
+ * rosters do not, is skipped rather than half-read. A failure throws: the panel
+ * catches it and falls back to an all-play share, and says so.
+ */
+export async function loadSchedule(ref, teamsById, opts = {}) {
+  await openSession(ref, opts);
+  const body = await get(ref, "league/schedules", { period: "all" }, opts);
+  const byWeek = new Map();
+  for (const period of body?.schedule?.periods ?? []) {
+    const wk = num(period?.id);
+    if (wk == null) continue;
+    for (const m of period?.matchups ?? []) {
+      const home = teamsById?.get(num(m?.home_team?.id))?.name;
+      const away = teamsById?.get(num(m?.away_team?.id))?.name;
+      if (!home || !away) continue;
+      if (!byWeek.has(wk)) byWeek.set(wk, []);
+      byWeek.get(wk).push([home, away]);
+    }
+  }
+  return byWeek;
+}
+
+/**
+ * Which team belongs to this viewer (D-16).
+ *
+ * Three sources, in falling confidence: the team page the user came from, the team
+ * id the league page embeds, and - on the cookie route, which never had a reason to
+ * read the page - one credentialed read of that page to find it. Never a guess:
+ * captioning some other manager's trades "you" is worse than asking, and the panel's
+ * own `pickTeam` prompt is what `{team: null}` means.
+ */
+export async function identify(ref, model, opts = {}) {
+  const teams = model?.teams;
+  const teamOf = (id) => (id == null || !teams ? null : teams.get(num(id)) ?? null);
+
+  const page = teamOf(ref?.teamId);
+  if (page) return { team: page.name, how: "the team page you came from" };
+
+  let hinted = teamOf(ref?.session?.teamHint);
+  if (!hinted) {
+    try {
+      const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
+      const res = await fetchImpl(pageUrl(ref), { credentials: "include" });
+      const html = res?.ok && typeof res.text === "function" ? await res.text() : null;
+      const hint = viewerHint(html);
+      if (hint != null && ref?.session) ref.session.teamHint = hint;
+      hinted = teamOf(hint);
+    } catch { /* no page, no hint: the prompt below is the honest answer */ }
+  }
+  if (hinted) return { team: hinted.name, how: "your CBS league page" };
+  return { team: null, how: null };
+}
 
 /* ---------- the adapter ---------- */
 

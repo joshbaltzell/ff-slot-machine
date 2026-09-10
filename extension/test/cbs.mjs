@@ -612,10 +612,14 @@ const load = async (table, over = {}, base = REF) => {
   const withCrosswalk = await load(cbsTable());
   ok(withCrosswalk.model.notes.some((n) => /^CBS: id crosswalk maps 5 of 168 rostered players/.test(n)),
      "a working crosswalk reports how many of the roster it mapped");
-  ok(withCrosswalk.model.notes.some((n) => /no weekly history/.test(n)),
-     "the model says outright that no history is read yet, rather than showing an empty one silently");
+  // The recorded weekly-scoring capture defaulted to free agents, so it names none of
+  // this league's 168 rostered players (README Findings). The adapter asks for
+  // player_status=all, gets those same rows back from the fixture, and says outright
+  // that nobody was matched rather than showing an empty history in silence.
+  ok(withCrosswalk.model.notes.some((n) => /^CBS: weekly scoring for this season named none/.test(n)),
+     "a weekly-scoring feed that names no rostered player says so");
   ok([...withCrosswalk.model.players.values()].every((p) => Array.isArray(p.history) && p.history.length === 0),
-     "...and history is empty for every player (11-06 reads weekly-scoring with player_status=all)");
+     "...and every history is empty, because that is what the recorded feed carries");
 }
 
 /* auth */
