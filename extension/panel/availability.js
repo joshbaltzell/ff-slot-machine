@@ -8,7 +8,7 @@
  */
 
 export const AVAIL_HINT = {
-  status: "Whether this player is expected to suit up. Q/D is ESPN's game-status tag "
+  status: "Whether this player is expected to suit up. Q/D is the platform's game-status tag "
         + "with Sleeper's practice report beside it (FP full, LP limited, DNP none); "
         + "OUT scores nothing this week; IR, PUP and SUS score nothing for the rest "
         + "of the horizon. A blank cell means nothing is being reported.",

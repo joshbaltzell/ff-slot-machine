@@ -1,7 +1,8 @@
 /**
  * Everything the projections feature does, so `panel.js` gains only hook points.
  *
- * `runProjections` fetches the outside sources, aggregates them into ESPN's scoring,
+ * `runProjections` fetches the outside sources, aggregates them into the analysed
+ * platform's own scoring,
  * writes this week to the calibration log, joins whatever actuals have appeared
  * since, and hands back the slope map `shrinkProjections` should use. It never
  * throws: a dead feed is a log line and a degraded field, because the trade search
@@ -18,6 +19,7 @@ import { aggregateProjections } from "../engine/aggregate.js";
 import { attachActuals, fitSlopes, loadLog, logKey, logWeek, mergeSlopes, summary,
          weeksStored, weeksWithActuals } from "../engine/calibration.js";
 import { CALIBRATION_K } from "../engine/calibrate.js";
+import { byId } from "../engine/platforms/index.js";
 
 const AGG_KEY = "ffsm.aggregate";
 
@@ -36,6 +38,9 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
                                        ...opts } = {}) {
   const storage = store(opts);
   const fail = (msg) => say(msg, "err");
+  // What to call the platform whose numbers these are. Resolved from the registry,
+  // never imported from a global: this module still loads with no chrome and no DOM.
+  const label = byId(ref?.platform)?.label ?? "the platform";
   const out = {
     aggregate: true, band: new Map(), coverage: { sleeper: 0, fp: 0 },
     k: { ...CALIBRATION_K }, fitted: false, fittedPositions: [], summaryRows: [],
@@ -46,7 +51,8 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
   const remaining = (model.weeks ?? []).filter((w) => w >= currentWeek);
   out.remaining = remaining.length ? remaining : [...(model.weeks ?? [])];
 
-  // Pre-aggregate ESPN, for the log. Snapshotted before anything can mutate it.
+  // The platform's own pre-aggregate number, for the log. Snapshotted before
+  // anything can mutate it.
   //
   // Rostered players only (`teamId != null`; `loadFreeAgents` sets it to null). The
   // free-agent pool is merged into `model.players` before this runs and outnumbers
@@ -107,22 +113,22 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
         if (sl.failed?.length) say(`  ${sl.failed.length} Sleeper week(s) unavailable`, "");
         if (!fp.available) say(`  FantasyPros unavailable (${fp.reason || "no data"})`, "");
       } catch (e) {
-        fail(`projections: aggregate failed (${e.message ?? e}) — using ESPN alone`);
+        fail(`projections: aggregate failed (${e.message ?? e}) — using ${label} alone`);
       }
     } else {
       say(`projections: no outside source available (Sleeper 0, FantasyPros 0) — `
-        + `using ESPN alone`, "err");
+        + `using ${label} alone`, "err");
       if (!fp.available && fp.reason) say(`  FantasyPros: ${fp.reason}`, "");
     }
   } else {
-    say("projections: ESPN only (aggregate off)", "");
+    say(`projections: ${label} only (aggregate off)`, "");
   }
 
   /* ---- the calibration log ----
      Written every run, aggregate toggle on or off: with the toggle off (or every
      source dead) `agg` is simply `espn` again, and that is deliberate — the log
      records what was actually fed to the engine, not what would have been fed
-     under some other setting, so a single league's log can mix ESPN-only and
+     under some other setting, so a single league's log can mix single-source and
      aggregated rows across sessions and still be exactly what should be
      calibrated. */
   if (storage) {
@@ -200,15 +206,16 @@ export function bandTag(band, id, threshold = 0.5) {
 // other hint here: it is a module constant with no feed data in it, and `esc` would
 // double-escape the `&#39;` entities into visible `&amp;#39;`.
 export const SOURCES_HINT = "Averaging projection sources beats any single source. "
-  + "On, ESPN&#39;s numbers are averaged with Sleeper/RotoWire and FantasyPros ECR — "
-  + "not as raw points, which are scored under different rules, but as each source&#39;s "
-  + "fraction of its own positional mean, converted back into this league&#39;s scoring.";
+  + "On, the projections your platform publishes are averaged with Sleeper/RotoWire and "
+  + "FantasyPros ECR — not as raw points, which are scored under different rules, but as "
+  + "each source&#39;s fraction of its own positional mean, converted back into this "
+  + "league&#39;s scoring.";
 
-export function sourcesChips({ aggregate = true } = {}) {
+export function sourcesChips({ aggregate = true, label = "Platform" } = {}) {
   return `<div class="fld"><label data-hint="${SOURCES_HINT}"><span class="hint">Sources</span></label>
     <div class="chips" id="sources">
       <button data-v="1" aria-pressed="${aggregate !== false}">Aggregate</button>
-      <button data-v="0" aria-pressed="${aggregate === false}">ESPN only</button>
+      <button data-v="0" aria-pressed="${aggregate === false}">${label} only</button>
     </div></div>`;
 }
 
@@ -229,7 +236,9 @@ export function bindSourcesChips(root, { storage, reload } = {}) {
 
 /* ---------- the Calibration section ---------- */
 
-const SRC_LABEL = { espn: "ESPN", sleeper: "Sleeper", fp: "FantasyPros", agg: "Aggregate" };
+// The `espn` key is the calibration log's own column name (`calibration.js` SOURCES)
+// and is data, not copy: only its displayed label reads the platform being analysed.
+const srcLabels = (label) => ({ espn: label, sleeper: "Sleeper", fp: "FantasyPros", agg: "Aggregate" });
 const n2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "—");
 const n3 = (v) => (Number.isFinite(v) ? v.toFixed(3) : "—");
 
@@ -237,7 +246,8 @@ const n3 = (v) => (Number.isFinite(v) ? v.toFixed(3) : "—");
  * @param grid  panel.js's `grid()` — passed in so the sort machinery stays there
  * @param esc   panel.js's `esc()`
  */
-export function calibrationSection(state, { grid, esc }) {
+export function calibrationSection(state, { grid, esc, label = "Platform" }) {
+  const SRC_LABEL = srcLabels(label);
   const rows = state.summaryRows ?? [];
   const stored = state.weeksStored ?? 0;
   const withActuals = state.weeksWithActuals ?? 0;

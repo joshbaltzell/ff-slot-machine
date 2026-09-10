@@ -585,11 +585,12 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
 
   /* chips reflect the toggle */
   {
-    const on = sourcesChips({ aggregate: true });
+    // `label` is what the platform sweep threads in; panel.js passes the adapter's.
+    const on = sourcesChips({ aggregate: true, label: "ESPN" });
     ok(on.includes('id="sources"'), "the chip group has an id to bind to");
     ok(/data-v="1"[^>]*aria-pressed="true"/.test(on), "aggregate on is pressed");
     ok(/data-v="0"[^>]*aria-pressed="false"/.test(on), "espn-only is not pressed");
-    const off = sourcesChips({ aggregate: false });
+    const off = sourcesChips({ aggregate: false, label: "ESPN" });
     ok(/data-v="0"[^>]*aria-pressed="true"/.test(off), "the toggle flips");
   }
 
@@ -636,7 +637,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
                     { source: "agg", pos: "RB", n: 40, mae: 5.1, bias: -0.9, slope: null }],
       fitted: true, fittedPositions: ["RB"], k: { QB: 0.67, RB: 0.81, WR: 0.85, TE: 0.72 },
       weeksStored: 8, weeksWithActuals: 7,
-    }, { grid, esc });
+    }, { grid, esc, label: "ESPN" });
     ok(html.includes("<section"), "it returns a section");
     ok(/Calibration/.test(html), "it is titled");
     ok(html.includes("0.81"), "a fitted slope is shown");
@@ -649,7 +650,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
 
     const early = calibrationSection({ summaryRows: [], fitted: false, fittedPositions: [],
       k: { QB: 0.67, RB: 0.79, WR: 0.85, TE: 0.72 }, weeksStored: 1, weeksWithActuals: 0 },
-      { grid, esc });
+      { grid, esc, label: "ESPN" });
     ok(/literature/i.test(early), "before the fit the note says literature slopes");
     ok(!/undefined/.test(early), "an empty log renders without holes");
   }

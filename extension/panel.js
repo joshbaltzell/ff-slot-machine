@@ -2,8 +2,8 @@
  * Loads the league the user is looking at, runs the search, renders the report.
  *
  * Everything runs locally: no backend, no analytics, no league data leaves the
- * machine. The only network calls are to ESPN's own read API, with the session the
- * browser already has.
+ * machine. The only league calls are to the read API of whichever platform the
+ * league lives on, with the session the browser already has.
  */
 import { measureVolatility, SLOT_LABEL } from "./engine/league.js";
 import { detect, byId, leagueKey, migrateStorageKeys } from "./engine/platforms/index.js";
@@ -345,8 +345,8 @@ async function start(ref) {
         + `${sl.fromCache ? " (cached)" : ""}${sl.stale ? ", stale" : ""}`, "ok");
       Steps.set("injuries", "done", `${sl.byEspn.size}`);
     } catch (e) {
-      say(`  practice reports unavailable (${e.message}) - using ESPN status only`, "err");
-      Steps.set("injuries", "warn", "ESPN only");
+      say(`  practice reports unavailable (${e.message}) - using ${platform.label} status only`, "err");
+      Steps.set("injuries", "warn", `${platform.label} only`);
     }
     const av = buildAvailability(model, sleeperByEspn, model.weeks, s.currentWeek);
     for (const line of availabilityLines(av.summary)) say(line, "ok");
@@ -377,7 +377,7 @@ async function start(ref) {
     // came back with nothing, exactly as the free-agent step reports it.
     Steps.set("proj", !P.aggregate ? "skip"
         : (P.coverage.sleeper || P.coverage.fp) ? "done" : "warn",
-      P.aggregate ? `Sleeper ${P.coverage.sleeper}, FP ${P.coverage.fp}` : "ESPN only");
+      P.aggregate ? `Sleeper ${P.coverage.sleeper}, FP ${P.coverage.fp}` : `${platform.label} only`);
 
     // Calibrate before anything reads a projection. Off leaves ESPN's numbers as-is.
     const calibrate = (await chrome.storage.local.get("ffsm.calibrate"))["ffsm.calibrate"] ?? true;
@@ -388,7 +388,7 @@ async function start(ref) {
         .map(([p, k]) => `${p} ${k}`).join(", ")}) — ${P.fitted
         ? "slopes fitted from this league's calibration log" : "literature slopes"}`, "ok");
     } else {
-      say("projections used as ESPN publishes them (calibration off)", "");
+      say(`projections used as ${platform.label} publishes them (calibration off)`, "");
     }
 
     // Game environment. After shrinkage on purpose: shrinkage is about how far a
@@ -419,7 +419,7 @@ async function start(ref) {
     // honest failure.
     window.__records = records.size === model.teams.size ? records : null;
     if (window.__records) say(`standings seeded from ${records.size} team records`, "ok");
-    else if (records.size) say(`ESPN reported records for only ${records.size} of `
+    else if (records.size) say(`${platform.label} reported records for only ${records.size} of `
       + `${model.teams.size} teams - projecting from 0-0`, "err");
     // Seeding comes from the regular season, from the standings, or from nowhere.
     // With no weeks left the simulation plays none, and with no records every team
@@ -428,8 +428,8 @@ async function start(ref) {
     // 100% playoff odds. There is no answer here; do not invent one.
     window.__noSeason = s.regularSeasonWeeks.length === 0 && !window.__records;
     if (window.__noSeason)
-      say("the regular season has no weeks left and ESPN did not report a complete "
-        + "set of standings - no season projection can be made", "err");
+      say(`the regular season has no weeks left and ${platform.label} did not report `
+        + "a complete set of standings - no season projection can be made", "err");
     say(`baseline built for ${eng.teams.length} teams`, "ok");
 
     const saved = (await chrome.storage.local.get("ffsm.myTeam"))["ffsm.myTeam"];
@@ -649,9 +649,9 @@ const HINT = {
   gap:    "Points per week behind the strongest roster in the league.",
   optimal:"What this roster would score each week if it started its best possible lineup every week.",
   fagain: "How much your best lineup improves if you add this player and drop the one shown. A free agent who would never start is worth nothing, however good his projection looks.",
-  owned:  "Share of ESPN leagues where this player is rostered. A low number with a real gain is the most likely to still be available.",
+  owned:  "Share of leagues on this platform where this player is rostered. A low number with a real gain is the most likely to still be available.",
   record: "Average wins and losses across every simulated season. Fractional because it is an average of many outcomes, not a prediction of one.",
-  pf:     "Average total points scored over the regular season. Used as the seeding tiebreak, as in most ESPN leagues.",
+  pf:     "Average total points scored over the regular season. Used as the seeding tiebreak, as in most leagues.",
   podds:  "Share of simulated seasons where this team qualifies for the playoffs.",
   byeodds:"Share of simulated seasons where this team earns a first-round bye. Worth far more than it looks: it skips an elimination game.",
   title:  "Share of simulated seasons where this team wins the league.",
@@ -664,7 +664,7 @@ const HINT = {
   dwins:  "Change in your expected regular-season wins: each week's win probability against your scheduled opponent, before and after the trade, summed. Uses the measured spread of both lineups.",
   dtitle: "Change in your odds of winning the league, from two season simulations with identical luck - one with today's rosters, one after the trade. A dash means the change is smaller than the simulation's own error. The top trades are re-simulated at 20,000 seasons so this number resolves for the ones you would actually consider.",
   dbye:   "Change in your odds of a first-round bye. In a six-team bracket a bye roughly doubles title odds, so this is usually the number that matters in November.",
-  calib:  "ESPN projections are over-spread: the gap between a position's #1 and #5 is smaller in reality than on paper. On, each projection is pulled toward its positional mean by the slope measured across twelve seasons (QB 0.67, RB 0.79, WR 0.85, TE 0.72).",
+  calib:  "Published projections are over-spread: the gap between a position's #1 and #5 is smaller in reality than on paper. On, each projection is pulled toward its positional mean by a slope. The defaults are the literature figures, measured on ESPN projections across twelve seasons (QB 0.67, RB 0.79, WR 0.85, TE 0.72); this league's own calibration log replaces them once it has fitted its own.",
   band:   "How much the projection sources disagree about this player, in points per week, averaged over the weeks left. A wide band means the number above it is less settled than it looks — not that the player is volatile.",
 };
 const th = (label, key, cls = "") =>
@@ -732,6 +732,9 @@ function usageBars(strip, proj, thin, weeks, outgoing = false) {
 }
 
 function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new Map()) {
+  // Whichever platform this league was read from. `start()` published the adapter;
+  // every string below that used to say ESPN says this instead.
+  const LABEL = window.__platform?.label ?? "your platform";
   const W = eng.weeks;
   const AV = window.__avail ?? null;
   const rates = eng.startRates();
@@ -1211,7 +1214,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <span>${model.teams.size} teams · ${eng.starters} starters ·
         weeks ${W[0]}–${W.at(-1)}</span></div>
       <h1>FF Slot <em>Machine</em></h1>
-      <div class="mast-meta">${esc(myTeam.toUpperCase())} · LIVE FROM ESPN</div>
+      <div class="mast-meta">${esc(myTeam.toUpperCase())} · LIVE FROM ${esc(LABEL.toUpperCase())}</div>
     </div>
     <div class="mast-right"><button class="ghost" id="theme">Light</button></div>
   </div>
@@ -1323,19 +1326,19 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
             <button data-v="0" aria-pressed="${!divSeed}">By record</button>
             <button data-v="1" aria-pressed="${divSeed}">Division winners first</button>
           </div></div>
-          <span class="readout" style="color:var(--faint)">${divCount} divisions. ESPN does
-            not say which rule applies — pick yours; it moves the bye odds.</span>` : ""}
+          <span class="readout" style="color:var(--faint)">${divCount} divisions. ${esc(LABEL)}
+            does not say which rule applies — pick yours; it moves the bye odds.</span>` : ""}
           <div class="fld"><label data-hint="${esc(HINT.calib)}"><span class="hint">Projections</span></label>
             <div class="chips" id="calib">
               <button data-v="1" aria-pressed="${window.__calibrate !== false}">Calibrated</button>
               <button data-v="0" aria-pressed="${window.__calibrate === false}">As published</button>
             </div></div>
-          ${sourcesChips({ aggregate: window.__aggregate })}
+          ${sourcesChips({ aggregate: window.__aggregate, label: LABEL })}
           ${envChips(window.__env)}
         </div>
         ${window.__noSeason
           ? `<div class="note"><b>No season projection.</b> The regular season has no
-              weeks left and ESPN did not report a complete set of standings, so there
+              weeks left and ${esc(LABEL)} did not report a complete set of standings, so there
               is nothing to seed a bracket from and any number here would be an
               artifact of the order the teams came back in.</div>`
           : seasonGrid}
@@ -1346,9 +1349,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       </div>
     </section>
 
-    ${calibrationSection(window.__calibState ?? {}, { grid, esc })}
+    ${calibrationSection(window.__calibState ?? {}, { grid, esc, label: LABEL })}
 
-    <footer>Live from ESPN. Nothing leaves your machine.
+    <footer>Live from ${esc(LABEL)}. Nothing leaves your machine.
       <button class="ghost" id="refresh">Refresh data</button></footer>
   </div>`;
 
