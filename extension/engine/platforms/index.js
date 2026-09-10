@@ -19,7 +19,7 @@
  *     loadFreeAgents(ref, weeks, opts = {}) -> player[],
  *     loadSchedule(ref, teamsById, opts = {}) -> Map<week, [[homeName, awayName]]>,
  *     identify(ref, model, opts = {}) -> { team: string|null, how: string|null },
- *     fingerprint(ref, opts = {}) -> string|null,   // ONE light request; hashRosters over platform-native ids; null on any failure
+ *     fingerprint(ref, opts = {}) -> string|null,   // one light READ (a session probe may cost more); hashRosters over platform-native ids; null on any failure
  *   }
  *   opts   = { fetchImpl = globalThis.fetch, storage, now, ... }   // injection for offline tests (cache.js idiom)
  *   ref    = { platform, leagueId, seasonId, teamId?, session? }  // session is in-memory only and is never written to storage

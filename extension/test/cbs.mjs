@@ -994,6 +994,19 @@ const authOf = (f, k) => f.inits[k]?.headers?.Authorization;
   ok(fp === model.fingerprint, "fingerprint(ref) is the string loadLeague put in model.fingerprint");
   ok(f.calls.filter((u) => u.includes("league/rosters")).length === 1, "...from one league/rosters request");
   ok(!f.calls.some((u) => u.includes("league/stats")), "...and no projection call: this is the daily check, not a league pull");
+  // IN-02: the docstring used to say "one request" and the adapter contract "ONE
+  // light request". openSession always probes league/details first, so the cookie
+  // route is two, and this runs in a module service worker MV3 kills at ~30 s of
+  // idle. Pin the real cost rather than a claim.
+  ok(f.calls.length === 2 && f.calls.filter((u) => u.includes("league/details")).length === 1,
+     "IN-02: the cookie route costs two requests - the session probe and the rosters read");
+  {
+    const g = countingFetch(refuseCookie(cbsTable({ page: TOKENED })));
+    await cbs.fingerprint({ ...REF }, { fetchImpl: g, storage: mkStorage(), now: 0 });
+    ok(g.calls.length === 4 && g.calls.filter((u) => u.includes("league/details")).length === 2
+       && g.calls.filter((u) => u === pageUrl(REF)).length === 1,
+       "IN-02: ...and the token route costs four - a refused probe, the page read, a second probe and the rosters read");
+  }
 
   let dead = "unset";
   try { dead = await cbs.fingerprint({ ...REF }, { fetchImpl: deadFetch(), storage: mkStorage(), now: 0 }); }

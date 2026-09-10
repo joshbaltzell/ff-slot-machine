@@ -1022,9 +1022,17 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
 }
 
 /**
- * The daily roster fingerprint: one `league/rosters?team_id=all` request, hashed over
+ * The daily roster fingerprint: one `league/rosters?team_id=all` read, hashed over
  * CBS's own ids - the same payload and the same function `loadLeague` uses, so the
  * panel and the service worker can never drift apart.
+ *
+ * It is not one *request*. `openSession` probes `league/details` before it accepts a
+ * route, so the cookie route costs two and the token route four: a refused probe, a
+ * 76 KB read of the league page, a second probe and the rosters read. That runs in a
+ * module service worker MV3 kills at about 30 s of idle, which four small requests
+ * are well inside - but the probe is what refuses a stale session at the door, and a
+ * fingerprint that skipped it would answer `null` on a route that actually works.
+ * `test/cbs.mjs` pins both counts so the cost stays a measurement.
  *
  * The hand-over route is disabled: this also runs in the module service worker, which
  * has no tab to ask and must not try. Null on any failure, including not being signed
