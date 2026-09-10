@@ -51,7 +51,7 @@ const mkModel = (weeks = [5, 6, 7]) => {
     weeks: [...weeks],
     settings: { pprValue: 0.5, currentWeek: weeks[0] },
     players: new Map(spec.map(([id, pos, base], i) => [id, {
-      id, name: `p${id}`, pos, nfl: "X", eligibleSlots: [], rawStats: [], teamId: 1 + (i % 2),
+      id, name: `p${id}`, pos, nfl: "X", eligibleSlots: [], history: [], teamId: 1 + (i % 2),
       proj: Object.fromEntries(weeks.map((w) => [w, base])),
     }])),
   };
@@ -397,7 +397,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
        "an unknown league reads as an empty log");
   }
 
-  /* actuals come from ESPN's own rawStats, filtered on seasonId */
+  /* actuals come from each player's history, filtered on season */
   {
     const log = { weeks: { 5: { at: 0, rows: [
       { id: 101, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10 },
@@ -406,14 +406,14 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     // The decoys come FIRST on purpose. `attachActuals` uses `.find()`, so with the
     // true row leading, dropping any predicate from the filter would still pass and
     // the test would advertise a guarantee it does not provide. In this order every
-    // predicate is load-bearing: remove `seasonId` and 2025's 99 wins, remove
-    // `statSourceId` and the projection's 88 wins, remove `statSplitTypeId` and the
-    // season-total 77 wins. Reading last season's numbers measures ~15% low.
-    const players = new Map([[101, { id: 101, rawStats: [
-      { statSourceId: 0, statSplitTypeId: 1, seasonId: 2025, scoringPeriodId: 5, appliedTotal: 99 },
-      { statSourceId: 1, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 88 },
-      { statSourceId: 0, statSplitTypeId: 0, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 77 },
-      { statSourceId: 0, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 13.456 },
+    // predicate is load-bearing: remove `season` and 2025's 99 wins, remove the
+    // finite-`actual` check and the projection-only row's null wins, remove `week`
+    // and week 6's 77 wins. Reading last season's numbers measures ~15% low.
+    const players = new Map([[101, { id: 101, history: [
+      { season: 2025, week: 5, actual: 99, proj: null },
+      { season: 2026, week: 5, actual: null, proj: 88 },
+      { season: 2026, week: 6, actual: 77, proj: null },
+      { season: 2026, week: 5, actual: 13.456, proj: null },
     ] }]]);
     const r = attachActuals(log, players, 2026);
     ok(close(log.weeks["5"].rows[0].actual, 13.46), "the actual is read and rounded");
@@ -657,7 +657,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     const say = (t, c) => { lines.push(String(t)); return {}; };
     const model = mkModel([5, 6]);
     for (const p of model.players.values())
-      p.rawStats = [{ statSourceId: 0, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 12 }];
+      p.history = [{ season: 2026, week: 5, actual: 12, proj: null }];
     model.settings = { pprValue: 0.5, currentWeek: 5 };
 
     const sleeperPlayers = Object.fromEntries([101, 102, 103, 104, 201, 202].map((id, i) =>
@@ -721,7 +721,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     // score 0 because they were inactive — a different slope, outnumbering the
     // players who actually start about 2.5 to 1.
     model.players.set(105, { id: 105, name: "fa105", pos: "RB", nfl: "X", eligibleSlots: [],
-      rawStats: [], teamId: null, proj: { 5: 25, 6: 25 } });
+      history: [], teamId: null, proj: { 5: 25, 6: 25 } });
     model.settings = { pprValue: 0.5, currentWeek: 5 };
 
     const { weekUrl } = await import("../engine/sources/sleeperproj.js");
@@ -758,8 +758,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
 
     const model = mkModel([6, 7]);
     model.settings = { pprValue: 0.5, currentWeek: 6 };
-    model.players.get(101).rawStats = [
-      { statSourceId: 0, statSplitTypeId: 1, seasonId: 2026, scoringPeriodId: 5, appliedTotal: 13.5 }];
+    model.players.get(101).history = [{ season: 2026, week: 5, actual: 13.5, proj: null }];
     await storage.set({ "ffsm.aggregate": false });     // nothing to fetch; the log is the point
     await runProjections({ model, ref, say: () => {}, storage, fetchImpl: mkFetch({}), now: 0 });
 

@@ -59,20 +59,18 @@ const mkEngine = (model) =>
 
 /* ---- 1. measureVolatility keeps the residuals it already computes ---- */
 {
-  // Two synthetic seasons of ESPN stat rows. statSplitTypeId 1 is "one week";
-  // statSourceId 1 is the projection, 0 the actual.
-  const rows = (season, pairs) => pairs.flatMap(([wk, proj, act]) => [
-    { statSplitTypeId: 1, seasonId: season, statSourceId: 1, scoringPeriodId: wk, appliedTotal: proj },
-    { statSplitTypeId: 1, seasonId: season, statSourceId: 0, scoringPeriodId: wk, appliedTotal: act },
-  ]);
+  // Two synthetic seasons of history rows - the platform-neutral shape every adapter
+  // builds: one row per (season, week) carrying that week's projection and actual.
+  const rows = (season, pairs) => pairs.map(([wk, proj, act]) =>
+    ({ season, week: wk, proj, actual: act }));
   const eight = [[1, 10, 12], [2, 10, 8], [3, 10, 14], [4, 10, 6],
                  [5, 10, 11], [6, 10, 9], [7, 10, 20], [8, 10, 0]];
   const two = [[1, 10, 30], [2, 10, 4]];
   const players = [
-    { id: 1, pos: "WR", rawStats: rows(2025, eight) },
-    { id: 2, pos: "WR", rawStats: rows(2025, two) },      // below minWeeks
-    { id: 3, pos: "RB", rawStats: rows(2024, eight) },     // wrong season
-    { id: 4, pos: "TE", rawStats: rows(2025, [[1, 0.5, 9], [2, 0.5, 3]]) }, // proj <= 1
+    { id: 1, pos: "WR", history: rows(2025, eight) },
+    { id: 2, pos: "WR", history: rows(2025, two) },      // below minWeeks
+    { id: 3, pos: "RB", history: rows(2024, eight) },     // wrong season
+    { id: 4, pos: "TE", history: rows(2025, [[1, 0.5, 9], [2, 0.5, 3]]) }, // proj <= 1
   ];
   const vol = measureVolatility(players, 2025);
 
