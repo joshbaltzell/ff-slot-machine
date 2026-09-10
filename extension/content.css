@@ -1,4 +1,5 @@
-/* Injected into ESPN's page, so every rule is namespaced and nothing is inherited.
+/* Injected into a league page we do not own, so every rule is namespaced and nothing
+   is inherited.
    Deliberately quiet: bottom-right, self-dismissing, never a modal. */
 .ffsm-pill {
   position: fixed; right: 20px; bottom: 20px; z-index: 2147483000;

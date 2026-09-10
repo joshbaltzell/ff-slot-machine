@@ -289,8 +289,12 @@ async function get(ref, route, params = {}, opts = {}) {
  * The same table, in the same order, as the capture kit's (`fixtures/cbs/capture.js`)
  * and the scrubber's, so a recorded page and a live one are read the same way. P1 is
  * what a 2026 league page actually carries; P4 is the 2017 form the design doc named.
+ *
+ * The table is exported because `content.js` cannot import it - a content script is
+ * not a module - and so duplicates P1's source verbatim; `test/platform.mjs` reads
+ * both files and fails the moment the two copies stop agreeing.
  */
-const TOKEN_PATTERNS = [
+export const TOKEN_PATTERNS = [
   ["P1", /CBSi\.token\s*=\s*"([^"]+)"/],
   ["P2", /['"]access_token['"]\s*:\s*['"]([^'"]+)['"]/],
   ["P3", /"token"\s*:\s*"([^"]+)"/],
