@@ -345,6 +345,38 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
   ok(!/ESPN/.test(CONTENT), "no user-visible ESPN literal is left in content.js");
 }
 
+/* the panel's boot, league prompt and sign-in screen (11-07)
+
+   panel.js cannot be imported here - it queries `document` while it evaluates - so
+   these read it as text. Text is enough for what has to hold: which shapes the
+   league prompt accepts, that the credential fallback is a pasted token, and that a
+   password field never reappears in either the script or the markup (D-11). */
+{
+  const PANEL = fs.readFileSync(path.join(here, "..", "panel.js"), "utf8");
+  const HTML = fs.readFileSync(path.join(here, "..", "panel.html"), "utf8");
+
+  ok(!/inputmode="numeric"/.test(PANEL) && !/Number\(\$\("#lid"\)/.test(PANEL),
+     "the league prompt is no longer numeric-only, so a CBS slug can be typed into it");
+  ok(/ESPN league id or CBS league slug/.test(PANEL),
+     "the prompt's placeholder names a URL, an ESPN id and a CBS slug");
+  ok(/\/\^\\d\+\$\//.test(PANEL) && /\/\^\[a-z0-9-\]\+\$\/i/.test(PANEL),
+     "a bare value routes on digits to espn and on a slug to cbs");
+  ok(/window\.__platform = platform/.test(PANEL),
+     "start() publishes the adapter for render to read its label from");
+  ok(/Reading your league from \$\{platform\.label\}/.test(PANEL),
+     "the boot message names the platform as start()'s first UI action");
+  ok(/platform\?\.acceptsToken/.test(PANEL) && /signInUrl\(ref\)/.test(PANEL),
+     "the AUTH screen offers a token paste only for an adapter that accepts one");
+  ok(/session: \{ mode: "token", token, teamHint: null \}/.test(PANEL),
+     "a pasted token becomes ref.session and start() runs again");
+  ok(!/(chrome\.storage[^;]*token|token[^;]*chrome\.storage)/.test(PANEL),
+     "and it never reaches chrome.storage");
+  ok(!/password/i.test(PANEL) && !/password/i.test(HTML),
+     "there is no password field, and no password anything, in the panel");
+  ok(/Reading your league<\/p>/.test(HTML) && !/from ESPN/.test(HTML),
+     "the boot copy in the markup names no platform: JS fills it in once one is known");
+}
+
 /* espn reproduces the fixture */
 {
   const model = MODELS.espn;
