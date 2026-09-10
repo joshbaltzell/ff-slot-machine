@@ -467,7 +467,10 @@ function syntheticBundle(S, { withToken }) {
   const teams = [
     { id: "1", name: S.teams[0], abbr: "GG", owners: [{ first_name: S.first, last_name: S.last, email: S.owner, login: "patowner77", user_id: 5551 }],
       players: [{ id: "2001", fullname: "Player One", position: "QB", eligible_positions: ["QB"], pro_team: "KC" }] },
-    { id: "2", name: S.teams[1], abbr: "BWB", owners: [{ nickname: S.nick }],
+    /* Observed 2026-09-10: a team CBS has not had named carries the short_name "Team B" — the
+     * very shape the replacement vocabulary uses. It must still be replaced, and no generated
+     * label may collide with it. */
+    { id: "2", name: S.teams[1], abbr: "BWB", short_name: "Team B", owners: [{ nickname: S.nick }],
       players: [{ id: "2002", fullname: "Player Two", position: "RB", eligible_positions: ["RB", "RB-WR"], pro_team: "SF" }] },
     /* Observed 2026-09-10: one real team's short_name is the word "Draft", which the collector
      * rightly takes for a team name — and which then appears inside the key `draft_type`. */
@@ -599,6 +602,10 @@ async function selfTest(log) {
       ok(t[0].name === "Team A" && t[1].name === "Team B" && t[2].name === "Team C", "rosters.json team names read Team A, Team B, Team C in first-seen order");
       ok(t[0].abbr === "TMA" && t[1].abbr === "TMB", "rosters.json team abbreviations are replaced too");
       ok(/^Team [A-Z]+$/.test(t[2].short_name), "a team short_name of 'Draft' is replaced where it is a value");
+      ok(/^Team [A-Z]+$/.test(t[1].short_name) && t[1].short_name !== "Team B", "a team CBS left named 'Team B' is itself replaced, not mistaken for already-scrubbed output");
+      const labels = [t[0].name, t[0].short_name, t[1].name, t[1].short_name, t[2].name, t[2].short_name];
+      ok(new Set(labels).size === labels.length, "no two team strings collapse onto the same replacement label");
+      ok(!labels.includes("Team B"), "the generated vocabulary skips a label a real team already uses");
       ok(/^Owner \d+$/.test(t[0].owners[0].first_name) && /^Owner \d+$/.test(t[0].owners[0].last_name), "rosters.json owner names read Owner N");
       ok(/^owner-\d+@example\.invalid$/.test(t[0].owners[0].email), "rosters.json owner e-mail reads owner-n@example.invalid");
       ok(/^Owner \d+$/.test(t[0].owners[0].login) && /^Owner \d+$/.test(t[1].owners[0].nickname), "rosters.json login and nickname read Owner N");
