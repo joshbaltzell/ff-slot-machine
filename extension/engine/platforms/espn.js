@@ -244,6 +244,7 @@ export function historyOf(stats) {
   const by = new Map();
   for (const st of stats ?? []) {
     if (st.statSplitTypeId !== 1) continue;
+    if (st.statSourceId !== 0 && st.statSourceId !== 1) continue;   // an ignored source leaves no row
     const k = `${st.seasonId}:${st.scoringPeriodId}`;
     const row = by.get(k) ?? { season: st.seasonId, week: st.scoringPeriodId, actual: null, proj: null };
     if (st.statSourceId === 0) row.actual = st.appliedTotal;
