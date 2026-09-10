@@ -8,7 +8,7 @@
     "https://lm-api-reads.fantasy.espn.com/*",
     "https://fantasy.espn.com/*"
   ],
-  "background": { "service_worker": "background.js" },
+  "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
     {
       "matches": ["https://fantasy.espn.com/football/*"],
