@@ -5,8 +5,8 @@
  * machine. The only network calls are to ESPN's own read API, with the session the
  * browser already has.
  */
-import { parseLeagueUrl, loadLeague, loadFreeAgents, loadSchedule, measureVolatility,
-         mySwid, identifyTeam, SLOT_LABEL } from "./engine/league.js";
+import { measureVolatility, SLOT_LABEL } from "./engine/league.js";
+import { detect, byId } from "./engine/platforms/index.js";
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
@@ -245,7 +245,7 @@ function askForLeague(message) {
       the <code>leagueId</code> from its URL.</p>`;
   $("#go").onclick = () => {
     const id = Number($("#lid").value.trim());
-    if (id) start({ leagueId: id, seasonId: new Date().getFullYear() });
+    if (id) start({ platform: "espn", leagueId: id, seasonId: new Date().getFullYear() });
   };
 }
 
@@ -262,19 +262,25 @@ async function cached(key, fn) {
 }
 
 async function start(ref) {
+  // The adapter for this league's platform. Every league fetch below goes through
+  // it, and the engine that follows never learns which one it was.
+  const platform = byId(ref?.platform);
+  if (!platform) { askForLeague("Which league?"); return; }
   $("#bootact").innerHTML = "";
   steps.innerHTML = "";
   try {
     Steps.init();
     Steps.set("settings", "run");
-    say(`league ${ref.leagueId}, season ${ref.seasonId}`);
+    say(`${platform.label} league ${ref.leagueId}, season ${ref.seasonId}`);
     let seenSettings = false;
-    const model = await loadLeague(ref, (done, total, label) => {
+    const model = await platform.loadLeague(ref, (done, total, label) => {
       if (!seenSettings) { Steps.set("settings", "done"); Steps.set("rosters", "run"); seenSettings = true; }
       progress(done / total);
       if (done && (done % 3 === 0 || done === total)) say(`  ${label} (${done}/${total})`);
     });
     Steps.set("rosters", "done", `${model.players.size} players`);
+    // Adapter log lines, printed as written. ESPN emits none.
+    for (const note of model.notes ?? []) say(note, "");
 
     // Weeks already played cannot be changed by a trade, and averaging them into a
     // trade's value scores games nobody can affect. Everything downstream reads
@@ -297,7 +303,7 @@ async function start(ref) {
     // Free agents are optional: a failure here should not cost you the trade search.
     try {
       Steps.set("agents", "run");
-      const fas = await loadFreeAgents(ref, model.weeks);
+      const fas = await platform.loadFreeAgents(ref, model.weeks);
       for (const fa of fas) model.players.set(fa.id, fa);
       say(`  ${fas.length} available players`, "ok");
       Steps.set("agents", "done", `${fas.length}`);
@@ -408,9 +414,8 @@ async function start(ref) {
         + "set of standings - no season projection can be made", "err");
     say(`baseline built for ${eng.teams.length} teams`, "ok");
 
-    const swid = await mySwid();
     const saved = (await chrome.storage.local.get("ffsm.myTeam"))["ffsm.myTeam"];
-    let { team: myTeam, how } = identifyTeam(model, { swid, teamId: ref.teamId });
+    let { team: myTeam, how } = await platform.identify(ref, model);
     if (saved && eng.teams.includes(saved)) { myTeam = saved; how = "your saved choice"; }
     if (myTeam) say(`your team: ${myTeam} (from ${how})`, "ok");
     else {
@@ -425,7 +430,7 @@ async function start(ref) {
     let schedule = new Map();
     Steps.set("schedule", "run");
     try {
-      schedule = await loadSchedule(ref, model.teams);
+      schedule = await platform.loadSchedule(ref, model.teams);
       say(`schedule: ${schedule.size} weeks of real matchups`, "ok");
       Steps.set("schedule", "done", `${schedule.size} wks`);
     } catch {
@@ -570,11 +575,15 @@ async function start(ref) {
     if (running) running.dataset.s = "warn";
     $("#bootmsg").textContent = "Could not finish loading.";
     say(String(err.message ?? err), "err");
-    if (/signed in|access/i.test(String(err))) {
-      $("#bootmsg").textContent = "ESPN did not accept the request.";
+    // Adapters mark "not signed in / no access" with err.code. The message is theirs
+    // to word and is never pattern-matched here.
+    if (err.code === "AUTH") {
+      const label = platform?.label ?? "The platform";
+      const signIn = platform?.signInUrl(ref) ?? "https://fantasy.espn.com";
+      $("#bootmsg").textContent = `${label} did not accept the request.`;
       $("#bootact").innerHTML =
         `<p style="font-size:13px;color:var(--dim)">Sign in at
-         <a href="https://fantasy.espn.com" target="_blank">fantasy.espn.com</a>,
+         <a href="${signIn}" target="_blank">${new URL(signIn).host}</a>,
          then reload this page.</p>`;
     } else {
       askForLeague("Could not load that league.");
@@ -1418,7 +1427,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   document.documentElement.dataset.theme = "dark";
   const params = new URLSearchParams(location.search);
   const from = params.get("from");
-  const ref = from ? parseLeagueUrl(from) : null;
+  const ref = from ? detect(from) : null;
   if (ref) start(ref);
   else askForLeague("Which league?");
 })();
