@@ -17,7 +17,7 @@ import { fileURLToPath } from "url";
 import cbs, {
   SLOT, BENCH_SLOT, IR_SLOT, POS_ID, MEMBERS, TEAM_ABBR, STATUS, CBS_HOST_RE,
   cbsUrl, publicUrl, parseLeagueUrl, expandEligibility, readSettings, normalizeStatus, flexSlotFor,
-  teamAbbr, posOf, num, eligibleCodes, configuredCodes, extractToken, openSession, pageUrl,
+  teamAbbr, posOf, num, eligibleCodes, configuredCodes, extractToken, openSession, sessionFor, pageUrl,
 } from "../engine/platforms/cbs.js";
 import * as CBS from "../engine/platforms/cbs.js";
 import { IDS_URL, IDS_KEY, trimIds, loadCrosswalk } from "../engine/sources/fantasypros.js";
@@ -236,6 +236,26 @@ const REF = { platform: "cbs", leagueId: "redacted-league", seasonId: 2026 };
   const n7 = [];
   ok(flexSlotFor(new Set(["QB", "DST"]), n7) === 23 && n7.some((n) => /no single lineup slot covers/.test(n)),
      "...and headroom no slot covers falls back to RB/WR/TE with a note rather than inventing one");
+
+  // CR-02. Headroom on a position no shared flex can seat - a kicker, a defence - must keep
+  // its own seats. Folding it into an RB/WR/TE flex deletes the position from the lineup
+  // outright: with min_active 0 it has no dedicated seat either, so every kicker and every
+  // defence becomes unstartable and their projections vanish from the solve. min_active 0 is
+  // ordinary (the recorded league uses it for WR and TE).
+  const kdst = { rules: { roster: {
+    positions: [{ abbr: "QB", min_active: 1, max_active: 1 }, { abbr: "RB", min_active: 1, max_active: 3 },
+                { abbr: "WR", min_active: 0, max_active: 4 }, { abbr: "TE", min_active: 0, max_active: 2 },
+                { abbr: "K", min_active: 0, max_active: 1 }, { abbr: "DST", min_active: 0, max_active: 1 }],
+    statuses: [{ description: "Active Players", max: 9, min: 4 }, { description: "Reserve Players", max: 6, min: 0 }] } } };
+  const n8 = [];
+  const s8 = readSettings(kdst, {}, null, n8);
+  ok(s8.lineupSlotCounts[SLOT.K] === 1 && s8.lineupSlotCounts[SLOT.DST] === 1,
+     "a kicker and a defence with headroom keep their own seats: no flex can seat them");
+  ok(s8.lineupSlotCounts[SLOT["RB-WR-TE"]] === 5 && s8.lineupSlotCounts[SLOT.QB] === 1 && s8.lineupSlotCounts[SLOT.RB] === 1,
+     "...and the seats left over still become the flex the skill positions share");
+  ok(s8.starters === 9, "...with the lineup still seating exactly the Active Players cap");
+  ok(!n8.some((n) => /no single lineup slot covers/.test(n)),
+     "...and no give-up note is raised, because every seat was placed");
 
   // A fixed lineup - every position's min equals its max - keeps the exact seats and says nothing.
   const fixed = { rules: { roster: {
@@ -675,7 +695,7 @@ const load = async (table, over = {}, base = REF) => {
   const ref = { ...REF };
   const cookieFetch = countingFetch(cbsTable());
   await cbs.loadLeague(ref, () => {}, { fetchImpl: cookieFetch, storage: mkStorage(), now: 0 });
-  ok(ref.session?.mode === "cookie" && ref.session.token === null,
+  ok(sessionFor(ref)?.mode === "cookie" && sessionFor(ref).token === null,
      "the recorded league authenticates on the session cookie alone: no token is read at all");
   ok(cookieFetch.calls.filter((u) => u.includes("league/details")).length === 2,
      "one probe to open the session and one read for the settings");
@@ -684,6 +704,26 @@ const load = async (table, over = {}, base = REF) => {
   ok(cookieFetch.inits.filter((i) => i?.headers?.Authorization).length === 0,
      "...and no Authorization header is sent when there is no token");
 
+  // CR-01. The daily worker hands `val.ref` — an object it is about to write straight back
+  // into chrome.storage.local — to platform.fingerprint. If openSession parks the session on
+  // that object, the live token is persisted, which D-10 and the Platforms section both
+  // forbid. The session is per-run state, not part of the ref.
+  {
+    const ref = { platform: "cbs", leagueId: "myleague", seasonId: 2026 };
+    const before = JSON.stringify(ref);
+    const sess = await openSession(ref, { session: { mode: "token", token: "LIVE-TOKEN-0123456789" }, fetchImpl: deadFetch() });
+    ok(sess.token === "LIVE-TOKEN-0123456789", "an explicitly passed session is used");
+    ok(JSON.stringify(ref) === before, "...and openSession leaves the caller's ref untouched: no session, no token on it");
+    ok(!JSON.stringify(ref).includes("LIVE-TOKEN"), "...so a ref serialized to storage cannot carry the token");
+    const again = await openSession(ref, { fetchImpl: deadFetch() });
+    ok(again && again.token === "LIVE-TOKEN-0123456789", "the session is remembered for this ref without living on it");
+  }
+  {
+    // A ref that arrives carrying a session (how a pasted token is handed in) is still read.
+    const ref = { platform: "cbs", leagueId: "myleague", seasonId: 2026, session: { mode: "token", token: "PASTED" } };
+    const sess = await openSession(ref, { fetchImpl: deadFetch() });
+    ok(sess.token === "PASTED", "a session already on the ref is honoured, as the paste path needs");
+  }
   const opened = await openSession({ ...REF }, { session: { mode: "token", token: "T" }, fetchImpl: deadFetch() });
   ok(opened.mode === "token" && opened.token === "T", "a session handed in is used as it is, with no probe");
 }
@@ -710,25 +750,28 @@ const authOf = (f, k) => f.inits[k]?.headers?.Authorization;
 
   // Route 2 (the README's primary): the cookie answers, so nothing else is tried.
   const { fetchImpl: f1, ref: r1 } = await load(cbsTable({ page: TOKENED }));
-  ok(r1.session?.mode === "cookie" && r1.session.token === null, "the cookie route opens a token-free session");
+  ok(sessionFor(r1)?.mode === "cookie" && sessionFor(r1).token === null, "the cookie route opens a token-free session");
   ok(!f1.calls.includes(pageUrl(REF)), "...the league page is never read");
   ok(f1.inits.every((i) => !i?.headers?.Authorization), "...and no request carries an Authorization header");
 
   // Route 3: the cookie is refused, the page carries a token.
   const { model: m2, fetchImpl: f2, ref: r2 } = await load(refuseCookie(cbsTable({ page: TOKENED })));
   ok(m2.players.size === ROSTER_IDS.length, "a refused cookie falls back to the page token and the league still loads");
-  ok(r2.session?.mode === "token" && r2.session.token === TESTTOKEN, "...the session holds that token, in memory on the ref");
+  ok(sessionFor(r2)?.mode === "token" && sessionFor(r2).token === TESTTOKEN,
+     "...the session holds that token, in memory for this run and never on the ref itself");
+  ok(!("session" in r2) && !JSON.stringify(r2).includes(TESTTOKEN),
+     "...so the ref the worker round-trips through storage carries no token (CR-01)");
   ok(f2.calls.filter(isApiLeague).length > 3 && f2.calls.every((u, k) => !isApiLeague(u) || authOf(f2, k) === TESTTOKEN),
      "...every league request carries exactly it in an Authorization header");
   ok(f2.calls.every((u, k) => isApiLeague(u) || !authOf(f2, k)),
      "...and nothing else does: not the crosswalk, not CBS's own public feeds, not the page");
-  ok(r2.session.teamHint === 16, "...and the page read on the way past yields the viewer's team id");
+  ok(sessionFor(r2).teamHint === 16, "...and the page read on the way past yields the viewer's team id");
   ok(f2.calls.filter((u) => u === pageUrl(REF)).length === 1, "...from one page read, not one per request");
 
   // Route 4: no token in the page, a content script answers instead (11-07 replies).
   const { model: m3, fetchImpl: f3, ref: r3 } =
     await tryLoad(refuseCookie(cbsTable({ page: TOKENLESS })), { handover: async () => "TESTTOKEN-h" });
-  ok(m3?.players.size === ROSTER_IDS.length && r3.session?.token === "TESTTOKEN-h",
+  ok(m3?.players.size === ROSTER_IDS.length && sessionFor(r3)?.token === "TESTTOKEN-h",
      "a hand-over token opens the session when the page has none");
   ok(f3.calls.every((u, k) => !isApiLeague(u) || authOf(f3, k) === "TESTTOKEN-h"),
      "...and rides the same header on every league request");
@@ -790,7 +833,8 @@ const authOf = (f, k) => f.inits[k]?.headers?.Authorization;
   ok(!JSON.stringify([...st._m.entries()]).includes("TESTTOKEN"),
      "nothing the adapter wrote to storage contains the token");
   ok(!model.notes.join("\n").includes("TESTTOKEN"), "no note carries the token");
-  ok(ref.session.token === TESTTOKEN, "...it lives on the run's ref, and there only");
+  ok(sessionFor(ref).token === TESTTOKEN, "...it lives in memory for this run, and there only");
+  ok(!("session" in ref), "...never on the ref, which is what the daily worker writes back to storage (CR-01)");
 
   // Two runs at once, on two refs, with two different tokens (probe NO-PASSWORD/concurrency).
   const REF_A = { platform: "cbs", leagueId: "league-a", seasonId: 2026 };
@@ -805,7 +849,8 @@ const authOf = (f, k) => f.inits[k]?.headers?.Authorization;
     cbs.loadLeague(refB, () => {}, { fetchImpl: f, storage: mkStorage(), now: 0 }),
   ]);
   ok(mA.players.size === ROSTER_IDS.length && mB.players.size === ROSTER_IDS.length, "both leagues load");
-  ok(refA.session.token === TOKEN_A && refB.session.token === TOKEN_B, "each ref holds its own token");
+  ok(sessionFor(refA).token === TOKEN_A && sessionFor(refB).token === TOKEN_B, "each run holds its own token");
+  ok(!("session" in refA) && !("session" in refB), "...and neither ref carries one");
   const wrong = f.calls.filter((u, k) => isApiLeague(u)
     && authOf(f, k) !== (u.includes("league_id=league-a") ? TOKEN_A : TOKEN_B));
   ok(wrong.length === 0 && f.calls.filter(isApiLeague).length > 6,

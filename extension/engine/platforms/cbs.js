@@ -261,8 +261,15 @@ const authError = () =>
  * as a 200 whose envelope `statusCode` says otherwise - so both are checked and both
  * become the same `code: "AUTH"` error the panel switches on.
  */
+/* Sessions live here, keyed on the ref object, never on the ref itself: a ref is the
+ * serializable address the daily worker round-trips through chrome.storage, and a live
+ * token must never ride along (D-10). A session the caller put on the ref is still read —
+ * that is how a pasted token arrives. */
+const SESSIONS = new WeakMap();
+export const sessionFor = (ref, opts = {}) => opts.session ?? SESSIONS.get(ref) ?? ref.session ?? null;
+
 async function get(ref, route, params = {}, opts = {}) {
-  const session = opts.session ?? ref.session ?? null;
+  const session = sessionFor(ref, opts);
   const url = cbsUrl(ref, route, params, session);
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const headers = { Accept: "application/json" };
@@ -367,17 +374,26 @@ export async function defaultHandover() {
  * Routes 3 and 4 re-probe `league/details` before their session is accepted, so a
  * stale token from a cached page or a stale tab is refused here rather than turning
  * into a confusing failure four requests later.
+ *
+ * The session NEVER goes back onto the ref. A ref is a serializable address that the
+ * daily worker reads out of `chrome.storage.local` and writes straight back; parking a
+ * live token on it persists the token, which D-10 forbids. Sessions are held in a
+ * WeakMap keyed on the ref object, so they last exactly as long as the run that made
+ * them and cannot be serialized. A session the CALLER puts on the ref is still read —
+ * that is how a pasted token arrives.
  */
 export async function openSession(ref, opts = {}) {
+  const held = SESSIONS.get(ref);
+  if (held) return held;
   if (ref.session) return ref.session;
-  if (opts.session) { ref.session = opts.session; return ref.session; }
+  if (opts.session) { SESSIONS.set(ref, opts.session); return opts.session; }
 
   // The re-probe every non-cookie route goes through. Null means "refused"; a real
   // error (a 500, a dead network) is not an auth answer and is not swallowed.
   const accept = async (session) => {
     try {
       await get(ref, "league/details", {}, { ...opts, session });
-      ref.session = session;
+      SESSIONS.set(ref, session);
       return session;
     } catch (err) {
       if (err.code !== "AUTH") throw err;
@@ -430,14 +446,24 @@ export async function openSession(ref, opts = {}) {
 /** The narrowest ESPN slot whose membership covers every code in `need`. Ordered narrowest
  * first so a WR/TE headroom becomes WR/TE (5), not the superflex. Falls back to the widest
  * offensive flex with a note rather than inventing a slot the engine does not know. */
-export function flexSlotFor(need, notes = []) {
+const FLEXES = ["RB-WR", "WR-TE", "RB-WR-TE", "DL-LB-DB", "FLEX"];
+
+/** The narrowest slot covering every code in `need`, or null when none does. */
+function coveringSlot(need) {
   const want = [...need];
+  if (want.length === 0) return null;
   if (want.length === 1 && SLOT[want[0]] !== undefined) return SLOT[want[0]];
-  for (const abbr of ["RB-WR", "WR-TE", "RB-WR-TE", "DL-LB-DB", "FLEX"]) {
+  for (const abbr of FLEXES) {
     const members = MEMBERS[abbr] ?? [];
     if (want.every((code) => members.includes(code))) return SLOT[abbr];
   }
-  notes.push(`CBS: no single lineup slot covers ${want.sort().join("/")} - the flex seats are modelled as RB/WR/TE`);
+  return null;
+}
+
+export function flexSlotFor(need, notes = []) {
+  const slot = coveringSlot(need);
+  if (slot !== null) return slot;
+  notes.push(`CBS: no single lineup slot covers ${[...need].sort().join("/")} - the flex seats are modelled as RB/WR/TE`);
   return SLOT["RB-WR-TE"];
 }
 
@@ -484,14 +510,23 @@ export function readSettings(rules, details, scoring, notes = []) {
     for (const x of rows) seat(x.slot, x.max);
   } else {
     for (const x of rows) seat(x.slot, x.min);
-    const spare = activeMax - sumMin;
-    if (spare > 0) {
-      // Every position that can still take another starter, expanded through the same
-      // membership table eligibility uses, then the narrowest slot that covers them all.
-      const headroom = new Set();
-      for (const x of rows) if (x.max > x.min) for (const code of MEMBERS[x.abbr] ?? [x.abbr]) headroom.add(code);
-      seat(flexSlotFor(headroom, notes), spare);
+    let spare = activeMax - sumMin;
+    // The positions that can still take another starter. A kicker or a defence belongs to
+    // no shared flex, so folding it in with the skill positions would not merely blur the
+    // seat - it would delete the position from the lineup, since `min_active: 0` left it no
+    // dedicated seat either. Seat those on their own first, then spend what is left on the
+    // flex the remainder share.
+    let open = rows.filter((x) => x.max > x.min);
+    const codesOf = (x) => MEMBERS[x.abbr] ?? [x.abbr];
+    while (spare > 0 && open.length > 0 && coveringSlot(new Set(open.flatMap(codesOf))) === null) {
+      // Fewest open seats first, so the widest group is the one that keeps the flex.
+      const alone = open.reduce((a, b) => (b.max - b.min < a.max - a.min ? b : a));
+      const take = Math.min(alone.max - alone.min, spare);
+      seat(alone.slot, take);
+      spare -= take;
+      open = open.filter((x) => x !== alone);
     }
+    if (spare > 0 && open.length > 0) seat(flexSlotFor(new Set(open.flatMap(codesOf)), notes), spare);
     notes.push(`CBS: the lineup allows ${activeMax} starters but the position maxima total ${sumMax}; ` +
                `this is a flexible lineup - the engine seats each position's minimum and models the rest as flex`);
     if (spare < 0) notes.push(`CBS: the position minimums total ${sumMin}, more than the ${activeMax} the lineup allows - the minimums are used`);
@@ -1006,14 +1041,15 @@ export async function identify(ref, model, opts = {}) {
   const page = teamOf(ref?.teamId);
   if (page) return { team: page.name, how: "the team page you came from" };
 
-  let hinted = teamOf(ref?.session?.teamHint);
+  const session = sessionFor(ref, opts);
+  let hinted = teamOf(session?.teamHint);
   if (!hinted) {
     try {
       const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
       const res = await fetchImpl(pageUrl(ref), { credentials: "include" });
       const html = res?.ok && typeof res.text === "function" ? await res.text() : null;
       const hint = viewerHint(html);
-      if (hint != null && ref?.session) ref.session.teamHint = hint;
+      if (hint != null && session) session.teamHint = hint;
       hinted = teamOf(hint);
     } catch { /* no page, no hint: the prompt below is the honest answer */ }
   }

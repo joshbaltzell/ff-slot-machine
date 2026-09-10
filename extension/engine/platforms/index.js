@@ -106,8 +106,18 @@ export const migrateStorageKeys = async (storage) => {
  *   otherwise        -> compare: `changed` is whether the roster moved since the
  *                       panel stored its hash, which stays what the panel wrote
  */
+/** A ref as it may be stored: the address only. A session — and the live token inside it —
+ * is per-run state that must never reach `chrome.storage` (D-10). `openSession` keeps
+ * sessions off the ref; this is the second lock on the one write path that persists one. */
+export function storableRef(ref) {
+  if (!ref || typeof ref !== "object") return ref;
+  const { session, token, ...rest } = ref;
+  return rest;
+}
+
 export function nextLeagueRecord(val, hash, now) {
   if (hash == null) return val;
+  if (val?.ref) val = { ...val, ref: storableRef(val.ref) };
   if (val.rosterHash == null)
     return { ...val, rosterHash: hash, latestHash: hash, changed: false, checkedAt: now };
   return { ...val, latestHash: hash, changed: hash !== val.rosterHash, checkedAt: now };
