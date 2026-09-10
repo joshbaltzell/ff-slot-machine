@@ -420,6 +420,73 @@ export function scrubBundle(bundle, outDir, opts = {}) {
   };
 }
 
+/* ===================== --trim ===================== */
+/* Two recorded feeds are far larger than a fixture should be: the public players/list is every
+ * player CBS knows (4,910 rows, 1.7 MB) and the prior-season weekly scoring is every free agent
+ * for 22 periods (5.7 MB pretty-printed). Both are trimmed to what the league fixtures actually
+ * reference, whole objects kept, so a later plan can still read a real row. Idempotent. */
+
+export const PLAYER_LIST_KEYS = ["id", "fullname", "position", "eligible_positions_display", "pro_team", "pro_status", "bye_week"];
+/* CBS's team entities: no crosswalk row exists for any of them (D-06), so they are kept whole. */
+export const TEAM_ENTITY_POS = new Set(["TQB", "TK", "DST", "D", "ST"]);
+export const PRIOR_SEASON_CAP = 250;
+
+/** Every player id the league-scoped fixtures name — rosters and every stats file. */
+export function referencedIds(dir) {
+  const ids = new Set();
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")); } catch { return null; } };
+  const ro = read("rosters.json")?.body?.body?.rosters?.teams ?? [];
+  for (const t of ro) for (const p of t.players ?? []) ids.add(String(p.id));
+  for (const f of ["stats-week1.json", "stats-week2.json", "stats-free-agents-week1.json"]) {
+    for (const p of read(f)?.body?.body?.league_stats?.players ?? []) ids.add(String(p.id));
+  }
+  return ids;
+}
+
+/** players/list -> the referenced players and every team entity, seven keys each, in order. */
+export function trimPlayerList(players, ref) {
+  return (players ?? [])
+    .filter((p) => ref.has(String(p.id)) || TEAM_ENTITY_POS.has(String(p.position)))
+    .map((p) => Object.fromEntries(PLAYER_LIST_KEYS.map((k) => [k, p[k] ?? null])));
+}
+
+/** weekly scoring -> referenced players first, then players who actually scored, up to cap. */
+export function trimWeekly(players, ref, cap = PRIOR_SEASON_CAP) {
+  const kept = [], scored = [];
+  for (const p of players ?? []) {
+    if (ref.has(String(p.id))) kept.push(p);
+    else if (Number(p.total) !== 0) scored.push(p);
+  }
+  return [...kept, ...scored].slice(0, cap);
+}
+
+/** Apply both trims to a fixture directory in place. Returns one line per file changed. */
+export function trimDir(dir) {
+  const ref = referencedIds(dir);
+  const notes = [];
+  const listPath = path.join(dir, "public", "players-list.json");
+  if (fs.existsSync(listPath)) {
+    const j = JSON.parse(fs.readFileSync(listPath, "utf8"));
+    const before = j.body?.players?.length ?? 0;
+    j.body.players = trimPlayerList(j.body?.players, ref);
+    fs.writeFileSync(listPath, JSON.stringify(j, null, 2) + "\n");
+    notes.push(`public/players-list.json: ${before} -> ${j.body.players.length} players, ${PLAYER_LIST_KEYS.length} keys each`);
+  }
+  const priorPath = path.join(dir, "prior-season.json");
+  if (fs.existsSync(priorPath)) {
+    const j = JSON.parse(fs.readFileSync(priorPath, "utf8"));
+    for (const [key, val] of Object.entries(j)) {
+      const ws = val?.body?.body?.weekly_scoring;
+      if (!Array.isArray(ws?.players)) continue;
+      const before = ws.players.length;
+      ws.players = trimWeekly(ws.players, ref, PRIOR_SEASON_CAP);
+      if (before !== ws.players.length) notes.push(`prior-season.json ${key}: ${before} -> ${ws.players.length} players`);
+    }
+    fs.writeFileSync(priorPath, JSON.stringify(j, null, 2) + "\n");
+  }
+  return notes;
+}
+
 /* ===================== --verify ===================== */
 
 function listDataFiles(dir) {
@@ -728,11 +795,19 @@ async function selfTest(log) {
 
 /* ===================== entry ===================== */
 
-const USAGE = "usage: node scrub.mjs <raw.json> <outDir> | --self-test | --verify <dir>";
+const USAGE = "usage: node scrub.mjs <raw.json> <outDir> | --self-test | --trim <dir> | --verify <dir>";
 
 export async function main(argv, opts = {}) {
   const log = opts.log ?? console.log;
   if (argv[0] === "--self-test") return selfTest(log);
+  if (argv[0] === "--trim") {
+    if (!argv[1]) { log(USAGE); return 1; }
+    let notes;
+    try { notes = trimDir(path.resolve(argv[1])); } catch (e) { log(`TRIM FAILED: ${e.message}`); return 1; }
+    for (const n of notes) log(`  ${n}`);
+    log("TRIM OK");
+    return 0;
+  }
   if (argv[0] === "--verify") {
     if (!argv[1]) { log(USAGE); return 1; }
     const { problems, authRoute } = verifyDir(path.resolve(argv[1]));
