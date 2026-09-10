@@ -591,9 +591,12 @@ export function readSettings(rules, details, scoring, notes = []) {
   }
 
   // "$100" is a formatted number, not a sentence; anything that is not one reads 0.
+  // Test the parse, not the number: a league that states "$0" has published a budget
+  // and there is nothing to note, where prose in the same field is a reading that failed.
   const budget = String(r.transactions?.add_drop_faab_starting_budget?.value ?? "").trim();
-  const faabBudget = /^\$?\d+(\.\d+)?$/.test(budget) ? Number(budget.replace("$", "")) : 0;
-  if (budget && !faabBudget) notes.push(`CBS: the waiver budget reads "${budget}" - treating it as no budget`);
+  const budgetMatch = /^\$?(\d+(?:\.\d+)?)$/.exec(budget);
+  const faabBudget = budgetMatch ? Number(budgetMatch[1]) : 0;
+  if (budget && !budgetMatch) notes.push(`CBS: the waiver budget reads "${budget}" - treating it as no budget`);
 
   return {
     name: String(d.name ?? "").trim() || "League",

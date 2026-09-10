@@ -226,6 +226,23 @@ const REF = { platform: "cbs", leagueId: "redacted-league", seasonId: 2026 };
      "the tiebreaker sentence is not parsed: the default is used and the note says so");
   ok(s.pprValue === 1, "points per reception comes from the league's own Recpt rule");
   ok(s.faabBudget === 100, "the waiver budget is read from the $100 the rules state");
+  // IN-05. A parse failure and a legitimately parsed zero are different readings and
+  // must not share a note: "$0" is a budget CBS states, "waivers" is prose it does not.
+  {
+    const faab = (value) => {
+      const nn = [];
+      const st = readSettings(
+        { rules: { roster: { positions: [{ abbr: "QB", min_active: 1, max_active: 1 }],
+                             statuses: [{ description: "Active Players", max: 1, min: 1 }] },
+                   transactions: { add_drop_faab_starting_budget: { value } } } }, {}, null, nn);
+      return [st.faabBudget, nn.filter((n) => /waiver budget/.test(n))];
+    };
+    const [zero, zeroNotes] = faab("$0");
+    ok(zero === 0 && zeroNotes.length === 0, "IN-05: a stated $0 budget parses as 0 and raises no note");
+    const [prose, proseNotes] = faab("no budget, waivers run in reverse order");
+    ok(prose === 0 && proseNotes.length === 1, "IN-05: prose where a number belongs still reads 0 and says so");
+    ok(faab("")[1].length === 0, "IN-05: an absent budget field says nothing either");
+  }
   ok(s.name === "Redacted League", "the league name is read from league_details");
   ok(same(s.divisions, []) && s.divisionCount === 0, "this league has no divisions");
   ok(notes.every((n) => n.startsWith("CBS: ")), "every note names the platform");
