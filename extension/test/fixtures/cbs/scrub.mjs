@@ -425,11 +425,15 @@ function syntheticBundle(S, { withToken }) {
       players: [{ id: "2001", fullname: "Player One", position: "QB", eligible_positions: ["QB"], pro_team: "KC" }] },
     { id: "2", name: S.teams[1], abbr: "BWB", owners: [{ nickname: S.nick }],
       players: [{ id: "2002", fullname: "Player Two", position: "RB", eligible_positions: ["RB", "RB-WR"], pro_team: "SF" }] },
-    { id: "3", name: S.teams[2], abbr: "GNG", owners: [], players: [] },
+    /* Observed 2026-09-10: one real team's short_name is the word "Draft", which the collector
+     * rightly takes for a team name — and which then appears inside the key `draft_type`. */
+    { id: "3", name: S.teams[2], abbr: "GNG", short_name: "Draft", owners: [], players: [] },
   ];
   const stats = (route) => okRes(route, { player_stats: { 2001: { name: "Player One", FP: "18.2", TM: "KC" }, 2002: { name: "Player Two", FP: "12.4", TM: "SF" } } });
   const responses = {
-    "league/details": okRes("league/details", { league_id: S.slug, name: S.league, current_period: 1, commissioner: { name: `${S.first} ${S.last}`, email: S.owner } }),
+    /* Observed 2026-09-10: the details body is a single `league_details` object, and it carries
+     * `draft_type` / `draft_label` keys beside the league's own display name. */
+    "league/details": okRes("league/details", { league_details: { league_id: S.slug, name: S.league, current_period: 1, draft_type: "offline", commissioner: { name: `${S.first} ${S.last}`, email: S.owner } } }),
     "league/rules": okRes("league/rules", { roster: { positions: [{ abbr: "QB", max_active: 1, min_active: 1, max_total: "No Limit" }] } }),
     "league/scoring/rules": okRes("league/scoring/rules", { rules: [{ abbr: "PY", points: "0.04" }] }),
     "league/rosters?team_id=all": okRes("league/rosters?team_id=all", { teams }),
@@ -495,7 +499,7 @@ async function selfTest(log) {
     ok(find('<script> CBSi.token = "ABC.def-123"; </script>')?.[1] === "ABC.def-123", "a pattern captures CBSi.token = \"…\"");
     ok(find("new PlayerSearch({ 'access_token': 'ABC.def-123' })")?.[1] === "ABC.def-123", "a pattern captures a single-quoted 'access_token': '…'");
     ok(find('{"access_token": "ABC.def-123"}')?.[1] === "ABC.def-123", "a pattern captures a double-quoted \"access_token\": \"…\"");
-    ok(find('"name" : "Josh B" }, "token" : "0123456789abcdef0123456789abcdef", "league_type"')?.[1] === "0123456789abcdef0123456789abcdef", "a pattern captures a JSON \"token\" : \"…\" field");
+    ok(find('"name" : "Pat O" }, "token" : "0123456789abcdef0123456789abcdef", "league_type"')?.[1] === "0123456789abcdef0123456789abcdef", "a pattern captures a JSON \"token\" : \"…\" field");
     ok(find('var token = "ABC.def-123"')?.[1] === "ABC.def-123", "the legacy var token = \"…\" form still matches");
     ok(find("params={payload:x,access_token:CBSi.token,method:\"PUT\"}") === null, "an unquoted access_token:CBSi.token reference is not mistaken for a value");
     const captureSrc = fs.readFileSync(path.join(path.dirname(SELF), "capture.js"), "utf8");
@@ -550,6 +554,7 @@ async function selfTest(log) {
       const t = ro.body.body.teams;
       ok(t[0].name === "Team A" && t[1].name === "Team B" && t[2].name === "Team C", "rosters.json team names read Team A, Team B, Team C in first-seen order");
       ok(t[0].abbr === "TMA" && t[1].abbr === "TMB", "rosters.json team abbreviations are replaced too");
+      ok(/^Team [A-Z]+$/.test(t[2].short_name), "a team short_name of 'Draft' is replaced where it is a value");
       ok(/^Owner \d+$/.test(t[0].owners[0].first_name) && /^Owner \d+$/.test(t[0].owners[0].last_name), "rosters.json owner names read Owner N");
       ok(/^owner-\d+@example\.invalid$/.test(t[0].owners[0].email), "rosters.json owner e-mail reads owner-n@example.invalid");
       ok(/^Owner \d+$/.test(t[0].owners[0].login) && /^Owner \d+$/.test(t[1].owners[0].nickname), "rosters.json login and nickname read Owner N");
@@ -565,10 +570,11 @@ async function selfTest(log) {
       ok(sc.home_team.name === "Team A" && sc.away_team.name === "Team B", "schedules.json home/away team names are replaced consistently");
       const tx = readJson(out1, "transactions.json").body.body.transactions[0];
       ok(tx.team === "Team B" && tx.player === "Player Two", "transactions.json team string is replaced, player name kept");
-      const de = readJson(out1, "details.json").body.body;
-      ok(de.league_id === "redacted-league" && de.name === "Redacted League", "details.json league id and display name are replaced");
+      const de = readJson(out1, "details.json").body.body.league_details;
+      ok(de.league_id === "redacted-league" && de.name === "Redacted League", "details.json league id and display name are replaced, nested under league_details");
       ok(/^Owner \d+$/.test(de.commissioner.name) && /^owner-\d+@example\.invalid$/.test(de.commissioner.email), "details.json commissioner is owner-shaped");
       ok(de.current_period === 1, "details.json numbers are untouched");
+      ok(Object.prototype.hasOwnProperty.call(de, "draft_type"), "details.json keeps the draft_type KEY: a team short_name of 'Draft' is replaced as a value, never inside a key");
       const ps = readJson(out1, "prior-season.json");
       ok(Object.keys(ps).length === 3 && Object.values(ps).every((x) => x.status === 400 && x.body === "User not signed in"), "prior-season.json carries the three attempts with their statuses");
       const sw = readJson(out1, "stats-week1.json").body.body.player_stats;
