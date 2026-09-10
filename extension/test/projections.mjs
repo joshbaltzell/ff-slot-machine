@@ -377,12 +377,12 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
 
 /* ---- 5. the calibration log ---- */
 {
-  ok(logKey(7, 2026) === "ffsm.calib.7.2026", "the log is keyed by league and season");
+  ok(logKey("espn", 7, 2026) === "ffsm.calib.espn.7.2026", "the log is keyed by platform, league and season");
 
   /* storage round trip */
   {
     const storage = mkStorage();
-    const ref = { storage, leagueId: 7, seasonId: 2026 };
+    const ref = { storage, platform: "espn", leagueId: 7, seasonId: 2026 };
     await logWeek({ ...ref, week: 5, rows: [{ id: 101, pos: "RB", espn: 10, sleeper: 11, fp: 12, agg: 11 }], now: 1 });
     await logWeek({ ...ref, week: 6, rows: [{ id: 101, pos: "RB", espn: 20, sleeper: null, fp: null, agg: 20 }], now: 2 });
     const log = await loadLog(ref);
@@ -392,8 +392,8 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     await logWeek({ ...ref, week: 5, rows: [{ id: 101, pos: "RB", espn: 99, sleeper: null, fp: null, agg: 99 }], now: 3 });
     const log2 = await loadLog(ref);
     ok(weeksStored(log2) === 2 && log2.weeks["5"].rows[0].espn === 99, "re-running a week overwrites it");
-    ok((await loadLog({ storage, leagueId: 8, seasonId: 2026 })).weeks
-       && weeksStored(await loadLog({ storage, leagueId: 8, seasonId: 2026 })) === 0,
+    ok((await loadLog({ storage, platform: "espn", leagueId: 8, seasonId: 2026 })).weeks
+       && weeksStored(await loadLog({ storage, platform: "espn", leagueId: 8, seasonId: 2026 })) === 0,
        "an unknown league reads as an empty log");
   }
 
@@ -670,7 +670,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
       [(await import("../engine/sources/sleeperproj.js")).weekUrl(2026, 6)]: wk(1),
     };
     const storage = mkStorage();
-    const P = await runProjections({ model, ref: { leagueId: 7, seasonId: 2026 }, say,
+    const P = await runProjections({ model, ref: { platform: "espn", leagueId: 7, seasonId: 2026 }, say,
       fetchImpl: mkFetch(table), storage, now: 0 });
 
     ok(P.aggregate === true, "the toggle defaults to on");
@@ -684,18 +684,18 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     ok(lines.some((l) => /calibration log/.test(l)), "a calibration-log line is logged");
     ok(lines.some((l) => /FantasyPros/.test(l)), "FantasyPros is mentioned even when unavailable");
 
-    const log = (await storage.get("ffsm.calib.7.2026"))["ffsm.calib.7.2026"];
-    const row = log.weeks["5"].rows.find((r) => r.id === 101);
-    ok(row.espn === 10, "the logged espn value is the pre-aggregate one");
-    ok(Number.isFinite(row.agg), "the logged agg value is the post-aggregate one");
-    ok(row.pos === "RB" && row.id === 101, "id and pos are logged");
-    ok(row.fp === null, "an unavailable source logs null, not a guess");
+    const log = (await storage.get("ffsm.calib.espn.7.2026"))["ffsm.calib.espn.7.2026"];
+    const row = log?.weeks?.["5"]?.rows?.find((r) => r.id === 101);
+    ok(row?.espn === 10, "the logged espn value is the pre-aggregate one, under the five-segment key");
+    ok(Number.isFinite(row?.agg), "the logged agg value is the post-aggregate one");
+    ok(row?.pos === "RB" && row?.id === 101, "id and pos are logged");
+    ok(row?.fp === null, "an unavailable source logs null, not a guess");
 
     /* toggle off: no fetches, agg = espn */
     const model2 = mkModel([5, 6]);
     const f2 = mkFetch(table);
     await storage.set({ "ffsm.aggregate": false });
-    const P2 = await runProjections({ model: model2, ref: { leagueId: 7, seasonId: 2026 }, say,
+    const P2 = await runProjections({ model: model2, ref: { platform: "espn", leagueId: 7, seasonId: 2026 }, say,
       fetchImpl: f2, storage, now: 0 });
     ok(P2.aggregate === false, "the stored toggle is honoured");
     ok(f2.calls.length === 0, "nothing is fetched when the toggle is off");
@@ -705,7 +705,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     /* every feed dead: still no throw, still espn */
     await storage.set({ "ffsm.aggregate": true });
     const model3 = mkModel([5, 6]);
-    const P3 = await runProjections({ model: model3, ref: { leagueId: 9, seasonId: 2026 }, say,
+    const P3 = await runProjections({ model: model3, ref: { platform: "espn", leagueId: 9, seasonId: 2026 }, say,
       fetchImpl: mkFetch({}), storage: mkStorage(), now: 0 });
     ok(model3.players.get(101).proj[5] === 10, "a dead feed leaves agg = espn");
     ok(P3.k.RB === 0.79, "a dead feed still yields usable slopes");
@@ -732,7 +732,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     const rows = ids.map((id, i) => ({ player_id: `s${i}`,
       stats: { pts_ppr: 0, pts_half_ppr: [40, 30, 20, 10, 50][i], pts_std: 0 } }));
     const storage = mkStorage();
-    const PF = await runProjections({ model, ref: { leagueId: 11, seasonId: 2026 }, say: () => {},
+    const PF = await runProjections({ model, ref: { platform: "espn", leagueId: 11, seasonId: 2026 }, say: () => {},
       storage, now: 0, fetchImpl: mkFetch({ "https://api.sleeper.app/v1/players/nfl": players,
         [weekUrl(2026, 5)]: rows, [weekUrl(2026, 6)]: rows }) });
 
@@ -741,8 +741,8 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
     ok(model.players.get(105).proj[5] > 25, "the free agent moves toward the source that likes him");
     ok(PF.band.has(105), "the free agent gets a ± band, so the trade UI can show it");
     ok(PF.coverage.sleeper === 5, "and he counts toward coverage");
-    const key = logKey(11, 2026);
-    const logged = (await storage.get(key))[key].weeks["5"].rows.map((r) => r.id);
+    const key = logKey("espn", 11, 2026);
+    const logged = ((await storage.get(key))[key]?.weeks?.["5"]?.rows ?? []).map((r) => r.id);
     ok(!logged.includes(105), "but the free agent is NOT in the calibration log");
     ok(logged.includes(101), "while the rostered player is");
     ok(logged.length === 6, `only the six rostered players are logged (${logged})`);
@@ -751,7 +751,7 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
   /* actuals joined during a run are written back, not just held in memory */
   {
     const storage = mkStorage();
-    const ref = { leagueId: 12, seasonId: 2026 };
+    const ref = { platform: "espn", leagueId: 12, seasonId: 2026 };
     // Week 5 as last week's run left it: logged, no actual yet.
     await logWeek({ storage, ...ref, week: 5, now: 0,
       rows: [{ id: 101, pos: "RB", espn: 10, sleeper: null, fp: null, agg: 10 }] });

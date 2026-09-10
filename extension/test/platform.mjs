@@ -1,7 +1,7 @@
 /**
  * The normalized-model schema every platform adapter must satisfy, run against each
  * entry of PLATFORMS on recorded or synthetic raw payloads, plus the registry's own
- * contract: detect, byId, hashRosters and the AUTH error code. The ESPN adapter runs
+ * contract: detect, byId, hashRosters, the storage keys and the AUTH error code. The ESPN adapter runs
  * here offline on a raw payload synthesized from fixture.json and must reproduce the
  * fixture. parity.mjs is never touched.
  *
@@ -12,7 +12,8 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { PLATFORMS, byId, detect, hashRosters } from "../engine/platforms/index.js";
+import { PLATFORMS, byId, detect, hashRosters, leagueKey, migrateStorageKeys, nextLeagueRecord }
+  from "../engine/platforms/index.js";
 import espn, { espnUrl, readSettings, historyOf } from "../engine/platforms/espn.js";
 import { PRO_TEAM, measureVolatility } from "../engine/league.js";
 import { BENCH_SLOTS } from "../engine/lineup.js";
@@ -433,6 +434,60 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "sigma is the sample standard deviation of those residuals");
   ok(measureVolatility(ps, REF.seasonId).measured === 0,
      "the current season, projections without actuals, measures nothing: the season filter and the null check both hold");
+}
+
+/* storage keys (D-08): five segments, a one-time migration, adopt-on-first-sight */
+{
+  ok(leagueKey({ platform: "espn", leagueId: 7, seasonId: 2026 }) === "ffsm.league.espn.7.2026",
+     "leagueKey is five segments: platform, league, season");
+  ok(leagueKey({ platform: "cbs", leagueId: "1234", seasonId: 2026 }) !== leagueKey({ platform: "espn", leagueId: 1234, seasonId: 2026 }),
+     "an ESPN league and a CBS league with the same-looking id never share a key (NO-PASSWORD/adjacency)");
+  ok(leagueKey({ platform: "espn", leagueId: 1234, seasonId: 2026, teamId: 3, session: "secret" }) === "ffsm.league.espn.1234.2026",
+     "the key is built from the triple alone; a team id or a session never reaches it");
+
+  // The legacy four-segment keys as a pre-11-04 run left them, beside a key that is
+  // not league-scoped at all.
+  const legacyLeague = { at: 1, offers: 2, team: "T", rosterHash: "abc", changed: true };
+  const st = mkStorage();
+  await st.set({ "ffsm.league.7.2026": legacyLeague, "ffsm.calib.7.2026": { weeks: {} }, "ffsm.myTeam": "T" });
+  ok(same(await migrateStorageKeys(st), { migrated: 2 }), "two legacy keys migrate");
+  const all = await st.get(null);
+  const moved = all["ffsm.league.espn.7.2026"];
+  ok(moved && moved.at === 1 && moved.offers === 2 && moved.team === "T",
+     "the league record keeps what the panel wrote (at, offers, team)");
+  ok(moved && moved.rosterHash === null && moved.changed === false,
+     "...with the hash reset to null and changed cleared, so the worker adopts rather than compares");
+  ok(moved && same(moved.ref, { platform: "espn", leagueId: 7, seasonId: 2026 }),
+     "...and carries ref: a legacy key is read once as espn, with numeric league and season");
+  ok(same(all["ffsm.calib.espn.7.2026"], { weeks: {} }), "the calibration log moves under the five-segment key unchanged");
+  ok(!("ffsm.league.7.2026" in all) && !("ffsm.calib.7.2026" in all), "both legacy keys are removed");
+  ok(all["ffsm.myTeam"] === "T" && Object.keys(all).length === 3, "an unrelated key is left alone and nothing else appears");
+  ok(same(await migrateStorageKeys(st), { migrated: 0 }), "a second call migrates 0");
+  ok(same(await st.get(null), all), "...and rewrites nothing: five-segment keys are never mistaken for legacy ones");
+
+  // Both keys present: the panel already wrote the new record; the legacy one still goes.
+  const st2 = mkStorage();
+  const fresh = { at: 9, offers: 0, team: "T", rosterHash: "new", changed: false, ref: { platform: "espn", leagueId: 7, seasonId: 2026 } };
+  await st2.set({ "ffsm.league.7.2026": legacyLeague, "ffsm.league.espn.7.2026": fresh, "ffsm.dismissed.7": 5 });
+  ok(same(await migrateStorageKeys(st2), { migrated: 1 }), "a legacy key beside its migrated twin still counts once");
+  const all2 = await st2.get(null);
+  ok(same(all2["ffsm.league.espn.7.2026"], fresh) && !("ffsm.league.7.2026" in all2),
+     "when the new key already exists the existing new value wins and the legacy key is removed");
+  ok(all2["ffsm.dismissed.7"] === 5, "a three-segment dismissal key is not a league key and is untouched");
+
+  // The worker's next record, pure.
+  const adopted = nextLeagueRecord({ rosterHash: null, at: 1 }, "h1", 5);
+  ok(adopted.rosterHash === "h1" && adopted.latestHash === "h1" && adopted.changed === false && adopted.checkedAt === 5 && adopted.at === 1,
+     "a record with no hash adopts the first one it sees: rosterHash and latestHash set, changed false");
+  ok(nextLeagueRecord({ at: 1 }, "h1", 5).rosterHash === "h1", "an absent rosterHash adopts too");
+  const flagged = nextLeagueRecord({ rosterHash: "h1" }, "h2", 5);
+  ok(flagged.changed === true && flagged.rosterHash === "h1" && flagged.latestHash === "h2" && flagged.checkedAt === 5,
+     "a different hash is flagged; the stored hash stays what the panel wrote");
+  ok(nextLeagueRecord({ rosterHash: "h1" }, "h1", 5).changed === false, "an equal hash is not flagged");
+  const untouched = { rosterHash: "h1", changed: true };
+  ok(nextLeagueRecord(untouched, null, 5) === untouched, "a null hash (the request failed) leaves the record exactly as it was");
+  ok(nextLeagueRecord(moved, "h9", 5).changed === false,
+     "so a record migrated from a legacy key is never flagged on its first check - the upgrade produces no spurious notice");
 }
 
 /* the helpers this suite lends to later plans */
