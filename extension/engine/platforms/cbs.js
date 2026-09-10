@@ -365,26 +365,33 @@ export async function openSession(ref, opts = {}) {
  *
  * @param notes  appended to, so the caller can print what was assumed
  */
+/** The narrowest ESPN slot whose membership covers every code in `need`. Ordered narrowest
+ * first so a WR/TE headroom becomes WR/TE (5), not the superflex. Falls back to the widest
+ * offensive flex with a note rather than inventing a slot the engine does not know. */
+export function flexSlotFor(need, notes = []) {
+  const want = [...need];
+  if (want.length === 1 && SLOT[want[0]] !== undefined) return SLOT[want[0]];
+  for (const abbr of ["RB-WR", "WR-TE", "RB-WR-TE", "DL-LB-DB", "FLEX"]) {
+    const members = MEMBERS[abbr] ?? [];
+    if (want.every((code) => members.includes(code))) return SLOT[abbr];
+  }
+  notes.push(`CBS: no single lineup slot covers ${want.sort().join("/")} - the flex seats are modelled as RB/WR/TE`);
+  return SLOT["RB-WR-TE"];
+}
+
 export function readSettings(rules, details, scoring, notes = []) {
   const r = rules?.rules ?? rules ?? {};
   const d = details?.league_details ?? details ?? {};
   const sc = scoring?.scoring_rules ?? scoring ?? {};
 
-  // Slots. `max_active` is the count: CBS states a per-position range, and a league
-  // whose minimums and maximums differ is a flexible lineup the engine's fixed slots
-  // cannot express. Taking the maximum keeps every seat the manager could fill, and
-  // the note below says so when the two readings disagree.
-  const counts = {};
-  for (const row of r.roster?.positions ?? []) {
-    const abbr = String(row?.abbr ?? "").trim();
-    const n = num(row?.max_active) ?? 0;
-    if (n <= 0) continue;
-    const slot = SLOT[abbr];
-    if (slot === undefined) { notes.push(`CBS: unknown roster position "${abbr}" - its ${n} seat(s) are not modelled`); continue; }
-    counts[slot] = (counts[slot] ?? 0) + n;
-  }
-  const starters = Object.values(counts).reduce((a, b) => a + b, 0);
-
+  // Slots. CBS states a per-position RANGE (min_active..max_active) and caps the whole
+  // lineup with the "Active Players" status. Reading the maxima as seats is wrong whenever
+  // they exceed that cap - the recorded league's maxima total 14 against a cap of 8, and a
+  // 14-seat lineup is one the manager can never set, so every trade would be scored against
+  // a team that does not exist. The minimums are the seats the manager MUST fill; the
+  // remainder up to the cap is discretion, which is exactly what a flex slot models. So:
+  // dedicated slots for the minimums, then the leftover seats as the narrowest ESPN flex
+  // whose eligibility covers every position that still has headroom.
   const statusMax = (description) => {
     const row = (r.roster?.statuses ?? []).find((s) => String(s?.description ?? "").trim() === description);
     return num(row?.max);
@@ -392,9 +399,42 @@ export function readSettings(rules, details, scoring, notes = []) {
   const benchSlots = statusMax("Reserve Players") ?? 0;
   const irSlots = statusMax("Injured Players") ?? 0;
   const activeMax = statusMax("Active Players");
-  if (activeMax != null && activeMax !== starters)
-    notes.push(`CBS: the lineup allows ${activeMax} starters but the position maxima total ${starters}; ` +
-               `this is a flexible lineup and the engine models the maxima`);
+
+  const rows = [];
+  for (const row of r.roster?.positions ?? []) {
+    const abbr = String(row?.abbr ?? "").trim();
+    const max = num(row?.max_active) ?? 0;
+    if (max <= 0) continue;
+    if (SLOT[abbr] === undefined) { notes.push(`CBS: unknown roster position "${abbr}" - its ${max} seat(s) are not modelled`); continue; }
+    rows.push({ abbr, slot: SLOT[abbr], max, min: Math.min(num(row?.min_active) ?? 0, max) });
+  }
+  const sumMax = rows.reduce((a, x) => a + x.max, 0);
+  const sumMin = rows.reduce((a, x) => a + x.min, 0);
+
+  const counts = {};
+  const seat = (slot, n) => { if (n > 0) counts[slot] = (counts[slot] ?? 0) + n; };
+  if (activeMax == null) {
+    // Nothing bounds the lineup, so the maxima are the only reading available.
+    for (const x of rows) seat(x.slot, x.max);
+    if (sumMax !== sumMin) notes.push("CBS: no Active Players cap in the rules - the engine models each position's maximum");
+  } else if (sumMax <= activeMax) {
+    // A fixed lineup (or one the cap does not bind): the maxima ARE the seats.
+    for (const x of rows) seat(x.slot, x.max);
+  } else {
+    for (const x of rows) seat(x.slot, x.min);
+    const spare = activeMax - sumMin;
+    if (spare > 0) {
+      // Every position that can still take another starter, expanded through the same
+      // membership table eligibility uses, then the narrowest slot that covers them all.
+      const headroom = new Set();
+      for (const x of rows) if (x.max > x.min) for (const code of MEMBERS[x.abbr] ?? [x.abbr]) headroom.add(code);
+      seat(flexSlotFor(headroom, notes), spare);
+    }
+    notes.push(`CBS: the lineup allows ${activeMax} starters but the position maxima total ${sumMax}; ` +
+               `this is a flexible lineup - the engine seats each position's minimum and models the rest as flex`);
+    if (spare < 0) notes.push(`CBS: the position minimums total ${sumMin}, more than the ${activeMax} the lineup allows - the minimums are used`);
+  }
+  const starters = Object.values(counts).reduce((a, b) => a + b, 0);
 
   // "No Limit" is a string where a number would go: an unlimited position is omitted
   // rather than read as NaN, and a league with no limits at all reports null, as ESPN's does.

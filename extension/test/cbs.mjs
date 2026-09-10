@@ -16,7 +16,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cbs, {
   SLOT, BENCH_SLOT, IR_SLOT, POS_ID, MEMBERS, TEAM_ABBR, STATUS, CBS_HOST_RE,
-  cbsUrl, publicUrl, parseLeagueUrl, expandEligibility, readSettings, normalizeStatus,
+  cbsUrl, publicUrl, parseLeagueUrl, expandEligibility, readSettings, normalizeStatus, flexSlotFor,
   teamAbbr, posOf, num, eligibleCodes, configuredCodes, extractToken, openSession,
 } from "../engine/platforms/cbs.js";
 import { IDS_URL, IDS_KEY, trimIds, loadCrosswalk } from "../engine/sources/fantasypros.js";
@@ -153,17 +153,33 @@ const REF = { platform: "cbs", leagueId: "redacted-league", seasonId: 2026 };
   const statuses = body("rules.json").rules.roster.statuses;
   const maxOf = (d) => Number(statuses.find((x) => x.description === d).max);
 
-  const want = {};
-  for (const row of positions) want[SLOT[row.abbr]] = (want[SLOT[row.abbr]] ?? 0) + Number(row.max_active);
-  ok(same(s.lineupSlotCounts, want), "lineupSlotCounts is each position's max_active under its slot id");
-  ok(s.starters === Object.values(want).reduce((a, b) => a + b, 0), "starters sums the slot counts");
+  // CBS states a per-position RANGE and caps the whole lineup with "Active Players".
+  // The recorded league's maxima total 14 against an active max of 8, so reading the maxima
+  // as seats would have the engine field six starters the manager can never set — every
+  // trade would then be scored on a lineup that does not exist. The minimums are the seats
+  // the manager MUST fill; the difference up to the active max is discretion, which is what
+  // a flex slot is. Model the mins as dedicated slots and the remainder as the narrowest
+  // ESPN flex whose eligibility covers every position with headroom.
+  const dedicated = {};
+  for (const row of positions) {
+    const n = Number(row.min_active);
+    if (n > 0) dedicated[SLOT[row.abbr]] = (dedicated[SLOT[row.abbr]] ?? 0) + n;
+  }
+  const want = { ...dedicated };
+  want[SLOT["RB-WR-TE"]] = (want[SLOT["RB-WR-TE"]] ?? 0) + (maxOf("Active Players") - Object.values(dedicated).reduce((a, b) => a + b, 0));
+  ok(same(s.lineupSlotCounts, want),
+     "lineupSlotCounts seats each position's min_active and spends the rest of the Active max on the flex the headroom positions share");
+  ok(s.starters === maxOf("Active Players") && s.starters === 8,
+     "starters is the lineup the manager can actually field (8), not the sum of the maxima (14)");
+  ok(Object.values(positions).reduce((a, p) => a + Number(p.max_active), 0) === 14,
+     "...and the maxima really do total 14, so this is the flexible-lineup case, not a fixed one");
   ok(s.benchSlots === maxOf("Reserve Players") && s.benchSlots === 6, "benchSlots is the Reserve Players max");
   ok(s.irSlots === maxOf("Injured Players") && s.irSlots === 0, "irSlots is the Injured Players max");
   ok(s.rosterSize === s.starters + s.benchSlots, "rosterSize is starters plus bench, never Total Players");
   ok(s.rosterSize !== maxOf("Total Players") + s.irSlots || s.irSlots === 0,
      "...so a non-zero IR could never be counted twice");
-  ok(notes.some((n) => /flexible lineup/.test(n)),
-     "a league whose position maxima exceed its Active max says so in a note rather than silently");
+  ok(notes.some((n) => /flexible lineup/.test(n) && /8/.test(n) && /14/.test(n)),
+     "a league whose position maxima exceed its Active max says so in a note, naming both numbers");
 
   ok(positions.every((p) => p.max_total === "No Limit"), "the recorded league limits no position");
   ok(s.positionLimits === null, "...so positionLimits is null, as ESPN's is for an unlimited league");
@@ -195,9 +211,46 @@ const REF = { platform: "cbs", leagueId: "redacted-league", seasonId: 2026 };
   const n2 = [];
   const s2 = readSettings(synthetic, { league_details: { regular_season_periods: "13", playoff_periods: 2 } }, null, n2);
   ok(s2.lineupSlotCounts[0] === 2 && s2.lineupSlotCounts[2] === 2,
-     "a string max_active reads as a number");
+     "a string max_active reads as a number, and maxima totalling exactly the Active max are the seats: nothing is discretionary");
   ok(s2.starters === 4 && s2.benchSlots === 6 && s2.irSlots === 2 && s2.rosterSize === 10,
      "string mins and maxes read as numbers; rosterSize excludes IR");
+
+  // Headroom the offensive flexes cannot express: QB is only in the superflex.
+  const superflex = { rules: { roster: {
+    positions: [{ abbr: "QB", max_active: 2, min_active: 1 }, { abbr: "RB", max_active: 3, min_active: 1 },
+                { abbr: "DST", max_active: 1, min_active: 1 }],
+    statuses: [{ description: "Active Players", max: 4, min: 3 }, { description: "Reserve Players", max: 5, min: 0 }] } } };
+  const n6 = [];
+  const s6 = readSettings(superflex, {}, null, n6);
+  ok(same(s6.lineupSlotCounts, { 0: 1, 2: 1, 16: 1, 7: 1 }) && s6.starters === 4,
+     "QB and RB headroom resolves to the superflex (7), the narrowest ESPN slot that seats both");
+  ok(flexSlotFor(new Set(["WR", "TE"])) === 5 && flexSlotFor(new Set(["RB", "WR"])) === 3
+     && flexSlotFor(new Set(["RB", "WR", "TE"])) === 23 && flexSlotFor(new Set(["WR"])) === 4,
+     "flexSlotFor picks the narrowest covering slot, and a lone position keeps its own");
+  const n7 = [];
+  ok(flexSlotFor(new Set(["QB", "DST"]), n7) === 23 && n7.some((n) => /no single lineup slot covers/.test(n)),
+     "...and headroom no slot covers falls back to RB/WR/TE with a note rather than inventing one");
+
+  // A fixed lineup - every position's min equals its max - keeps the exact seats and says nothing.
+  const fixed = { rules: { roster: {
+    positions: [{ abbr: "QB", max_active: 1, min_active: 1 }, { abbr: "RB", max_active: 2, min_active: 2 },
+                { abbr: "WR", max_active: "2", min_active: "2" }, { abbr: "DST", max_active: 1, min_active: 1 }],
+    statuses: [{ description: "Active Players", max: 6, min: 6 }, { description: "Reserve Players", max: "5", min: 0 }] } } };
+  const n4 = [];
+  const s4 = readSettings(fixed, {}, null, n4);
+  ok(same(s4.lineupSlotCounts, { 0: 1, 2: 2, 4: 2, 16: 1 }) && s4.starters === 6,
+     "a fixed lineup keeps its exact seats: no flex is invented when no position has headroom");
+  ok(!n4.some((n) => /flexible lineup/.test(n)), "...and no flexible-lineup note is raised");
+
+  // No Active Players row: nothing bounds the lineup, so the maxima are all there is to read.
+  const noCap = { rules: { roster: {
+    positions: [{ abbr: "QB", max_active: 1, min_active: 1 }, { abbr: "RB", max_active: 3, min_active: 1 }],
+    statuses: [{ description: "Reserve Players", max: 4, min: 0 }] } } };
+  const n5 = [];
+  const s5 = readSettings(noCap, {}, null, n5);
+  ok(same(s5.lineupSlotCounts, { 0: 1, 2: 3 }) && s5.starters === 4,
+     "with no Active Players cap the maxima are the only reading available");
+  ok(n5.some((n) => /no Active Players/.test(n)), "...and the note says the cap was missing");
   ok(same(s2.positionLimits, { [POS_ID.QB]: 3 }),
      "a numeric max_total becomes a position limit and No Limit is omitted");
   ok(n2.some((n) => /ZZ/.test(n)), "an unknown position code is skipped with a note, not dropped in silence");
