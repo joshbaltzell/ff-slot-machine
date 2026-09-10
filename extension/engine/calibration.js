@@ -14,7 +14,7 @@
  * Once six weeks carry actuals the fitted slopes replace the constants.
  *
  * This is the only league-specific model in the extension, and it lives entirely in
- * `chrome.storage.local` under `ffsm.calib.{leagueId}.{seasonId}`. It is never sent
+ * `chrome.storage.local` under `ffsm.calib.{platform}.{leagueId}.{seasonId}`. It is never sent
  * anywhere; there is nowhere to send it.
  *
  * `pos` groups the regressions because the slope genuinely differs by position (a
@@ -30,15 +30,17 @@ export const MIN_N = 20;             // per position
 export const SLOPE_CLAMP = [0.3, 1.2];
 const SOURCES = ["espn", "sleeper", "fp", "agg"];
 
-export const logKey = (leagueId, seasonId) => `ffsm.calib.${leagueId}.${seasonId}`;
+// Five segments (D-08): the platform keeps an ESPN league and a CBS league with the
+// same-looking id apart. No default for `platform` - a caller that omits it is a bug.
+export const logKey = (platform, leagueId, seasonId) => `ffsm.calib.${platform}.${leagueId}.${seasonId}`;
 
 /**
  * Append (or replace) one week. `rows` are `{id, pos, espn, sleeper, fp, agg}`.
  * `id` and `pos` are not decoration: without `id` the actuals cannot be joined, and
  * without `pos` nothing can be grouped.
  */
-export async function logWeek({ storage, leagueId, seasonId, week, rows, now = Date.now() }) {
-  const key = logKey(leagueId, seasonId);
+export async function logWeek({ storage, platform, leagueId, seasonId, week, rows, now = Date.now() }) {
+  const key = logKey(platform, leagueId, seasonId);
   const log = (await storage.get(key))[key] ?? { weeks: {} };
   if (!log.weeks) log.weeks = {};
   log.weeks[String(week)] = { at: now, rows: rows ?? [] };
@@ -46,8 +48,8 @@ export async function logWeek({ storage, leagueId, seasonId, week, rows, now = D
   return log;
 }
 
-export async function loadLog({ storage, leagueId, seasonId }) {
-  const key = logKey(leagueId, seasonId);
+export async function loadLog({ storage, platform, leagueId, seasonId }) {
+  const key = logKey(platform, leagueId, seasonId);
   const log = (await storage.get(key))[key];
   return log && log.weeks ? log : { weeks: {} };
 }

@@ -26,7 +26,7 @@ const store = (opts) => opts.storage
 
 /**
  * @param model  the loaded league; `p.proj` is mutated in place
- * @param ref    { leagueId, seasonId }
+ * @param ref    { platform, leagueId, seasonId }
  * @param say    the panel's log function (text, cls)
  * @param progress  (frac) for the loading step
  * @returns { aggregate, band, coverage, k, fitted, fittedPositions, summaryRows,
@@ -137,15 +137,15 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
           agg: p?.proj?.[currentWeek] ?? espn,
         });
       }
-      await logWeek({ storage, leagueId: ref.leagueId, seasonId: ref.seasonId,
+      await logWeek({ storage, platform: ref.platform, leagueId: ref.leagueId, seasonId: ref.seasonId,
         week: currentWeek, rows, now: opts.now ?? Date.now() });
 
-      const log = await loadLog({ storage, leagueId: ref.leagueId, seasonId: ref.seasonId });
+      const log = await loadLog({ storage, platform: ref.platform, leagueId: ref.leagueId, seasonId: ref.seasonId });
       // Write the joined actuals back. A player's `history` only carries a week for
       // as long as the platform does; an actual visible this session and gone the
       // next is lost for good unless it is persisted the moment it is seen.
       const { filled } = attachActuals(log, model.players, ref.seasonId);
-      if (filled) await storage.set({ [logKey(ref.leagueId, ref.seasonId)]: log });
+      if (filled) await storage.set({ [logKey(ref.platform, ref.leagueId, ref.seasonId)]: log });
       out.weeksStored = weeksStored(log);
       out.weeksWithActuals = weeksWithActuals(log);
       out.summaryRows = summaryOf(log);

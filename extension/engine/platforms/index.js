@@ -48,3 +48,66 @@ export function detect(url) {
   }
   return null;
 }
+
+/* ---------- storage keys (D-08) ---------- */
+
+/**
+ * The key a league's record lives under: five segments, the platform first. That
+ * segment is what keeps ESPN league 1234 and a CBS league whose slug happens to be
+ * "1234" apart. Built from the triple alone - a session or a team id never reaches it.
+ */
+export const leagueKey = (ref) => `ffsm.league.${ref.platform}.${ref.leagueId}.${ref.seasonId}`;
+
+/** A pre-11-04 key: exactly four segments, a dotless id and a four-digit season. */
+const LEGACY_KEY = /^ffsm\.(league|calib)\.([^.]+)\.(\d{4})$/;
+
+/**
+ * Rewrite the legacy four-segment keys as five-segment espn keys, once.
+ *
+ * `storage` is chrome.storage.local or the tests' Map: get(null) for everything,
+ * set(obj), remove(key). A league record is rewritten with `rosterHash: null` and
+ * `changed: false` and gains its `ref`, so the daily check adopts the first hash it
+ * computes instead of comparing against one a different function produced - the
+ * upgrade must never light the badge on an unchanged roster. A calibration log moves
+ * as it is. When the new key already exists (the panel ran first) its value wins.
+ * Idempotent: a five-segment key never matches, so a second call migrates 0.
+ *
+ * @returns {{migrated: number}} legacy keys retired
+ */
+export const migrateStorageKeys = async (storage) => {
+  const all = (await storage.get(null)) ?? {};
+  let migrated = 0;
+  for (const [key, old] of Object.entries(all)) {
+    const m = LEGACY_KEY.exec(key);
+    if (!m) continue;
+    const [, kind, id, season] = m;
+    const newKey = `ffsm.${kind}.espn.${id}.${season}`;
+    if (!(newKey in all)) {
+      const value = kind === "league"
+        ? { ...old, rosterHash: null, changed: false,
+            ref: { platform: "espn", leagueId: Number(id), seasonId: Number(season) } }
+        : old;
+      await storage.set({ [newKey]: value });
+    }
+    await storage.remove(key);
+    migrated++;
+  }
+  return { migrated };
+};
+
+/**
+ * The league record after one daily check, given the hash the adapter just computed.
+ * Pure, so the service worker's one decision can be tested without a worker.
+ *
+ *   hash null        -> the request failed; the record is returned untouched
+ *   no rosterHash    -> adopt: this is the first hash the record has seen (a migrated
+ *                       record, or a run whose own fingerprint request failed)
+ *   otherwise        -> compare: `changed` is whether the roster moved since the
+ *                       panel stored its hash, which stays what the panel wrote
+ */
+export function nextLeagueRecord(val, hash, now) {
+  if (hash == null) return val;
+  if (val.rosterHash == null)
+    return { ...val, rosterHash: hash, latestHash: hash, changed: false, checkedAt: now };
+  return { ...val, latestHash: hash, changed: hash !== val.rosterHash, checkedAt: now };
+}

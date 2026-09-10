@@ -11,9 +11,10 @@
 /**
  * Java-style 31-hash over `${id}:${sorted ids}` parts joined by "|", returned as a
  * decimal string. Order-independent in both teams and ids: ids sort numerically,
- * parts sort with the default sort. This is the form panel.js's rosterFingerprint
- * has always used; the daily check in background.js hashes the same payload with
- * this same function so the two can never drift apart.
+ * parts sort with the default sort. This is the form the panel's stored rosterHash
+ * has always had; since 11-04 the panel stores model.fingerprint and the daily check
+ * in background.js hashes the same payload with this same function, so the two can
+ * never drift apart.
  *
  * @param {Iterable<{id: number|string, ids: Iterable<number|string>}>} teams
  * @returns {string}

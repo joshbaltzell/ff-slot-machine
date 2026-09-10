@@ -6,7 +6,7 @@
  * browser already has.
  */
 import { measureVolatility, SLOT_LABEL } from "./engine/league.js";
-import { detect, byId } from "./engine/platforms/index.js";
+import { detect, byId, leagueKey, migrateStorageKeys } from "./engine/platforms/index.js";
 import { buildSlots, seatMask } from "./engine/lineup.js";
 import { Engine, dedupe } from "./engine/search.js";
 import { projectSeason } from "./engine/season.js";
@@ -209,16 +209,6 @@ const OBJECTIVES = [
 ];
 const objSort = (o) => (o === "title" ? "dtitle" : o === "wins" ? "dwins" : "gain");
 
-/** Must match the fingerprint the background check computes. */
-function rosterFingerprint(model) {
-  const parts = [...model.teams.values()]
-    .map(t => `${t.id}:${[...t.roster].sort((a, b) => a - b).join(",")}`).sort();
-  let h = 0;
-  const s = parts.join("|");
-  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  return String(h);
-}
-
 function pickTeam(teams) {
   return new Promise((resolve) => {
     $("#bootmsg").textContent = "Which team is yours?";
@@ -269,6 +259,10 @@ async function start(ref) {
   $("#bootact").innerHTML = "";
   steps.innerHTML = "";
   try {
+    // Legacy four-segment storage keys become five-segment ones, once (D-08). Whichever
+    // of the panel or the service worker runs first does it; storage being unavailable
+    // must not stop the run.
+    try { await migrateStorageKeys(chrome.storage.local); } catch { /* run without it */ }
     Steps.init();
     Steps.set("settings", "run");
     say(`${platform.label} league ${ref.leagueId}, season ${ref.seasonId}`);
@@ -557,10 +551,16 @@ async function start(ref) {
     // something real to report rather than a generic nag.
     try {
       const mine = trades.filter(t => t.sides.some(x => x.team === myTeam)).length;
-      const key = `ffsm.league.${ref.leagueId}.${ref.seasonId}`;
+      // The hash is the adapter's own fingerprint, from the same function and the same
+      // payload the daily check will use; null if that one request failed, and the
+      // check then adopts its first hash instead of comparing. `ref` is the sanitized
+      // triple as an explicit literal - never the run's ref object, so a session or a
+      // token can never ride into storage.
+      const key = leagueKey(ref);
       await chrome.storage.local.set({ [key]: {
         at: Date.now(), offers: mine, team: myTeam,
-        rosterHash: rosterFingerprint(model), changed: false,
+        rosterHash: model.fingerprint, changed: false,
+        ref: { platform: ref.platform, leagueId: ref.leagueId, seasonId: ref.seasonId },
       } });
       chrome.runtime.sendMessage({ type: "ffsm.analysed" });
     } catch { /* storage unavailable; the report still works */ }
@@ -1410,7 +1410,7 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     // Refresh drops the cached league. It must not drop the user's choices, and it
     // must not drop anything they cannot get back: the calibration log accumulates
     // one week at a time and needs six of them, so a wiped log is six weeks of
-    // waiting with no explanation. Its keys are dynamic (`ffsm.calib.{league}.{season}`),
+    // waiting with no explanation. Its keys are dynamic (`ffsm.calib.{platform}.{league}.{season}`),
     // so no literal list can name them — they are matched by prefix instead.
     const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed",
                   "ffsm.aggregate", "ffsm.environment"];
