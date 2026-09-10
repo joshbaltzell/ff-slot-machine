@@ -13,8 +13,8 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { PLATFORMS, byId, detect, hashRosters } from "../engine/platforms/index.js";
-import espn, { espnUrl, readSettings } from "../engine/platforms/espn.js";
-import { PRO_TEAM } from "../engine/league.js";
+import espn, { espnUrl, readSettings, historyOf } from "../engine/platforms/espn.js";
+import { PRO_TEAM, measureVolatility } from "../engine/league.js";
 import { BENCH_SLOTS } from "../engine/lineup.js";
 
 let checks = 0, failures = 0;
@@ -59,6 +59,13 @@ const NUMERIC_SETTINGS = ["pprValue", "faabBudget", "currentWeek", "starters", "
   "rosterSize", "playoffTeams", "playoffRounds", "divisionCount"];
 const NFL_OK = new Set([...Object.values(PRO_TEAM), "X", "?", "FA", ""]);   // PRO_TEAM or a PLACEHOLDER
 const numArr = (a) => Array.isArray(a) && a.every((x) => typeof x === "number");
+// Every key a player record may carry. The platform's raw stat rows are not among
+// them: the adapter folds them into `history` and nothing downstream sees the raw shape.
+const PLAYER_KEYS = new Set(["id", "name", "eligibleSlots", "pos", "posId", "injuryStatus", "injured",
+  "nfl", "teamId", "proj", "history", "bye", "owned"]);
+const numOrNull = (v) => v === null || (typeof v === "number" && Number.isFinite(v));
+const historyRow = (h) => h && typeof h === "object" && same(Object.keys(h).sort(), ["actual", "proj", "season", "week"])
+  && Number.isInteger(h.season) && Number.isInteger(h.week) && numOrNull(h.actual) && numOrNull(h.proj);
 
 function assertModel(model, label) {
   const s = model.settings;
@@ -100,6 +107,10 @@ function assertModel(model, label) {
   ok(players.every((p) => p.proj && typeof p.proj === "object" && Object.values(p.proj).every((v) => typeof v === "number")),
      `${label}: proj is an object of numbers`);
   ok(players.every((p) => typeof p.bye === "number"), `${label}: bye is a number`);
+  ok(players.every((p) => Array.isArray(p.history) && p.history.every(historyRow)),
+     `${label}: history is an array of {season, week, actual, proj} rows - integer season and week, number-or-null values`);
+  ok(players.every((p) => Object.keys(p).every((k) => PLAYER_KEYS.has(k))),
+     `${label}: no player carries a key outside the contract - the platform's raw stat rows never reach the model`);
 
   const teams = [...model.teams.values()];
   ok(teams.every((t) => typeof t.id === "number" && model.teams.get(t.id) === t), `${label}: every team has a numeric id and is keyed on it`);
@@ -120,6 +131,9 @@ function assertModel(model, label) {
 // fixture.json is a normalized snapshot; this rebuilds the raw ESPN shapes readSettings
 // and loadLeague read so the adapter can be driven offline and asked to give the
 // fixture back. Team id is the index in F.teams; player ids are the fixture's.
+const PRIOR_WEEKS = [1, 2, 3, 4, 5, 6, 7, 8];
+const PRIOR_RES = [2, -2, 4, -4, 1, -1, 10, -10];       // actual minus projection, mean zero
+const priorProj = (id) => 10 + (id % 3);
 function mkEspnRaw(F, seasonId) {
   const settingsRaw = {
     settings: {
@@ -132,8 +146,17 @@ function mkEspnRaw(F, seasonId) {
     status: { currentMatchupPeriod: 1 },
   };
   const rows = (id) => [
-    // A prior-season decoy first: a reader that ignores seasonId takes this one.
-    { statSourceId: 1, statSplitTypeId: 1, seasonId: seasonId - 1, scoringPeriodId: F.weeks[0], appliedTotal: 999 },
+    // Prior-season rows first: a reader that ignores seasonId takes these. Weeks 1-8
+    // carry a projection and an actual each, so the history the adapter builds can
+    // feed measureVolatility; the residuals are fixed so the test can name them.
+    ...PRIOR_WEEKS.flatMap((wk, k) => [
+      { statSourceId: 1, statSplitTypeId: 1, seasonId: seasonId - 1, scoringPeriodId: wk, appliedTotal: priorProj(id) },
+      { statSourceId: 0, statSplitTypeId: 1, seasonId: seasonId - 1, scoringPeriodId: wk, appliedTotal: priorProj(id) + PRIOR_RES[k] },
+    ]),
+    // Two decoys historyOf must drop: a season total (split 0) and an unknown source
+    // at a week no other row reports, so a builder that kept either would show a row.
+    { statSourceId: 0, statSplitTypeId: 0, seasonId: seasonId - 1, scoringPeriodId: 0, appliedTotal: 555 },
+    { statSourceId: 2, statSplitTypeId: 1, seasonId: seasonId - 1, scoringPeriodId: 9, appliedTotal: 444 },
     ...F.weeks.map((wk, k) => ({ statSourceId: 1, statSplitTypeId: 1, seasonId, scoringPeriodId: wk, appliedTotal: F.proj[id][k] })),
   ];
   const team = (name, id) => ({
@@ -361,6 +384,55 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
        && s.seedingTiebreak === "TOTAL_POINTS_SCORED" && same(s.divisions, []) && s.divisionCount === 0,
        `readSettings(${label}): every default is the documented one`);
   }
+}
+
+/* history: the builder, and the synthetic model feeding measureVolatility through it */
+{
+  const one = historyOf([
+    { statSplitTypeId: 1, seasonId: 2025, statSourceId: 1, scoringPeriodId: 5, appliedTotal: 10 },
+    { statSplitTypeId: 1, seasonId: 2025, statSourceId: 0, scoringPeriodId: 5, appliedTotal: 13.456 },
+  ]);
+  ok(same(one, [{ season: 2025, week: 5, actual: 13.456, proj: 10 }]),
+     "historyOf folds the projection and the actual for one (season, week) into one row, unrounded");
+  ok(same(historyOf(undefined), []) && same(historyOf([]), []), "historyOf of nothing is an empty history");
+  const decoys = historyOf([
+    { statSplitTypeId: 0, seasonId: 2025, statSourceId: 0, scoringPeriodId: 0, appliedTotal: 300 },   // season total
+    { statSplitTypeId: 1, seasonId: 2025, statSourceId: 2, scoringPeriodId: 9, appliedTotal: 44 },    // unknown source
+    { statSplitTypeId: 1, seasonId: 2025, statSourceId: 1, scoringPeriodId: 1, appliedTotal: 8 },
+    { statSplitTypeId: 1, seasonId: 2024, statSourceId: 1, scoringPeriodId: 1, appliedTotal: 7 },
+    { statSplitTypeId: 1, seasonId: 2024, statSourceId: 0, scoringPeriodId: 1, appliedTotal: 9 },
+  ]);
+  ok(!decoys.some((h) => h.week === 0 || h.actual === 300), "a statSplitTypeId 0 season total is ignored");
+  ok(!decoys.some((h) => h.week === 9), "a statSourceId 2 row leaves no history row, not even an empty one");
+  ok(same(decoys, [{ season: 2025, week: 1, actual: null, proj: 8 }, { season: 2024, week: 1, actual: 9, proj: 7 }]),
+     "two seasons give two rows with distinct season, in first-seen order, a missing side null");
+  ok(decoys.every(historyRow), "every row is exactly {season, week, actual, proj}");
+
+  const model = MODELS.espn;
+  const prior = REF.seasonId - 1;
+  const ps = [...model.players.values()];
+  ok(ps.every((p) => p.history.filter((h) => h.season === prior).length === PRIOR_WEEKS.length
+       && p.history.filter((h) => h.season === REF.seasonId).length === F.weeks.length
+       && p.history.length === PRIOR_WEEKS.length + F.weeks.length),
+     "the synthetic model's history holds eight prior-season rows and one current-season row per week, nothing for the decoys");
+  ok(ps.every((p) => PRIOR_WEEKS.every((wk, k) => {
+       const h = p.history.find((x) => x.season === prior && x.week === wk);
+       return h && h.proj === priorProj(p.id) && h.actual === priorProj(p.id) + PRIOR_RES[k];
+     })), "each prior-season row carries that week's projection and actual");
+  ok(ps.every((p) => F.weeks.every((wk, k) => {
+       const h = p.history.find((x) => x.season === REF.seasonId && x.week === wk);
+       return h && h.actual === null && h.proj === F.proj[p.id][k];
+     })), "each current-season row carries the unrounded projection and no actual");
+
+  const vol = measureVolatility(ps, prior);
+  ok(vol.measured === ps.length && vol.bySigma.size === ps.length,
+     "measureVolatility measures every player from the eight prior-season weeks of history");
+  ok(ps.every((p) => same(vol.residuals.get(p.id), PRIOR_RES)), "residuals are actual minus projection per week, read from history");
+  const sd = Math.sqrt(PRIOR_RES.reduce((a, r) => a + r * r, 0) / (PRIOR_RES.length - 1));
+  ok(Math.abs(vol.global - sd) < 1e-9 && ps.every((p) => Math.abs(vol.bySigma.get(p.id) - sd) < 1e-9),
+     "sigma is the sample standard deviation of those residuals");
+  ok(measureVolatility(ps, REF.seasonId).measured === 0,
+     "the current season, projections without actuals, measures nothing: the season filter and the null check both hold");
 }
 
 /* the helpers this suite lends to later plans */
