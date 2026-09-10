@@ -408,7 +408,12 @@ id, and a dash from every external column; he keeps his roster spot and his line
 because valuing him at zero or dropping him would change the trade math. That is "a dead
 feed costs a dash, not the run" applied per player. Two CBS players can resolve to one
 ESPN id (the file has 12 duplicate `espn_id` values); the second claimant keeps his
-negative id rather than evicting the first. CBS **team entities stay negative**: the
+negative id rather than evicting the first. That rule holds **across the two passes, not
+only inside each one**: the free-agent pool is seeded with the ids the caller already
+holds (`opts.known`), so a free agent can never claim an id a rostered player owns, and
+the panel's merge refuses to overwrite an existing player whatever an adapter returns.
+Without both, a duplicate row could silently replace a man on a roster, and the engine
+would trade away someone who was never there. CBS **team entities stay negative**: the
 crosswalk has no `DST`, `TQB` or `TK` rows at all, so every team defence, team quarterback
 and team kicker shows dashes. Mapping those by pro-team code instead is a real follow-up
 and is deliberately not built.

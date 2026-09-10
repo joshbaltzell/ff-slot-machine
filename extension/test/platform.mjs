@@ -367,9 +367,14 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "start() publishes the adapter for render to read its label from");
   // WR-07: an adapter may say which free-agent feed went quiet. The channel is only
   // worth anything if the panel passes an array and prints what comes back.
-  ok(/loadFreeAgents\(ref, model\.weeks, \{ notes: faNotes \}\)/.test(PANEL)
+  ok(/loadFreeAgents\(ref, model\.weeks,\s*\{ notes: faNotes, known: new Set\(model\.players\.keys\(\)\) \}\)/.test(PANEL)
      && /for \(const note of faNotes\) say\(/.test(PANEL),
      "the panel hands loadFreeAgents a notes array and prints what the adapter wrote to it");
+  // F-2: a free agent must never displace a rostered player, whatever the adapter returns.
+  ok(/known: new Set\(model\.players\.keys\(\)\)/.test(PANEL),
+     "...and names the ids already on a roster, so the adapter can refuse one of them");
+  ok(/if \(model\.players\.has\(fa\.id\)\) \{ displaced\+\+; continue; \}/.test(PANEL),
+     "...with the merge itself refusing to overwrite a rostered player, for any adapter");
   ok(/Reading your league from \$\{platform\.label\}/.test(PANEL),
      "the boot message names the platform as start()'s first UI action");
   ok(/platform\?\.acceptsToken/.test(PANEL) && /signInUrl\(ref\)/.test(PANEL),

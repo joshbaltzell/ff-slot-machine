@@ -324,8 +324,18 @@ async function start(ref) {
       // An adapter may append to `notes` to say which feed went quiet; one that does
       // not simply leaves the array empty.
       const faNotes = [];
-      const fas = await platform.loadFreeAgents(ref, model.weeks, { notes: faNotes });
-      for (const fa of fas) model.players.set(fa.id, fa);
+      // `known` lets the adapter refuse an id a rostered player already owns; the guard on
+      // the merge is the backstop that holds for any adapter, present or future. A free
+      // agent must never displace a rostered player - that is a man the engine would then
+      // trade away without him ever having been there.
+      const fas = await platform.loadFreeAgents(ref, model.weeks,
+        { notes: faNotes, known: new Set(model.players.keys()) });
+      let displaced = 0;
+      for (const fa of fas) {
+        if (model.players.has(fa.id)) { displaced++; continue; }
+        model.players.set(fa.id, fa);
+      }
+      if (displaced) say(`  ${displaced} available players skipped: their ids are already on a roster`, "");
       say(`  ${fas.length} available players`, "ok");
       for (const note of faNotes) say(`  ${note}`, "");
       Steps.set("agents", "done", `${fas.length}`);

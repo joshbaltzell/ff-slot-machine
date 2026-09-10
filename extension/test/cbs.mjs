@@ -1037,6 +1037,41 @@ const FA_KEEP = FA_ROWS.filter((r) => Number(r.FPTS) > 0).length;
 const attempt = async (fn) => { try { return await fn(); } catch (e) { return { __error: String(e.message ?? e) }; } };
 {
   const f = countingFetch(cbsTable());
+  // F-2. The crosswalk holds duplicate espn_id values, so a free agent can crosswalk onto
+  // an id a ROSTERED player already owns. loadFreeAgents only de-duplicated inside its own
+  // pool, and panel.js merges with a bare players.set(fa.id, fa) — so the free agent silently
+  // replaced a rostered player, and the engine then traded away a man who was never there.
+  // The pool must not claim an id the caller already holds.
+  {
+    // A crosswalk that maps a rostered player AND a free agent onto the SAME espn id —
+    // the file really does carry duplicate espn_id values, so this is the shipped shape.
+    const collideCbs = FA_ROWS[0].id;                       // a free agent in the recorded pool
+    const rosteredCbs = ROSTER_IDS[0];                      // a man on a roster
+    const SHARED = 900001;                                  // the id both crosswalk to
+    const csv = ["fantasypros_id,espn_id,cbs_id,name",
+      `101,${SHARED},${rosteredCbs},rostered`,
+      `102,${SHARED},${collideCbs},freeagent`].join("\n") + "\n";
+    const table = cbsTable();
+    table[IDS_URL] = csv;
+    const f9 = countingFetch(table);
+    const model = await cbs.loadLeague({ ...REF }, () => {},
+      { fetchImpl: f9, storage: mkStorage(), now: 0 });
+    ok(model.players.get(SHARED)?.id === SHARED, "the rostered player holds the shared id after loadLeague");
+
+    const f10 = countingFetch(table);
+    const pool = await cbs.loadFreeAgents({ ...REF }, WEEKS,
+      { fetchImpl: f10, storage: mkStorage(), now: 0, known: new Set(model.players.keys()) });
+    ok(Array.isArray(pool) && pool.length > 0, "the pool still loads when the caller names the ids it already holds");
+    ok(!pool.some((p) => p.id === SHARED),
+       "no free agent claims an id a rostered player already owns, however the crosswalk maps it");
+    const ids = pool.map((p) => p.id);
+    ok(new Set(ids).size === ids.length, "...and the pool is still internally unique");
+
+    // The panel's merge is the backstop: a free agent must never displace a rostered player.
+    for (const fa of pool) if (!model.players.has(fa.id)) model.players.set(fa.id, fa);
+    ok(model.players.get(SHARED)?.id === SHARED && ROSTER_IDS.length > 0,
+       "...so merging the pool into the model leaves every rostered player standing");
+  }
   const fas = await attempt(() => cbs.loadFreeAgents({ ...REF }, WEEKS, { fetchImpl: f, storage: mkStorage(), now: 0 }));
   const list = Array.isArray(fas) ? fas : [];
   ok(Array.isArray(fas), `loadFreeAgents returns an array (${fas?.__error ?? "ok"})`);

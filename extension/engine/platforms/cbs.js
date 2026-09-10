@@ -1145,7 +1145,13 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
     notes.push(`CBS: id crosswalk unavailable (${crosswalk.reason}) - every free agent is unmapped; `
                + "external sources will show dashes for the whole pool");
   const out = [];
-  const taken = new Set();
+  // Seeded with the ids the caller already holds, not empty. The crosswalk carries
+  // duplicate espn_id values, so a free agent can map onto an id a ROSTERED player owns;
+  // claiming it would have the panel's merge replace a man who is actually on a roster,
+  // and the engine would then trade away someone who was never there. An id already
+  // spoken for is refused here and the player keeps his negative CBS id, which is the
+  // same rule loadLeague's roster pass applies to a collision within itself.
+  const taken = new Set(opts.known ?? []);
   for (const pl of byCbs.values()) {
     // Nothing projected anywhere in the horizon is nothing to add.
     if (!all.some((w) => pl.proj[w] > 0)) continue;
