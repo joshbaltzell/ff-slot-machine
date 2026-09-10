@@ -15,6 +15,8 @@ import { fileURLToPath } from "url";
 import { PLATFORMS, byId, detect, hashRosters, leagueKey, migrateStorageKeys, nextLeagueRecord }
   from "../engine/platforms/index.js";
 import espn, { espnUrl, readSettings, historyOf } from "../engine/platforms/espn.js";
+import cbs, { cbsUrl, readSettings as cbsReadSettings } from "../engine/platforms/cbs.js";
+import { IDS_URL, trimIds } from "../engine/sources/fantasypros.js";
 import { PRO_TEAM, measureVolatility } from "../engine/league.js";
 import { BENCH_SLOTS } from "../engine/lineup.js";
 
@@ -191,10 +193,73 @@ const legacyFingerprint = (model) => {
 
 const REF = { platform: "espn", leagueId: 1, seasonId: 2026 };
 const RAW = mkEspnRaw(F, REF.seasonId);
-// One offline drive per adapter. 11-05 adds cbs on its recorded payloads; an adapter
-// with no entry here fails the suite rather than silently skipping the schema.
+
+/* cbs: recorded payloads */
+// The CBS adapter is driven on the scrubbed capture of a real league (11-01). Each
+// route file is {url, status, ok, body} where `body` is the CBS envelope, so the
+// table maps the URL cbsUrl() builds - in BOTH auth modes, since which one a run
+// takes depends on the session it opens - onto that envelope. Nothing here reads a
+// recorded `url` string: the adapter's own builder is the thing under test.
+const CBS_DIR = path.join(here, "fixtures", "cbs");
+const cbsFile = (f) => JSON.parse(fs.readFileSync(path.join(CBS_DIR, f)));
+const cbsEnv = (f) => cbsFile(f).body;                 // the CBS envelope, what fetch answers
+const cbsBody = (f) => cbsEnv(f).body;                 // envelope.body, what get() returns
+const CBS_README = fs.readFileSync(path.join(CBS_DIR, "README.md"), "utf8");
+const CBS_PAGE = fs.readFileSync(path.join(CBS_DIR, "page.html"), "utf8");
+const CBS_AUTH_ROUTE = (/^- auth_route: (\S+)/m.exec(CBS_README) ?? [])[1] ?? "none";
+const CBS_REF = { platform: "cbs", leagueId: "redacted-league",
+                  seasonId: new Date(cbsFile("page-meta.json").capturedAt).getFullYear() };
+const CBS_PAGE_URL = `https://${CBS_REF.leagueId}.football.cbssports.com/`;
+const CBS_INJURIES_URL = "https://api.cbssports.com/fantasy/players/injuries?SPORT=football&response_format=JSON&version=3.0";
+// The settings the adapter will read, computed here first so the table can carry one
+// stats route per week the league actually has.
+const CBS_SETTINGS = cbsReadSettings(cbsBody("rules.json"), cbsBody("details.json"), cbsBody("scoring-rules.json"), []);
+const CBS_WEEKS = [...CBS_SETTINGS.regularSeasonWeeks, ...CBS_SETTINGS.playoffWeeks];
+const CBS_ROSTERS = cbsBody("rosters.json").rosters.teams;
+const CBS_IDS = CBS_ROSTERS.flatMap((t) => t.players.map((p) => Number(p.id)));
+
+// A db_playerids.csv with the real header: the first five rostered CBS ids mapped to
+// 900001..900005, the first id repeated with a different espn_id (first row must win),
+// and a sixth rostered id whose espn_id is the file's `NA` sentinel.
+const IDS_HEADER = ("mfl_id,sportradar_id,fantasypros_id,gsis_id,pff_id,sleeper_id,nfl_id,espn_id,yahoo_id," +
+  "fleaflicker_id,cbs_id,pfr_id,cfbref_id,rotowire_id,rotoworld_id,ktc_id,stats_id,stats_global_id," +
+  "fantasy_data_id,swish_id,name,merge_name,position,team,birthdate,age,draft_year,draft_round,draft_pick," +
+  "draft_ovr,twitter_username,height,weight,college,db_season").split(",");
+const idsRow = (o) => IDS_HEADER.map((h) => String(o[h] ?? "")).join(",");
+const CBS_MAPPED = CBS_IDS.slice(0, 5).map((cbsId, i) => [cbsId, 900001 + i]);
+const CBS_NA_ID = CBS_IDS[5];
+const CBS_IDS_CSV = [
+  IDS_HEADER.join(","),
+  ...CBS_MAPPED.map(([cbsId, espnId], i) => idsRow({ cbs_id: cbsId, espn_id: espnId, fantasypros_id: 1000 + i, name: `p${i}` })),
+  idsRow({ cbs_id: CBS_MAPPED[0][0], espn_id: 999999, name: "duplicate" }),          // no fp id: fp keeps five rows
+  idsRow({ cbs_id: CBS_NA_ID, espn_id: "NA", fantasypros_id: 1099, name: "unmapped" }),
+].join("\n") + "\n";
+
+// Both modes for every route, so a table never decides which one the adapter picks.
+const CBS_SESSIONS = [{ mode: "cookie", token: null }, { mode: "token", token: "T" }];
+function cbsTable({ crosswalk = true, injuries = true, page = CBS_PAGE, routes = {} } = {}) {
+  const t = {};
+  const put = (route, params, value) => {
+    for (const s of CBS_SESSIONS) t[cbsUrl(CBS_REF, route, params, s)] = value;
+  };
+  put("league/details", {}, routes["league/details"] ?? cbsEnv("details.json"));
+  put("league/rules", {}, routes["league/rules"] ?? cbsEnv("rules.json"));
+  put("league/scoring/rules", {}, routes["league/scoring/rules"] ?? cbsEnv("scoring-rules.json"));
+  put("league/rosters", { team_id: "all" }, routes["league/rosters"] ?? cbsEnv("rosters.json"));
+  for (const w of CBS_WEEKS)
+    put("league/stats", { stats_type: "projections", period: `week${w}`, player_status: "all" },
+        cbsEnv(w === 2 ? "stats-week2.json" : "stats-week1.json"));
+  if (injuries) t[CBS_INJURIES_URL] = cbsFile("public/players-injuries.json");
+  if (crosswalk) t[IDS_URL] = CBS_IDS_CSV;
+  if (page !== null) t[CBS_PAGE_URL] = page;
+  return t;
+}
+
+// One offline drive per adapter. An adapter with no entry here fails the suite rather
+// than silently skipping the schema.
 const DRIVES = {
   espn: () => ({ ref: REF, fetchImpl: mkFetch(fetchTable(REF, RAW)) }),
+  cbs: () => ({ ref: { ...CBS_REF }, fetchImpl: mkFetch(cbsTable()), storage: mkStorage(), now: 0 }),
 };
 
 /* every adapter satisfies the contract and the schema */
@@ -212,14 +277,15 @@ for (const p of PLATFORMS) {
   const drive = DRIVES[p.id];
   ok(typeof drive === "function", `${p.id}: has an offline payload to drive the schema test`);
   if (!drive) continue;
-  const { ref, fetchImpl } = drive();
+  const { ref, ...opts } = drive();
   const progress = [];
-  MODELS[p.id] = await p.loadLeague(ref, (d, t, l) => progress.push([d, t, l]), { fetchImpl });
+  MODELS[p.id] = await p.loadLeague(ref, (d, t, l) => progress.push([d, t, l]), opts);
   assertModel(MODELS[p.id], p.id);
   ok(same(progress[0], [0, 1, "settings"]) && progress.at(-1)[0] === progress.at(-1)[1] && progress.at(-1)[1] > 0,
      `${p.id}: onProgress starts at settings and ends at total/total`);
 }
 ok(PLATFORMS.includes(espn) && PLATFORMS[0] === espn, "the ESPN adapter is registered first");
+ok(same(PLATFORMS.map((p) => p.id), ["espn", "cbs"]), "PLATFORMS is [espn, cbs]");
 ok(same(byId("espn"), espn) && byId("nope") === null && byId(undefined) === null, "byId: espn resolves, unknown and missing are null");
 ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => manifest.host_permissions.includes(h)),
    "manifest host_permissions cover every adapter's hosts");
@@ -251,6 +317,64 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
   ok(ps.every((p) => p.teamId != null && model.teams.get(p.teamId).roster.has(p.id)), "every player's teamId points at the team that rosters him");
   ok(ps.every((p) => Array.isArray(p.history)), "every player carries a history array");
   ok(same(model.notes, []), "the ESPN adapter emits no notes");
+}
+
+/* cbs: the recorded league, in ESPN vocabulary */
+// The schema itself already ran above (assertModel over every entry of PLATFORMS).
+// What is left is what only CBS can get wrong: the canonical id rule, the slot
+// vocabulary, and the note that says which players an external source will miss.
+{
+  ok(CBS_AUTH_ROUTE === "cookie" || CBS_AUTH_ROUTE === "page-token",
+     `the fixtures record a usable auth route (${CBS_AUTH_ROUTE})`);
+  const model = MODELS.cbs;
+  const players = [...model.players.values()];
+  ok(players.length === CBS_IDS.length && model.teams.size === CBS_ROSTERS.length,
+     `${CBS_IDS.length} rostered players on ${CBS_ROSTERS.length} teams`);
+
+  // D-05/D-06: the ESPN id through the crosswalk, else -cbsId, always a Number.
+  ok(CBS_MAPPED.every(([, espnId]) => model.players.get(espnId)?.id === espnId),
+     "the five crosswalked players carry their ESPN id, positive");
+  ok(!model.players.has(999999), "a duplicate cbs_id row does not win: the first espn_id stands");
+  const mapped = new Set(CBS_MAPPED.map(([, espnId]) => espnId));
+  const unmapped = players.filter((p) => !mapped.has(p.id));
+  ok(unmapped.every((p) => typeof p.id === "number" && Number.isInteger(p.id) && p.id < 0),
+     "every player the crosswalk misses has a negative integer id");
+  const seen = [...unmapped.map((p) => -p.id)].sort((a, b) => a - b);
+  const want = CBS_IDS.filter((id) => !CBS_MAPPED.some(([c]) => c === id)).sort((a, b) => a - b);
+  ok(same(seen, want), "...and it is exactly -cbsId, so no CBS id can collide with an ESPN id");
+  ok(unmapped.some((p) => -p.id === CBS_NA_ID), "the NA sentinel is not a mapping");
+
+  // D-12/D-13: only ids the engine's own tables know, and never a bench or IR seat.
+  const D12 = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 22, 23, 25]);
+  const s = model.settings;
+  ok(Object.keys(s.lineupSlotCounts).every((k) => !BENCH_SLOTS.has(Number(k))),
+     "no bench, IR or ER slot reaches lineupSlotCounts");
+  ok(Object.keys(s.lineupSlotCounts).every((k) => D12.has(Number(k))),
+     "every configured slot id is one the D-12 table produces");
+  ok(players.every((p) => p.eligibleSlots.length > 2
+       && p.eligibleSlots.every((x) => D12.has(x) || x === 20 || x === 21)),
+     "every eligibleSlots value is a D-12 slot id, bench or IR");
+  ok(players.every((p) => p.eligibleSlots.includes(20) && p.eligibleSlots.includes(21)),
+     "every player may sit on the bench and on IR");
+  ok(players.every((p) => new Set(p.eligibleSlots).size === p.eligibleSlots.length),
+     "eligibleSlots never repeats a slot");
+
+  ok(typeof model.fingerprint === "string" && model.fingerprint.length > 0,
+     "model.fingerprint is a non-empty string");
+  ok(model.notes.some((n) => n.startsWith("CBS: id crosswalk maps")),
+     "a note names how many players the crosswalk mapped");
+  ok(model.notes.every((n) => n.startsWith("CBS: ")), "every note names the platform");
+  ok(players.every((p) => CBS_WEEKS.every((w) => typeof p.proj[w] === "number" && Number.isFinite(p.proj[w]))),
+     "every week of the model carries a finite projection");
+  ok(players.some((p) => p.proj[1] > 0), "week 1 projections are read from the recorded stats route");
+
+  // trimIds keeps both columns from the one download.
+  const ids = trimIds(CBS_IDS_CSV);
+  ok(Array.isArray(ids.fp) && Array.isArray(ids.cbs), "trimIds returns {fp, cbs} arrays");
+  ok(ids.fp.length === 5 && ids.fp.every(([fp, espnId]) => typeof fp === "string" && typeof espnId === "number"),
+     "fp holds the rows carrying both a fantasypros id and an espn id");
+  ok(ids.cbs.length === 5 && same(ids.cbs, CBS_MAPPED),
+     "cbs holds the five mapped rows only: NA dropped, the duplicate collapsed to the first");
 }
 
 /* fingerprint: one shared hash */

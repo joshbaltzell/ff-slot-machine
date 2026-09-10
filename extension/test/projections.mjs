@@ -166,9 +166,12 @@ const src = (name, week, entries) => ({ name, byWeek: new Map([[week, new Map(en
   const badWeek = 'fp_id,pos,week,r2p_pts\n7,RB,n/a,14.25\n';
   ok(trimWeekly(badWeek).rows[0].week === null, "an unparseable week cell reads as null, not a throw");
 
-  const pairs = trimIds(ids);
-  ok(pairs.length === 4, "id rows without an espn id are dropped");
-  ok(pairs[0][0] === "7" && pairs[0][1] === 101, "espn_id is numeric");
+  // trimIds keeps two columns now - `fp` for this source, `cbs` for the CBS adapter's
+  // crosswalk (11-05) - from the one download. Optional chaining so a wrong shape fails
+  // these two assertions by name instead of ending the run on a TypeError.
+  const pairs = trimIds(ids).fp;
+  ok(pairs?.length === 4, "id rows without an espn id are dropped");
+  ok(pairs?.[0]?.[0] === "7" && pairs?.[0]?.[1] === 101, "espn_id is numeric");
 
   const storage = mkStorage();
   const fetchImpl = mkFetch({ [WEEKLY_URL]: weekly, [IDS_URL]: ids });
