@@ -1,0 +1,2267 @@
+{
+  "url": "https://redacted-league.football.cbssports.com/api/league/schedules?period=all&version=3.0&SPORT=football&response_format=JSON&league_id=redacted-league",
+  "status": 200,
+  "ok": true,
+  "body": {
+    "body": {
+      "schedule": {
+        "periods": [
+          {
+            "type": "Regular Season",
+            "end": "9/14/26",
+            "start": "9/9/26",
+            "label": "Week 1",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "1"
+          },
+          {
+            "type": "Regular Season",
+            "end": "9/21/26",
+            "start": "9/15/26",
+            "label": "Week 2",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "2"
+          },
+          {
+            "type": "Regular Season",
+            "end": "9/28/26",
+            "start": "9/22/26",
+            "label": "Week 3",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "3"
+          },
+          {
+            "type": "Regular Season",
+            "end": "10/5/26",
+            "start": "9/29/26",
+            "label": "Week 4",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "4"
+          },
+          {
+            "type": "Regular Season",
+            "end": "10/12/26",
+            "start": "10/6/26",
+            "label": "Week 5",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "5"
+          },
+          {
+            "type": "Regular Season",
+            "end": "10/19/26",
+            "start": "10/13/26",
+            "label": "Week 6",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "6"
+          },
+          {
+            "type": "Regular Season",
+            "end": "10/26/26",
+            "start": "10/20/26",
+            "label": "Week 7",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "7"
+          },
+          {
+            "type": "Regular Season",
+            "end": "11/2/26",
+            "start": "10/27/26",
+            "label": "Week 8",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "8"
+          },
+          {
+            "type": "Regular Season",
+            "end": "11/9/26",
+            "start": "11/3/26",
+            "label": "Week 9",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "9"
+          },
+          {
+            "type": "Regular Season",
+            "end": "11/16/26",
+            "start": "11/10/26",
+            "label": "Week 10",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "10"
+          },
+          {
+            "type": "Regular Season",
+            "end": "11/23/26",
+            "start": "11/17/26",
+            "label": "Week 11",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "11"
+          },
+          {
+            "type": "Regular Season",
+            "end": "11/30/26",
+            "start": "11/24/26",
+            "label": "Week 12",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "12"
+          },
+          {
+            "type": "Regular Season",
+            "end": "12/7/26",
+            "start": "12/1/26",
+            "label": "Week 13",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "13"
+          },
+          {
+            "type": "Regular Season",
+            "end": "12/14/26",
+            "start": "12/8/26",
+            "label": "Week 14",
+            "matchups": [
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMR",
+                  "logo": "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100",
+                  "short_name": "Team R",
+                  "long_abbr": "TMQ",
+                  "id": "7",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team Q"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMT",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100",
+                  "short_name": "Team U",
+                  "long_abbr": "TMS",
+                  "id": "3",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team T"
+                },
+                "id": "1"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMD",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100",
+                  "short_name": "Team D",
+                  "long_abbr": "TMC",
+                  "id": "1",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team C"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMH",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100",
+                  "short_name": "Team H",
+                  "long_abbr": "TMG",
+                  "id": "17",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team G"
+                },
+                "id": "2"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TML",
+                  "logo": "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100",
+                  "short_name": "Team L",
+                  "long_abbr": "TMK",
+                  "id": "20",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team K"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMF",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100",
+                  "short_name": "Team F",
+                  "long_abbr": "TME",
+                  "id": "6",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team E"
+                },
+                "id": "3"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMX",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100",
+                  "short_name": "Team X",
+                  "long_abbr": "TMW",
+                  "id": "18",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team W"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMJ",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100",
+                  "short_name": "Team J",
+                  "long_abbr": "TMI",
+                  "id": "10",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team I"
+                },
+                "id": "4"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMV",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100",
+                  "short_name": "Team V",
+                  "long_abbr": "TMU",
+                  "id": "12",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team V"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMN",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100",
+                  "short_name": "Team N",
+                  "long_abbr": "TMM",
+                  "id": "19",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team M"
+                },
+                "id": "5"
+              },
+              {
+                "away_team": {
+                  "division": "",
+                  "abbr": "TMB",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+                  "short_name": "Team B",
+                  "long_abbr": "TMA",
+                  "id": "16",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team A"
+                },
+                "home_team": {
+                  "division": "",
+                  "abbr": "TMP",
+                  "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100",
+                  "short_name": "Team P",
+                  "long_abbr": "TMO",
+                  "id": "2",
+                  "is_vacant": 0,
+                  "record": "0-0-0",
+                  "name": "Team O"
+                },
+                "id": "6"
+              }
+            ],
+            "id": "14"
+          },
+          {
+            "type": "Playoffs",
+            "end": "12/21/26",
+            "start": "12/15/26",
+            "label": "Week 15",
+            "matchups": [],
+            "id": "15"
+          },
+          {
+            "type": "Playoffs",
+            "end": "12/28/26",
+            "start": "12/22/26",
+            "label": "Week 16",
+            "matchups": [],
+            "id": "16"
+          },
+          {
+            "type": "Playoffs",
+            "end": "1/4/27",
+            "start": "12/29/26",
+            "label": "Week 17",
+            "matchups": [],
+            "id": "17"
+          }
+        ]
+      }
+    },
+    "uriAlias": "/league/schedules",
+    "uri": "/league/schedules",
+    "statusCode": 200,
+    "statusMessage": "OK"
+  }
+}

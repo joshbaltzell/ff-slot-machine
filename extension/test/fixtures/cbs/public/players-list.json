@@ -1,0 +1,5590 @@
+{
+  "statusMessage": "OK",
+  "statusCode": 200,
+  "uriAlias": "/players/list",
+  "body": {
+    "players": [
+      {
+        "id": "2025",
+        "fullname": "49ers",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "SF",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2225",
+        "fullname": "49ers",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "SF",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1975",
+        "fullname": "49ers",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "SF",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2125",
+        "fullname": "49ers",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "SF",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1925",
+        "fullname": "49ers",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "SF",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1824308",
+        "fullname": "Ameer Abdullah",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3171161",
+        "fullname": "De'Von Achane",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "1893167",
+        "fullname": "Davante Adams",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3162290",
+        "fullname": "Jordan Addison",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2977285",
+        "fullname": "Nate Adkins",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3168797",
+        "fullname": "Rasheen Ali",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3121555",
+        "fullname": "Erick All",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "26726580",
+        "fullname": "Braelon Allen",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "28875899",
+        "fullname": "Cyrus Allen",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "3123267",
+        "fullname": "Davis Allen",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2181054",
+        "fullname": "Josh Allen",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28875485",
+        "fullname": "Kaytron Allen",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "1737096",
+        "fullname": "Keenan Allen",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2131782",
+        "fullname": "Kyle Allen",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28877884",
+        "fullname": "LeQuint Allen",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2975590",
+        "fullname": "Tyler Allgeier",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2131121",
+        "fullname": "Mark Andrews",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "26700496",
+        "fullname": "Elijah Arroyo",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2965372",
+        "fullname": "Tutu Atwell",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28900714",
+        "fullname": "Elic Ayomanor",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2964494",
+        "fullname": "Tyler Badie",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "29081346",
+        "fullname": "Tyson Bagent",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2185957",
+        "fullname": "Saquon Barkley",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3169283",
+        "fullname": "AJ Barner",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2960940",
+        "fullname": "Rashod Bateman",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2257291",
+        "fullname": "John Bates",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "1956",
+        "fullname": "Bears",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "CHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2106",
+        "fullname": "Bears",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "CHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "1906",
+        "fullname": "Bears",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "CHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2006",
+        "fullname": "Bears",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "CHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2206",
+        "fullname": "Bears",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "CHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "26700682",
+        "fullname": "Jack Bech",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2131774",
+        "fullname": "Andrew Beck",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "1824823",
+        "fullname": "Odell Beckham Jr.",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28877196",
+        "fullname": "Chris Bell",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "26726589",
+        "fullname": "Skyler Bell",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2963615",
+        "fullname": "Daniel Bellinger",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "1957",
+        "fullname": "Bengals",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "CIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2107",
+        "fullname": "Bengals",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "CIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "1907",
+        "fullname": "Bengals",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "CIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2007",
+        "fullname": "Bengals",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "CIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2207",
+        "fullname": "Bengals",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "CIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2871628",
+        "fullname": "Stetson Bennett",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "29121426",
+        "fullname": "Malik Benson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "29164633",
+        "fullname": "Dallen Bentley",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "28878358",
+        "fullname": "Germie Bernard",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3162021",
+        "fullname": "Tank Bigsby",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "1904",
+        "fullname": "Bills",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "BUF",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2104",
+        "fullname": "Bills",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "BUF",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "1954",
+        "fullname": "Bills",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "BUF",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2204",
+        "fullname": "Bills",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "BUF",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2004",
+        "fullname": "Bills",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "BUF",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "3162599",
+        "fullname": "Kaelon Black",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3162867",
+        "fullname": "Nate Boerkircher",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28910521",
+        "fullname": "Isaiah Bond",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28875368",
+        "fullname": "Denzel Boston",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2088428",
+        "fullname": "Kendrick Bourne",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3163170",
+        "fullname": "Kayshon Boutte",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26693971",
+        "fullname": "Brock Bowers",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "29123979",
+        "fullname": "Zachariah Branch",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "26727130",
+        "fullname": "Max Bredeson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "1877247",
+        "fullname": "Jacoby Brissett",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2009",
+        "fullname": "Broncos",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "DEN",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2209",
+        "fullname": "Broncos",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "DEN",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2109",
+        "fullname": "Broncos",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "DEN",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "1959",
+        "fullname": "Broncos",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "DEN",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "1909",
+        "fullname": "Broncos",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "DEN",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2961993",
+        "fullname": "British Brooks",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2962350",
+        "fullname": "Christopher Brooks",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3165078",
+        "fullname": "Jalen Brooks",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "26730706",
+        "fullname": "Jonathon Brooks",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "3168518",
+        "fullname": "Tahj Brooks",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2258303",
+        "fullname": "A.J. Brown",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28900204",
+        "fullname": "Barion Brown",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2965160",
+        "fullname": "Chase Brown",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2965973",
+        "fullname": "Dyami Brown",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2804128",
+        "fullname": "Marquise Brown",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2030",
+        "fullname": "Browns",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "CLE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1980",
+        "fullname": "Browns",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "CLE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2230",
+        "fullname": "Browns",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "CLE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2130",
+        "fullname": "Browns",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "CLE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1930",
+        "fullname": "Browns",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "CLE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "26697415",
+        "fullname": "Pat Bryant",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2127",
+        "fullname": "Buccaneers",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "TB",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "1977",
+        "fullname": "Buccaneers",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "TB",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "1927",
+        "fullname": "Buccaneers",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "TB",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2027",
+        "fullname": "Buccaneers",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "TB",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2227",
+        "fullname": "Buccaneers",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "TB",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "28874444",
+        "fullname": "Luther Burden III",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "26694367",
+        "fullname": "Deion Burks",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3122944",
+        "fullname": "Treylon Burks",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2179798",
+        "fullname": "Joe Burrow",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "1759407",
+        "fullname": "Michael Burton",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "26726935",
+        "fullname": "Josh Cameron",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2001",
+        "fullname": "Cardinals",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "ARI",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "2201",
+        "fullname": "Cardinals",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "ARI",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "2101",
+        "fullname": "Cardinals",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "ARI",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "1951",
+        "fullname": "Cardinals",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "ARI",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "1901",
+        "fullname": "Cardinals",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "ARI",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "3123810",
+        "fullname": "Zach Charbonnet",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SEA",
+        "pro_status": "PUP",
+        "bye_week": "11"
+      },
+      {
+        "id": "1924",
+        "fullname": "Chargers",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "LAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "1974",
+        "fullname": "Chargers",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "LAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2124",
+        "fullname": "Chargers",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "LAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2224",
+        "fullname": "Chargers",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "LAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2024",
+        "fullname": "Chargers",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "LAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2966320",
+        "fullname": "Ja'Marr Chase",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2967664",
+        "fullname": "Julius Chestnut",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2214",
+        "fullname": "Chiefs",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "KC",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "2014",
+        "fullname": "Chiefs",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "KC",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "1964",
+        "fullname": "Chiefs",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "KC",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "1914",
+        "fullname": "Chiefs",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "KC",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "2114",
+        "fullname": "Chiefs",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "KC",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "28883197",
+        "fullname": "Demond Claiborne",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3163990",
+        "fullname": "Jalen Coker",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "28909178",
+        "fullname": "Kevin Coleman Jr.",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "28877250",
+        "fullname": "Jonah Coleman",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "26717289",
+        "fullname": "Keon Coleman",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2878193",
+        "fullname": "Nico Collins",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2212",
+        "fullname": "Colts",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "IND",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2012",
+        "fullname": "Colts",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "IND",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1912",
+        "fullname": "Colts",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "IND",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1962",
+        "fullname": "Colts",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "IND",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2112",
+        "fullname": "Colts",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "IND",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2029",
+        "fullname": "Commanders",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "WAS",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2229",
+        "fullname": "Commanders",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "WAS",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "1979",
+        "fullname": "Commanders",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "WAS",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2129",
+        "fullname": "Commanders",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "WAS",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "1929",
+        "fullname": "Commanders",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "WAS",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "29123718",
+        "fullname": "KC Concepcion",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3163207",
+        "fullname": "Brady Cook",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2975698",
+        "fullname": "James Cook",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28900921",
+        "fullname": "Omar Cooper Jr.",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3165205",
+        "fullname": "Darius Cooper",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3162613",
+        "fullname": "Malachi Corley",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3169252",
+        "fullname": "Blake Corum",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "1272574",
+        "fullname": "Kirk Cousins",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2008",
+        "fullname": "Cowboys",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "DAL",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "2208",
+        "fullname": "Cowboys",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "DAL",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "1958",
+        "fullname": "Cowboys",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "DAL",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "2108",
+        "fullname": "Cowboys",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "DAL",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "1908",
+        "fullname": "Cowboys",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "DAL",
+        "pro_status": null,
+        "bye_week": "14"
+      },
+      {
+        "id": "3133200",
+        "fullname": "Jacob Cowing",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3126952",
+        "fullname": "Jacory Croskey-Merritt",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26706410",
+        "fullname": "Josh Cuevas",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "1125961",
+        "fullname": "Andy Dalton",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3167404",
+        "fullname": "CJ Daniels",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3166688",
+        "fullname": "Jalon Daniels",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3123337",
+        "fullname": "Jayden Daniels",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2180320",
+        "fullname": "Sam Darnold",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "26694019",
+        "fullname": "Jaxson Dart",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2966544",
+        "fullname": "Derius Davis",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26718641",
+        "fullname": "Isaiah Davis",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2773009",
+        "fullname": "Malik Davis",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3123108",
+        "fullname": "Ray Davis",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2865426",
+        "fullname": "Tommy DeVito",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28873644",
+        "fullname": "Oscar Delp",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2964372",
+        "fullname": "Emari Demercado",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2000038",
+        "fullname": "Stefon Diggs",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3162452",
+        "fullname": "Chimere Dike",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2867083",
+        "fullname": "AJ Dillon",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2804420",
+        "fullname": "J.K. Dobbins",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2071844",
+        "fullname": "Joshua Dobbs",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2115",
+        "fullname": "Dolphins",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "MIA",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "1965",
+        "fullname": "Dolphins",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "MIA",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "1915",
+        "fullname": "Dolphins",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "MIA",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2015",
+        "fullname": "Dolphins",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "MIA",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2215",
+        "fullname": "Dolphins",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "MIA",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2962944",
+        "fullname": "Jahan Dotson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2961886",
+        "fullname": "Romeo Doubs",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28900321",
+        "fullname": "Caleb Douglas",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3126241",
+        "fullname": "Demario Douglas",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2252798",
+        "fullname": "Rico Dowdle",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3162970",
+        "fullname": "Josh Downs",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2964274",
+        "fullname": "Greg Dulcich",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3116796",
+        "fullname": "Ashton Dulin",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2968469",
+        "fullname": "Payne Durham",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2246849",
+        "fullname": "Devin Duvernay",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2021",
+        "fullname": "Eagles",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "PHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2221",
+        "fullname": "Eagles",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "PHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "1971",
+        "fullname": "Eagles",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "PHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "2121",
+        "fullname": "Eagles",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "PHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "1921",
+        "fullname": "Eagles",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "PHI",
+        "pro_status": null,
+        "bye_week": "10"
+      },
+      {
+        "id": "26696165",
+        "fullname": "Emeka Egbuka",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "28916552",
+        "fullname": "Jack Endries",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2079887",
+        "fullname": "Evan Engram",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "26713577",
+        "fullname": "Audric Estime",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2809206",
+        "fullname": "Travis Etienne",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "1824909",
+        "fullname": "Mike Evans",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26693662",
+        "fullname": "Mitchell Evans",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "26746721",
+        "fullname": "Quinn Ewers",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "1902",
+        "fullname": "Falcons",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "ATL",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2102",
+        "fullname": "Falcons",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "ATL",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1952",
+        "fullname": "Falcons",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "ATL",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2202",
+        "fullname": "Falcons",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "ATL",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2002",
+        "fullname": "Falcons",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "ATL",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "28900882",
+        "fullname": "Harold Fannin Jr.",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2251095",
+        "fullname": "Noah Fant",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2260977",
+        "fullname": "Luke Farrell",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26702969",
+        "fullname": "Tai Felton",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2867159",
+        "fullname": "Jake Ferguson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "26701481",
+        "fullname": "Terrance Ferguson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "26699695",
+        "fullname": "Thomas Fidone II",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "1273205",
+        "fullname": "Justin Fields",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "26706066",
+        "fullname": "Malachi Fields",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "1250697",
+        "fullname": "Joe Flacco",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "28891456",
+        "fullname": "Ryan Flournoy",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3127049",
+        "fullname": "Zay Flowers",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3169784",
+        "fullname": "Montorie Foster Jr.",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "26693436",
+        "fullname": "Troy Franklin",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2221829",
+        "fullname": "Feleipe Franks",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2961270",
+        "fullname": "Pat Freiermuth",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "26727374",
+        "fullname": "Oronde Gadsden II",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2968948",
+        "fullname": "Kenneth Gainwell",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2139298",
+        "fullname": "Mike Gesicki",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2118",
+        "fullname": "Giants",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "NYG",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1918",
+        "fullname": "Giants",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "NYG",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1968",
+        "fullname": "Giants",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "NYG",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2018",
+        "fullname": "Giants",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "NYG",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2218",
+        "fullname": "Giants",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "NYG",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "3162723",
+        "fullname": "Jahmyr Gibbs",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "26695679",
+        "fullname": "DJ Giddens",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3161112",
+        "fullname": "Reggie Gilliam",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2818150",
+        "fullname": "Chris Godwin",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2132551",
+        "fullname": "Dallas Goedert",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2061053",
+        "fullname": "Jared Goff",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "28874927",
+        "fullname": "Matthew Golden",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28873887",
+        "fullname": "Ollie Gordon II",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2247146",
+        "fullname": "Kylen Granson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2866903",
+        "fullname": "Noah Gray",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "3123469",
+        "fullname": "Breece Hall",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "28908905",
+        "fullname": "Omarion Hampton",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2741200",
+        "fullname": "Najee Harris",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3162525",
+        "fullname": "Tre Harris",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26701883",
+        "fullname": "Marvin Harrison Jr.",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3121207",
+        "fullname": "RJ Harvey",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3135324",
+        "fullname": "Jackson Hawes",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28901170",
+        "fullname": "Eli Heidenreich",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "26696189",
+        "fullname": "Gunnar Helm",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "26699547",
+        "fullname": "TreVeyon Henderson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2061188",
+        "fullname": "Derrick Henry",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2079848",
+        "fullname": "Hunter Henry",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2221960",
+        "fullname": "Justin Herbert",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26734114",
+        "fullname": "DJ Herman",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2867599",
+        "fullname": "Connor Heyward",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3169490",
+        "fullname": "Matthew Hibner",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "1853103",
+        "fullname": "Tyler Higbee",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3122914",
+        "fullname": "Elijah Higgins",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2809208",
+        "fullname": "Tee Higgins",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2250388",
+        "fullname": "Justice Hill",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2131163",
+        "fullname": "Tyreek Hill",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2251097",
+        "fullname": "T.J. Hockenson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3131661",
+        "fullname": "George Holani",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2010349",
+        "fullname": "Mack Hollins",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2067004",
+        "fullname": "Austin Hooper",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "26717166",
+        "fullname": "Jimmy Horn Jr.",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "3165177",
+        "fullname": "Tory Horton",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3123797",
+        "fullname": "Sam Howell",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2865693",
+        "fullname": "Chuba Hubbard",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2246852",
+        "fullname": "Lil'Jordan Humphrey",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "28909849",
+        "fullname": "Travis Hunter",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3159137",
+        "fullname": "Tyler Huntley",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "29421796",
+        "fullname": "Ted Hurst",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2240246",
+        "fullname": "Jalen Hurts",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3161943",
+        "fullname": "Xavier Hutchinson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2183930",
+        "fullname": "Alec Ingold",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2966908",
+        "fullname": "Andrei Iosivas",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "26693770",
+        "fullname": "Bucky Irving",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2181169",
+        "fullname": "Lamar Jackson",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2257876",
+        "fullname": "Josh Jacobs",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2213",
+        "fullname": "Jaguars",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "JAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2013",
+        "fullname": "Jaguars",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "JAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "1913",
+        "fullname": "Jaguars",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "JAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "1963",
+        "fullname": "Jaguars",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "JAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "2113",
+        "fullname": "Jaguars",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "JAC",
+        "pro_status": null,
+        "bye_week": "7"
+      },
+      {
+        "id": "28916212",
+        "fullname": "Jordan James",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28874008",
+        "fullname": "Ashton Jeanty",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2871343",
+        "fullname": "Justin Jefferson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2180514",
+        "fullname": "Jauan Jennings",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2119",
+        "fullname": "Jets",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "NYJ",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1919",
+        "fullname": "Jets",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "NYJ",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1969",
+        "fullname": "Jets",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "NYJ",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2019",
+        "fullname": "Jets",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "NYJ",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2219",
+        "fullname": "Jets",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "NYJ",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2741201",
+        "fullname": "Jerry Jeudy",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28877097",
+        "fullname": "Emmett Johnson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2186637",
+        "fullname": "Juwan Johnson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28875572",
+        "fullname": "Kaleb Johnson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "29380891",
+        "fullname": "Kameron Johnson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3121395",
+        "fullname": "Roschon Johnson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3161539",
+        "fullname": "Tez Johnson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3162129",
+        "fullname": "Theo Johnson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2179323",
+        "fullname": "Ty Johnson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3162609",
+        "fullname": "Quentin Johnston",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28927892",
+        "fullname": "Justin Joly",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2071937",
+        "fullname": "Aaron Jones",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2179245",
+        "fullname": "Daniel Jones",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2741202",
+        "fullname": "Mac Jones",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28878286",
+        "fullname": "Quinshon Judkins",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "1683145",
+        "fullname": "Kyle Juszczyk",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26717403",
+        "fullname": "Will Kacmarek",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2082721",
+        "fullname": "Alvin Kamara",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "1725130",
+        "fullname": "Travis Kelce",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2239763",
+        "fullname": "Ko Kieft",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2982991",
+        "fullname": "Dalton Kincaid",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26698879",
+        "fullname": "Corey Kiner",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2818265",
+        "fullname": "George Kittle",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28921209",
+        "fullname": "Max Klare",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28927889",
+        "fullname": "Marlin Klein",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28874636",
+        "fullname": "Cade Klubnik",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2868619",
+        "fullname": "Cole Kmet",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3121860",
+        "fullname": "Zonovan Knight",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2186345",
+        "fullname": "Dawson Knox",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2866273",
+        "fullname": "Charlie Kolar",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28874303",
+        "fullname": "Tanner Koziol",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3133332",
+        "fullname": "Tucker Kraft",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2006951",
+        "fullname": "Cooper Kupp",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3124197",
+        "fullname": "Sam LaPorta",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2865251",
+        "fullname": "CeeDee Lamb",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3163041",
+        "fullname": "KeAndre Lambert-Smith",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26725855",
+        "fullname": "Bryce Lance",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2969444",
+        "fullname": "Trey Lance",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "29158151",
+        "fullname": "Ja'Kobi Lane",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3162484",
+        "fullname": "Jaylin Lane",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3161645",
+        "fullname": "Lan Larison",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2964535",
+        "fullname": "Cameron Latu",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2964322",
+        "fullname": "Dylan Laube",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2967185",
+        "fullname": "Trevor Lawrence",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3131575",
+        "fullname": "Xavier Legette",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "29123772",
+        "fullname": "Makai Lemon",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2961906",
+        "fullname": "Isaiah Likely",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2010",
+        "fullname": "Lions",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "DET",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2210",
+        "fullname": "Lions",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "DET",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2110",
+        "fullname": "Lions",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "DET",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "1910",
+        "fullname": "Lions",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "DET",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "1960",
+        "fullname": "Lions",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "DET",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "3162514",
+        "fullname": "MarShawn Lloyd",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2185479",
+        "fullname": "Drew Lock",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3127902",
+        "fullname": "Drake London",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2867428",
+        "fullname": "Hunter Long",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "29133405",
+        "fullname": "Jeremiyah Love",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2239997",
+        "fullname": "Jordan Love",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28874696",
+        "fullname": "Colston Loveland",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2969438",
+        "fullname": "Hunter Luepke",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2142052",
+        "fullname": "Patrick Mahomes",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2167520",
+        "fullname": "Chris Manhertz",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "1880862",
+        "fullname": "Marcus Mariota",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3171045",
+        "fullname": "Woody Marks",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2967536",
+        "fullname": "Jordan Mason",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "26695757",
+        "fullname": "Drake Maye",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3171673",
+        "fullname": "Michael Mayer",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2080032",
+        "fullname": "Baker Mayfield",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2963385",
+        "fullname": "Trey McBride",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2136743",
+        "fullname": "Christian McCaffrey",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3121502",
+        "fullname": "Luke McCaffrey",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3163962",
+        "fullname": "Ladd McConkey",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26702687",
+        "fullname": "Kyle McCord",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3161581",
+        "fullname": "Seth McGowan",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2963945",
+        "fullname": "Tanner McKee",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2139279",
+        "fullname": "Terry McLaurin",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3162347",
+        "fullname": "Jalen McMillan",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "28877124",
+        "fullname": "Tetairoa McMillan",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "26700892",
+        "fullname": "Jackson Meeks",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "28916321",
+        "fullname": "Fernando Mendoza",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2260185",
+        "fullname": "DK Metcalf",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3121171",
+        "fullname": "John Metchie III",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2183835",
+        "fullname": "Jakobi Meyers",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3162256",
+        "fullname": "Kendre Miller",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2964726",
+        "fullname": "Ryan Miller",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2867381",
+        "fullname": "Davis Mills",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26694943",
+        "fullname": "Jalen Milroe",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3162586",
+        "fullname": "Marvin Mims",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3126905",
+        "fullname": "Jonathan Mingo",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2183083",
+        "fullname": "Gardner Minshew",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "26701928",
+        "fullname": "Adonai Mitchell",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3164710",
+        "fullname": "Keaton Mitchell",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3177368",
+        "fullname": "Kyle Monangai",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2261252",
+        "fullname": "David Montgomery",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2240651",
+        "fullname": "Darnell Mooney",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2179328",
+        "fullname": "DJ Moore",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2963569",
+        "fullname": "Elijah Moore",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3126874",
+        "fullname": "Skyy Moore",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2180634",
+        "fullname": "Foster Moreau",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26694679",
+        "fullname": "Konata Mumpfield",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2818622",
+        "fullname": "Johnny Mundt",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2180829",
+        "fullname": "Kyler Murray",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "26697761",
+        "fullname": "Malik Nabers",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3121687",
+        "fullname": "Puka Nacua",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2967232",
+        "fullname": "Jalen Nailor",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3121193",
+        "fullname": "Bo Nix",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2136474",
+        "fullname": "David Njoku",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26697286",
+        "fullname": "Jaylin Noel",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3175781",
+        "fullname": "Riley Nowakowski",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2261254",
+        "fullname": "Kene Nwangwu",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3162979",
+        "fullname": "Rome Odunze",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "26725942",
+        "fullname": "Andrew Ogletree",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2965208",
+        "fullname": "Chigoziem Okonkwo",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2963666",
+        "fullname": "Chris Olave",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2184618",
+        "fullname": "Josh Oliver",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2815179",
+        "fullname": "Cade Otton",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2966551",
+        "fullname": "Isiah Pacheco",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DET",
+        "pro_status": "IR",
+        "bye_week": "6"
+      },
+      {
+        "id": "2111",
+        "fullname": "Packers",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "GB",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1911",
+        "fullname": "Packers",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "GB",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1961",
+        "fullname": "Packers",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "GB",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2011",
+        "fullname": "Packers",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "GB",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2211",
+        "fullname": "Packers",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "GB",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2867325",
+        "fullname": "Josh Palmer",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2005",
+        "fullname": "Panthers",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "CAR",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "2205",
+        "fullname": "Panthers",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "CAR",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "2105",
+        "fullname": "Panthers",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "CAR",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "1955",
+        "fullname": "Panthers",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "CAR",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "1905",
+        "fullname": "Panthers",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "CAR",
+        "pro_status": null,
+        "bye_week": "5"
+      },
+      {
+        "id": "2867522",
+        "fullname": "Colby Parkinson",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2818910",
+        "fullname": "Tim Patrick",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2131",
+        "fullname": "Patriots",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "NE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1931",
+        "fullname": "Patriots",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "NE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2031",
+        "fullname": "Patriots",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "NE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1981",
+        "fullname": "Patriots",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "NE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2231",
+        "fullname": "Patriots",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "NE",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "26725861",
+        "fullname": "Cole Payton",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2963496",
+        "fullname": "Michael Penix Jr.",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2131148",
+        "fullname": "Samaje Perine",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3123212",
+        "fullname": "George Pickens",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2804969",
+        "fullname": "Kenny Pickett",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2965664",
+        "fullname": "Alec Pierce",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2240188",
+        "fullname": "Michael Pittman",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2964514",
+        "fullname": "Kyle Pitts",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2184011",
+        "fullname": "Tony Pollard",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "1824864",
+        "fullname": "Dak Prescott",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "28875230",
+        "fullname": "Jadarian Price",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2961306",
+        "fullname": "Brock Purdy",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "1970",
+        "fullname": "Raiders",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "LV",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2120",
+        "fullname": "Raiders",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "LV",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1920",
+        "fullname": "Raiders",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "LV",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2020",
+        "fullname": "Raiders",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "LV",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2220",
+        "fullname": "Raiders",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "LV",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1923",
+        "fullname": "Rams",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "LAR",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1973",
+        "fullname": "Rams",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "LAR",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2123",
+        "fullname": "Rams",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "LAR",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2223",
+        "fullname": "Rams",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "LAR",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2023",
+        "fullname": "Rams",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "LAR",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "28924611",
+        "fullname": "Eli Raridon",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3125863",
+        "fullname": "Spencer Rattler",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "1903",
+        "fullname": "Ravens",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "BAL",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2103",
+        "fullname": "Ravens",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "BAL",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1953",
+        "fullname": "Ravens",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "BAL",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2203",
+        "fullname": "Ravens",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "BAL",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "2003",
+        "fullname": "Ravens",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "BAL",
+        "pro_status": null,
+        "bye_week": "13"
+      },
+      {
+        "id": "1999329",
+        "fullname": "Kalif Raymond",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2967762",
+        "fullname": "Jayden Reed",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2964863",
+        "fullname": "Nikko Remigio",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2818911",
+        "fullname": "Patrick Ricard",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3124978",
+        "fullname": "Rashee Rice",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "3163263",
+        "fullname": "Anthony Richardson",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2186328",
+        "fullname": "Calvin Ridley",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2741207",
+        "fullname": "Brian Robinson Jr.",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3168163",
+        "fullname": "Bijan Robinson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2061095",
+        "fullname": "Demarcus Robinson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3124107",
+        "fullname": "Wan'Dale Robinson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "419780",
+        "fullname": "Aaron Rodgers",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2964667",
+        "fullname": "Chris Rodriguez Jr.",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28877184",
+        "fullname": "Sam Roush",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "28924106",
+        "fullname": "Jalen Royals",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2965446",
+        "fullname": "Jeremy Ruckert",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2131167",
+        "fullname": "Mason Rudolph",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2000176",
+        "fullname": "Cooper Rush",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2866240",
+        "fullname": "Brady Russell",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "29125433",
+        "fullname": "Kenyon Sadiq",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2017",
+        "fullname": "Saints",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "NO",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2217",
+        "fullname": "Saints",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "NO",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2117",
+        "fullname": "Saints",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "NO",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1967",
+        "fullname": "Saints",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "NO",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1917",
+        "fullname": "Saints",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "NO",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2139646",
+        "fullname": "Drew Sample",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "28912068",
+        "fullname": "Dylan Sampson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2139735",
+        "fullname": "Deebo Samuel",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26731381",
+        "fullname": "Ja'Tavion Sanders",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "26700087",
+        "fullname": "Raheim Sanders",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "26710004",
+        "fullname": "Shedeur Sanders",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "28888850",
+        "fullname": "Elijah Sarratt",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2976071",
+        "fullname": "Jacob Saylors",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2968473",
+        "fullname": "Luke Schoonmaker",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2136748",
+        "fullname": "Dalton Schultz",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2126",
+        "fullname": "Seahawks",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "SEA",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1976",
+        "fullname": "Seahawks",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "SEA",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "1926",
+        "fullname": "Seahawks",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "SEA",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2026",
+        "fullname": "Seahawks",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "SEA",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2226",
+        "fullname": "Seahawks",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "SEA",
+        "pro_status": null,
+        "bye_week": "11"
+      },
+      {
+        "id": "2250863",
+        "fullname": "Rashid Shaheed",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2969119",
+        "fullname": "Khalil Shakir",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BUF",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26730919",
+        "fullname": "Bauer Sharp",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "26699119",
+        "fullname": "Will Shipley",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2964064",
+        "fullname": "Tyler Shough",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28878532",
+        "fullname": "Ty Simpson",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2241251",
+        "fullname": "Devin Singletary",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "28876754",
+        "fullname": "Nicholas Singleton",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3168647",
+        "fullname": "Ben Sinnott",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26697012",
+        "fullname": "Cam Skattebo",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2247046",
+        "fullname": "Ben Skowronek",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3163930",
+        "fullname": "Arian Smith",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "26694196",
+        "fullname": "Brashard Smith",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2866975",
+        "fullname": "DeVonta Smith",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "1700358",
+        "fullname": "Geno Smith",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2081506",
+        "fullname": "Jonnu Smith",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2986749",
+        "fullname": "Xavier Smith",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3162959",
+        "fullname": "Jaxon Smith-Njigba",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2082845",
+        "fullname": "Durham Smythe",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2961760",
+        "fullname": "Brevyn Spann-Ford",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3122588",
+        "fullname": "Tyjae Spears",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2967690",
+        "fullname": "Amon-Ra St. Brown",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "1114942",
+        "fullname": "Matthew Stafford",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "1922",
+        "fullname": "Steelers",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "PIT",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "1972",
+        "fullname": "Steelers",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "PIT",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "2122",
+        "fullname": "Steelers",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "PIT",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "2222",
+        "fullname": "Steelers",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "PIT",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "2022",
+        "fullname": "Steelers",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "PIT",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "3125832",
+        "fullname": "Rhamondre Stevenson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2180697",
+        "fullname": "Jarrett Stidham",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3125978",
+        "fullname": "Cade Stover",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26696120",
+        "fullname": "Eli Stowers",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3121696",
+        "fullname": "Brenton Strange",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26696676",
+        "fullname": "De'Zhaun Stribling",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3163079",
+        "fullname": "C.J. Stroud",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "HOU",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2218461",
+        "fullname": "Courtland Sutton",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2871710",
+        "fullname": "D'Andre Swift",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2741209",
+        "fullname": "Tua Tagovailoa",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "29124411",
+        "fullname": "Carnell Tate",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "2866395",
+        "fullname": "Jonathan Taylor",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "28878064",
+        "fullname": "Mason Taylor",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "1243338",
+        "fullname": "Tyrod Taylor",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "29122587",
+        "fullname": "Isaac TeSlaa",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2232",
+        "fullname": "Texans",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "HOU",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2032",
+        "fullname": "Texans",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "HOU",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1982",
+        "fullname": "Texans",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "HOU",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "1932",
+        "fullname": "Texans",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "HOU",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "2132",
+        "fullname": "Texans",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "HOU",
+        "pro_status": null,
+        "bye_week": "8"
+      },
+      {
+        "id": "3132164",
+        "fullname": "Brian Thomas Jr.",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2253359",
+        "fullname": "Ian Thomas",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "28909795",
+        "fullname": "Zavion Thomas",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "28909756",
+        "fullname": "Brenen Thompson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2965066",
+        "fullname": "Tyquan Thornton",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2028",
+        "fullname": "Titans",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "TEN",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "2228",
+        "fullname": "Titans",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "TEN",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "2128",
+        "fullname": "Titans",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "TEN",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "1978",
+        "fullname": "Titans",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "TEN",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "1928",
+        "fullname": "Titans",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "TEN",
+        "pro_status": null,
+        "bye_week": "9"
+      },
+      {
+        "id": "2868238",
+        "fullname": "Jalen Tolbert",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2870660",
+        "fullname": "Jake Tonges",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2963637",
+        "fullname": "Tyrone Tracy Jr.",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "26696643",
+        "fullname": "Seydou Traore",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2182228",
+        "fullname": "Adam Trautman",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2967463",
+        "fullname": "Brycen Tremayne",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2969027",
+        "fullname": "Tommy Tremble",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2060476",
+        "fullname": "Mitch Trubisky",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3168416",
+        "fullname": "Sean Tucker",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "TB",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3121848",
+        "fullname": "Tre Tucker",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2180870",
+        "fullname": "KaVontae Turpin",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "26732838",
+        "fullname": "Bhayshul Tuten",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "28877349",
+        "fullname": "Sione Vaki",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3121113",
+        "fullname": "Devaughn Vele",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NO",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "3163421",
+        "fullname": "Kimani Vidal",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2016",
+        "fullname": "Vikings",
+        "position": "ST",
+        "eligible_positions_display": "ST",
+        "pro_team": "MIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2216",
+        "fullname": "Vikings",
+        "position": "TK",
+        "eligible_positions_display": "TK",
+        "pro_team": "MIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "2116",
+        "fullname": "Vikings",
+        "position": "D",
+        "eligible_positions_display": "D",
+        "pro_team": "MIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "1916",
+        "fullname": "Vikings",
+        "position": "DST",
+        "eligible_positions_display": "DST",
+        "pro_team": "MIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "1966",
+        "fullname": "Vikings",
+        "position": "TQB",
+        "eligible_positions_display": "TQB",
+        "pro_team": "MIN",
+        "pro_status": null,
+        "bye_week": "6"
+      },
+      {
+        "id": "28883008",
+        "fullname": "Reggie Virgil",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "2962110",
+        "fullname": "Jaylen Waddle",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DEN",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3121372",
+        "fullname": "Kenneth Walker III",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "26702084",
+        "fullname": "Devontez Walker",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "29174299",
+        "fullname": "Jahdae Walker",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "2866424",
+        "fullname": "Tylan Wallace",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "1850793",
+        "fullname": "Darren Waller",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "3168422",
+        "fullname": "Cam Ward",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "TEN",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3126535",
+        "fullname": "Jaylen Warren",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3168800",
+        "fullname": "Tyler Warren",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "IND",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "26693539",
+        "fullname": "Mike Washington Jr.",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3163963",
+        "fullname": "Darnell Washington",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3124729",
+        "fullname": "Malik Washington",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3168820",
+        "fullname": "Parker Washington",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "JAC",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3164736",
+        "fullname": "Jordan Watkins",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "SF",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2869806",
+        "fullname": "Christian Watson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2133482",
+        "fullname": "Deshaun Watson",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "1907522",
+        "fullname": "Carson Wentz",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "MIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3170389",
+        "fullname": "LaJohntay Wester",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "BAL",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "28876038",
+        "fullname": "Kaden Wetjen",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "3169147",
+        "fullname": "Rachaad White",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "2964419",
+        "fullname": "Blake Whiteheart",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "CLE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3122843",
+        "fullname": "Jordan Whittington",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2962513",
+        "fullname": "Josh Whyle",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "GB",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3122375",
+        "fullname": "Dontayvion Wicks",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3123819",
+        "fullname": "Jared Wiley",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "28877974",
+        "fullname": "Antonio Williams",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "26695775",
+        "fullname": "Caleb Williams",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CHI",
+        "pro_status": "A",
+        "bye_week": "10"
+      },
+      {
+        "id": "3126581",
+        "fullname": "Isaiah Williams",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "3125968",
+        "fullname": "Jameson Williams",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2961719",
+        "fullname": "Javonte Williams",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "DAL",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3171149",
+        "fullname": "Ke'Shawn Williams",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "3167684",
+        "fullname": "Kyle Williams",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NE",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3121836",
+        "fullname": "Kyren Williams",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "LAR",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2804167",
+        "fullname": "Malik Willis",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "29104952",
+        "fullname": "Emanuel Wilson",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "SEA",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "3123864",
+        "fullname": "Garrett Wilson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2965181",
+        "fullname": "Michael Wilson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ARI",
+        "pro_status": "A",
+        "bye_week": "14"
+      },
+      {
+        "id": "3169495",
+        "fullname": "Roman Wilson",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "PIT",
+        "pro_status": "A",
+        "bye_week": "9"
+      },
+      {
+        "id": "1998197",
+        "fullname": "Jameis Winston",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "NYG",
+        "pro_status": "A",
+        "bye_week": "8"
+      },
+      {
+        "id": "2248629",
+        "fullname": "Charlie Woerner",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      },
+      {
+        "id": "2787078",
+        "fullname": "Jelani Woods",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "NYJ",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "26730787",
+        "fullname": "Xavier Worthy",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "KC",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "2807423",
+        "fullname": "Brock Wright",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "DET",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "26698774",
+        "fullname": "Jaylen Wright",
+        "position": "RB",
+        "eligible_positions_display": "RB",
+        "pro_team": "MIA",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "2961827",
+        "fullname": "Colson Yankoff",
+        "position": "TE",
+        "eligible_positions_display": "TE",
+        "pro_team": "WAS",
+        "pro_status": "A",
+        "bye_week": "7"
+      },
+      {
+        "id": "3161957",
+        "fullname": "Bryce Young",
+        "position": "QB",
+        "eligible_positions_display": "QB",
+        "pro_team": "CAR",
+        "pro_status": "A",
+        "bye_week": "5"
+      },
+      {
+        "id": "28934874",
+        "fullname": "Colbie Young",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "CIN",
+        "pro_status": "A",
+        "bye_week": "6"
+      },
+      {
+        "id": "27017067",
+        "fullname": "Dareke Young",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "LV",
+        "pro_status": "A",
+        "bye_week": "13"
+      },
+      {
+        "id": "2186266",
+        "fullname": "Olamide Zaccheaus",
+        "position": "WR",
+        "eligible_positions_display": "WR",
+        "pro_team": "ATL",
+        "pro_status": "A",
+        "bye_week": "11"
+      }
+    ]
+  },
+  "uri": "/players/list"
+}

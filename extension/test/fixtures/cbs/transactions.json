@@ -1,0 +1,96 @@
+{
+  "url": "https://redacted-league.football.cbssports.com/api/league/transaction-list/add-drops?version=3.0&SPORT=football&response_format=JSON&league_id=redacted-league",
+  "status": 200,
+  "ok": true,
+  "body": {
+    "statusMessage": "OK",
+    "body": {
+      "add_drops": [
+        {
+          "action": "completed",
+          "effective_point": "1",
+          "add_players": [
+            {
+              "photo": "https://sports.cbsimg.net/images/nfl/logos/250x250/MIA.png",
+              "eligible_for_offense_and_defense": 0,
+              "is_locked": 0,
+              "home_game": 0,
+              "on_waivers": 0,
+              "elias_id": "404",
+              "owned_by_team_id": 16,
+              "firstname": "",
+              "fullname": "Dolphins",
+              "bye_week": "6",
+              "position": "DST",
+              "oprk": 32,
+              "eligible_positions_display": "DST",
+              "gametime": 1789331100,
+              "pro_team": "MIA",
+              "lastname": "Dolphins",
+              "on_waivers_until": null,
+              "profile_link": "<a class='playerLink' aria-label=' Dolphins DST MIA' href='https://redacted-league.football.cbssports.com/players/playerpage/1915'>Dolphins</a> <span class=\"playerPositionAndTeam\">DST &#149; MIA</span> <span class=\"playerIconsWrapper\"><span title=\"Dolphins' Jacob Rodriguez: Practices in full Wednesday\"><a href=\"https://redacted-league.football.cbssports.com/players/playerpage/1915\" class=\"playerLink\" subtab=\"Update\" aria-label=\"Update: Dolphins' Jacob Rodriguez: Practices in full Wednesday\"><span class=\"icon-news-note-recent\"></span></a></span></span>",
+              "opponent": "@LV",
+              "icons": {
+                "headline": "Dolphins' Jacob Rodriguez: Practices in full Wednesday"
+              },
+              "pro_status": null,
+              "opponent_team": "LV",
+              "profile_url": "https://redacted-league.football.cbssports.com/players/playerpage/1915",
+              "id": "1915"
+            }
+          ],
+          "state": "won",
+          "priority": 1,
+          "bid_amount": 0,
+          "team": {
+            "short_name": "Team B",
+            "logo": "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+            "division": "",
+            "abbr": "TMB",
+            "is_vacant": 0,
+            "name": "Team A",
+            "id": "16",
+            "long_abbr": "TMA"
+          },
+          "timestamp": 1789020258,
+          "drop_players": [
+            {
+              "photo": "https://sports.cbsimg.net/images/football/nfl/players/170x170/2867159.png",
+              "eligible_for_offense_and_defense": 0,
+              "is_locked": 0,
+              "home_game": 0,
+              "on_waivers": 1,
+              "elias_id": "FER146119",
+              "firstname": "Jake",
+              "fullname": "Jake Ferguson",
+              "bye_week": "14",
+              "position": "TE",
+              "oprk": 8,
+              "eligible_positions_display": "TE",
+              "gametime": 1789345200,
+              "pro_team": "DAL",
+              "lastname": "Ferguson",
+              "on_waivers_until": 1789185600,
+              "age": 27,
+              "profile_link": "<a class='playerLink' aria-label=' Jake Ferguson TE DAL' href='https://redacted-league.football.cbssports.com/players/playerpage/2867159'>Jake Ferguson</a> <span class=\"playerPositionAndTeam\">TE &#149; DAL</span> <span class=\"playerIconsWrapper\"><span title=\"Cowboys' Jake Ferguson: TEs to Sit\"><a href=\"https://redacted-league.football.cbssports.com/players/playerpage/2867159\" class=\"playerLink\" subtab=\"Update\" aria-label=\"Update: Cowboys' Jake Ferguson: TEs to Sit\"><span class=\"icon-news-note-recent\"></span></a></span></span>",
+              "opponent": "@NYG",
+              "icons": {
+                "headline": "Cowboys' Jake Ferguson: TEs to Sit"
+              },
+              "pro_status": "A",
+              "opponent_team": "NYG",
+              "jersey": "87",
+              "profile_url": "https://redacted-league.football.cbssports.com/players/playerpage/2867159",
+              "id": "2867159"
+            }
+          ],
+          "id": "1788985086.16",
+          "comment": "Approved"
+        }
+      ]
+    },
+    "statusCode": 200,
+    "uri": "/league/transaction-list/add-drops",
+    "uriAlias": "/league/transaction-list/add-drops"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "capturedAt": "2026-09-10T12:54:34.607Z",
+  "href": "https://redacted-league.football.cbssports.com/",
+  "token": {
+    "found": true,
+    "pattern": "P1",
+    "length": 150
+  },
+  "viewerHints": [
+    {
+      "pattern": "myTeamId",
+      "context": "    var currentYear = 2026;\n        var myTeamId = 16;\n        $(function() {\n            myF"
+    },
+    {
+      "pattern": "long_abbr",
+      "context": "            \"name\" : \"SCRUBBED\",\n            \"team\" : {\n               \"id\" : \"16\",\n               \"abbr\" : \"SCRUBBED\",\n               \"name\" : \"SCRUBBED\",\n               \"is_vacant\" : 0,\n               \"long_abbr\" : \"SCRUBBED\",\n               \"division\" : \"\",\n               \"logo\" : \"https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100\",\n               \"sho"
+    },
+    {
+      "pattern": "long_abbr",
+      "context": "       \"id\" : \"16\",\n                     \"abbr\" : \"SCRUBBED\",\n                     \"name\" : \"SCRUBBED\",\n                     \"is_vacant\" : 0,\n                     \"division\" : \"\",\n                     \"long_abbr\" : \"SCRUBBED\",\n                     \"short_name\" : \"SCRUBBED\",\n                     \"logo\" : \"https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100\"\n"
+    },
+    {
+      "pattern": "long_abbr",
+      "context": "            \"id\" : \"1\",\n                     \"abbr\" : \"SCRUBBED\",\n                     \"name\" : \"SCRUBBED\",\n                     \"is_vacant\" : 0,\n                     \"division\" : \"\",\n                     \"long_abbr\" : \"SCRUBBED\",\n                     \"short_name\" : \"SCRUBBED\",\n                     \"logo\" : \"https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100\"\n   "
+    },
+    {
+      "pattern": "long_abbr",
+      "context": "          \"id\" : \"6\",\n                     \"abbr\" : \"SCRUBBED\",\n                     \"name\" : \"SCRUBBED\",\n                     \"is_vacant\" : 0,\n                     \"division\" : \"\",\n                     \"long_abbr\" : \"SCRUBBED\",\n                     \"short_name\" : \"SCRUBBED\",\n                     \"logo\" : \"https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100\"\n "
+    },
+    {
+      "pattern": "long_abbr",
+      "context": "         \"id\" : \"17\",\n                     \"abbr\" : \"SCRUBBED\",\n                     \"name\" : \"SCRUBBED\",\n                     \"is_vacant\" : 0,\n                     \"division\" : \"\",\n                     \"long_abbr\" : \"SCRUBBED\",\n                     \"short_name\" : \"SCRUBBED\",\n                     \"logo\" : \"https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100\"\n  "
+    }
+  ]
+}

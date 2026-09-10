@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>CBS league page, reduced to the token-bearing scripts and viewer hints, scrubbed</title></head>
+<body>
+<script type="text/javascript">
+CBSi.token = "REDACTED";
+CBSi.namespace("app.Player.ScoutTeam");(function(){CBSi.app.Player.ScoutTeam={players:{},toggle:function(e,b,a,d){var f={},c=this;if(typeof(this.players[b])!="undefined"){a=this.players[b]}a=a?"remove":"add";f.players=[{id:b,state:a}];params={payload:JSON.stringify(f),access_token:CBSi.token,method:"PUT"};response=Waldo.retrieve({uri:"/api/players/scout-team",uriAlias:"addtoScoutTeam",type:"GET",params:params,callback:{success:function(){var g=c.players,h=a=="add"?1:0;g[b]=h;$(e).removeClass("addScout"+d);$(e).removeClass("removeScout"+d);if(g[b]==1){$(e).attr("title","Drop From Scout Team");$(e).addClass("removeScout"+d)}else{$(e).attr("title","Scout This Player");$(e).addClass("addScout"+d)}if(typeof(lineupBuilder)!="undefined"){$(".rosterReportReload").trigger("click")}if(typeof(CBSi.app.Stats)!=="undefined"&&d=="Lg"){c.setScoutedPlayers()}CBSi.widget.PlayerSnippet.removeFromCache(b)}}})},setScoutedPlayers:function(b){var a=this;this.players=b||this.players;$(".scoutButton").each(function(c,d){var e=d.id.split("_");if($(d).hasClass("actionButtonSm")){$(d).removeClass("addScoutSm");$(d).removeClass("removeScoutSm");if(a.players[e[1]]){$(d).attr("title","Drop From Scout Team");$(d).addClass("removeScoutSm")}else{$(d).attr("title","Scout This Player");$(d).addClass("addScoutSm")}}})}}})();CBSi.namespace("widget.SectionHelp");(function(){CBSi.widget.SectionHelp={show:function(a){var b=$("#sectionHelpDialog");if(b.length==0){$('<div id="sectionHelpDialog" class="padHorizontal20 padVertical20"></div>').dialog({autoOpen:false,width:400,height:500,dialogClass:"help-dialog",zIndex:11000,title:"Section Help"})}if(typeof(a)=="object"){if(a.msg){$("#sectionHelpDialog").html(a.msg);$("#sectionHelpDialog").dialog("open")}}else{$.ajax({type:"GET",url:"/help?source="+a,success:function(c){$("#sectionHelpDialog").html(c);$("#sectionHelpDialog").dialog("open")},dataType:"html"})}}}})();CBSi.namespace("widget.PlayerSnippet");(function(){CBSi.widget.UrlUtils={getParameter:function(sPageURL,sParam){var sURLVariables=sPageURL.split("&");for(var i=0;i<sURLVariables.length;i++){var sParameterName=sURLVariables[i].split("=");if(sParameterName[0]==sParam){return sParameterName[1]}}return""}};CBSi.widget.PlayerSnippet={cache:{},overflowSet:false,heightSet:false,close:function(){if(!this.heightSet){$("html").css("height","auto")}if(!this.overflowSet){$("body, html").css("overflow","auto")}$("#snippetDiv").dialog("close");this.heightSet=false;this.overflowSet=false;if(typeof Storage!=="undefined"){sessionStorage.clear()}},open:function(url,playerid,args){var cacheKey,height,width,self=this,snippetDiv=$("#snippetDiv");var play_video=parseInt(CBSi.widget.UrlUtils.getParameter(url,"play_video"));if(typeof Storage!=="undefined"){sessionStorage.clear()}args=args||{};height=args.height||652,width=args.width||884,cacheKey=url||playerid;if(!snippetDiv[0]){$("body").on("click","#closeSnippet",function(){self.close()});$('<div id="snippetDiv"></div>').appendTo("body").dialog({autoOpen:false,height:height,minHeight:600,width:width,resizable:false,zIndex:9999998,draggable:false,closeOnEscape:true,closeText:"",dialogClass:"playerSnippet",modal:true,close:function(e,ui){$("#snippetDiv").remove();if(!self.heightSet){$("html").css("height","auto")}if(!self.overflowSet){$("body, html").css("overflow","auto")}}}).draggable({cursor:"move",handle:"#snippetContainer .headerContainer",scroll:false});$(window).resize(function(){$("#snippetDiv").dialog("option","position","center")});$("#snippetDiv").undelegate("ul.priNav li > a").delegate("ul.priNav li > a","click",function(e){e.preventDefault();var anchor=this,url=this.href;if(self.cache[url]){self.loadTabData(self.cache[url],anchor)}else{$.ajax({type:"GET",url:url,dataType:"html",success:function(data){self.setTabCache(url,data);self.loadTabData(data,anchor)}})}})}$("#snippetDiv").html('<div style="line-height:630px;text-align:center;"><img src="'+CBSi.imageServer+'/images/fantasy/contacts/loading.gif"/> Loading...</div>');$("#snippetDiv").dialog("open");var trackClickParam=[];if(typeof utag!="undefined"&&utag&&utag_data&&utag_data.siteHier){trackClickParam=utag.data.siteHier.split("|")}trackClickParam[0]="PlayerSnippet";if(typeof om!="undefined"&&om){om.trackClick({item:trackClickParam.join("|")})}if(self.cache[cacheKey]){self.loadData(self.cache[cacheKey],playerid,play_video);if(args.loc=="Team B"){mainapp.playerPopup.renderButtons(playerid,1)}}else{$.ajax({type:"GET",url:url,success:function(data){self.setMainCache(cacheKey,data);self.loadData(data,playerid,play_video);if(args.loc=="Team B"){mainapp.playerPopup.renderButtons(playerid,1)}},dataType:"html"})}if($("body").hasClass("yui-layout")){self.heightSet=true}else{$("html").css("height","100%")}if($("body").css("overflow")=="hidden"){self.overflowSet=true}else{$("body, html").css("overflow","hidden")}var scrolling=0;$(document).keydown(function(e){if(scrolling==0){var n=$("#playerSnippet.tabGroup div.snippetTabContainer").scrollTop()||0;scrolling=1;var code=e.keyCode;var h=0;var activeTab=$("#playerSnippet ul.nav li.active").text();if(activeTab=="Overview"){var left=$("#leftLatestNewsSnippet").height();var right=$("#rightLatestNewsSnippet").height();h=left;if(right>left){h=right}}else if(activeTab=="News"){$(".bigColumnSnippetTab .dataBorders").each(function(){h+=$(this).height()});var tweetsHeight=$("#tweetsContainer").height();if(h<tweetsHeight){h=tweetsHeight}}else if(activeTab=="Game Log"||activeTab=="Stats"){h=$("#playerSnippet.tabGroup div.snippetTabContainer table.data").height()}else if(activeTab=="Fantasy Trends"){h=$("#playerSnippet.tabGroup div.snippetTabContainer .fantasyTrendsGraphs").height()}var hasToScroll=0;if(code=="38"&&n>0){n=n-h/10;hasToScroll=1}else if(code=="40"&&n<h){n=n+h/10;hasToScroll=1}if(hasToScroll==1){$("#playerSnippet.tabGroup div.snippetTabContainer").animate({scrollTop:n},{complete:function(){scrolling=0}},"fast")}else{scrolling=0}}})},setMainCache:function(key,data){this.cache[key]=data},setTabCache:function(key,data){this.cache[key]=data},rebuildAd:function(){if(window&&window.dynamicBid){window.dynamicBid("leader_snippet",[[728,90]],"middle",false)}},switchScheduleGamelog:function(playerid){$("#snippetDiv").on("click","#switchStats",function(e){var lastYear=parseInt(year)-1;if($(this).hasClass("viewPreviousYearGameLog")){$(this).html("view "+year+" season schedule<div class='titleMoreArrow'></div>");$(this).removeClass("viewPreviousYearGameLog").addClass("viewScheduledGames");var titleParent=$(this).parent().parent().parent();titleParent.find(".leftUnderline").html('<span class="boldText">'+lastYear+"</span> Game Log");if(typeof Storage!=="undefined"){if(!sessionStorage.getItem("switchStats|viewPreviousYearGameLog")){sessionStorage.setItem("switchStats|viewScheduledGames",titleParent.next().prop("outerHTML"));titleParent.next().remove();titleParent.after("<span id='switchStatsLoading'>Loading...</span>");$.ajax({type:"GET",url:"/players/completedgames",data:{location:"snippet",player_id:playerid},success:function(response){$("#switchStatsLoading").remove();response=response.replace(/<!--(.*?)-->/gm,"").trim();if(response==""){response="<div>Player did not play in "+lastYear+"</div>"}titleParent.after(response);sessionStorage.setItem("switchStats|viewPreviousYearGameLog",response)},error:function(response){console.log(response)}})}else{titleParent.next().remove();titleParent.after(sessionStorage.getItem("switchStats|viewPreviousYearGameLog"))}}else{titleParent.next().remove();$.ajax({type:"GET",url:"/players/completedgames",data:{location:"snippet",player_id:playerid},success:function(response){titleParent.after(response);sessionStorage.setItem("switchStats|viewPreviousYearGameLog",response)},error:function(response){console.log(response)}})}}else if($(this).hasClass("viewScheduledGames")){$(this).html("view "+lastYear+" game log<div class='titleMoreArrow'></div>");$(this).removeClass("viewScheduledGames").addClass("viewPreviousYearGameLog");var titleParent=$(this).parent().parent().parent();titleParent.find(".leftUnderline").html('<span class="boldText">'+year+"</span> Season Schedule");if(typeof Storage!=="undefined"){if(!sessionStorage.getItem("switchStats|viewScheduledGames")){$.ajax({type:"GET",url:"/players/scheduledgames",data:{location:"snippet",player_id:playerid,season_state:"pre"},success:function(response){titleParent.next().remove();titleParent.after(response);sessionStorage.setItem("switchStats|viewScheduledGames",response)},error:function(response){console.log(response)}})}else{titleParent.next().remove();titleParent.after(sessionStorage.getItem("switchStats|viewScheduledGames"))}}else{titleParent.next().remove();$.ajax({type:"GET",url:"/players/scheduledgames",data:{location:"snippet",player_id:playerid,season_state:"pre"},success:function(response){titleParent.next().remove();titleParent.after(response);sessionStorage.setItem("switchStats|viewScheduledGames",response)},error:function(response){console.log(response)}})}}})},loadData:function(data,playerid,play_video){$("#snippetDiv").html(data);this.setPlayerNewsComponent();this.handleReadMoreLessPlayerNews();this.switchScheduleGamelog(playerid);this.handleOhtaniToggle(playerid);if(play_video>0){var self=this;$(".latestVideoPlayHotspotSnippet").ready(function(){var elem=$(".latestVideoPlayHotspotSnippet");self.videoPlayerNewsTab(elem,"icon")})}if(typeof Storage!=="undefined"){var activeTabUrl=$("#playerSnippet ul.nav li.active a").attr("href");var parser=document.createElement("a");parser.href=activeTabUrl;activeTabCacheKey=parser.pathname+parser.search;if(!sessionStorage.getItem(activeTabCacheKey)){if(activeTabUrl.indexOf("overview")<0){$.ajax({type:"GET",url:parser.origin+"/players/playerpage/snippet/tabs/overview"+parser.search,success:function(overviewData){sessionStorage.setItem("/players/playerpage/snippet/tabs/overview"+parser.search,overviewData)},dataType:"html"})}else{var activeTabContent=$("#playerSnippet_content").html();sessionStorage.setItem(activeTabCacheKey,activeTabContent)}}this.rebuildAd()}},loadTabData:function(data,anchor){$("#snippetContent").html(data);$("#snippetDiv ul.priNav li").removeClass("active");$(anchor).parent().addClass("active")},loadKeyStats:function(args){var args=args||{};var keyStats=$("#snippetDiv").find(".key_stats");var defaultSource=args.defaultSource?defaultSource:"Avg";var statsArray=args.statsArray?args.statsArray:["Avg","Zegura","Eisenberg","Richard"];var getKeyStatTables=keyStats.find(".key_stat_table");if(getKeyStatTables.length==1){getKeyStatTables.show()}else{keyStats.find('.key_stat_table[data-source="'+defaultSource+'"]').show()}keyStats.find(".title #Avg").addClass("selected");keyStats.on("click","a",function(e){keyStats.find(".title a").removeClass("selected");e.preventDefault;var target=$(e.target);for(source in statsArray){keyStats.find('.key_stat_table[data-source="'+statsArray[source]+'"]').hide()}target.addClass("selected");keyStats.find('.key_stat_table[data-source="'+target.attr("id")+'"]').show();return false});$(".viewStatsWrapper").on({mouseenter:function(){var tooltip=$(".tooltipSnippetStats");var fantasyIntro=$("#snippetContainer .fantasy_info");var viewStatsWrapper=$(".viewStatsWrapper");var right=fantasyIntro.width()-tooltip.width()-(viewStatsWrapper.width()-tooltip.width())/2;$("#tooltipStats").html(tooltip.html());$("#tooltipStats").css("right",Math.abs(right));$("#tooltipStats").show()},mouseleave:function(){var tooltip=$("#tooltipStats").html();$(".tooltipSnippetStats").html(tooltip);$("#tooltipStats").hide()}})},setPlayerNewsComponent:function(){var updateData=$("#snippetDiv #snippetContent #playerNewsSnippet .featureComponentContainer .featureData .dataBorders .updateData");var titleHeadline=$("#snippetDiv #snippetContent #playerNewsSnippet .featureComponentContainer .featureData .dataBorders .newSubtitle .titleHeadline");titleHeadline.click(function(){$(updateData).css("display","none");$(titleHeadline).css("padding","0px 0px 7px 0px");$(this).css("padding","0px");$(this).parent().parent().find(".updateData").show()})},videoPlayerHandler:function(elem){var activeTab=$("#playerSnippet ul.nav li.active a").html();if(activeTab=="Overview"){this.videoPlayerOverviewTab(elem)}else if(activeTab=="News"){this.videoPlayerNewsTab(elem,"snippet")}return false},videoPlayerOverviewTab:function(elem){var videoBtn=$(elem);var videoBtnClass=videoBtn.attr("class");var videoPCID=videoBtn.attr("data-pcid");var videoChannel=videoBtn.attr("data-channel");var arena=videoBtn.attr("data-arena")||"";if(videoBtnClass=="play latestVideoPlayHotspotSnippet"){if(arena!=""){om.trackClick({item:"PlayerVideo|"+arena+"|PlayerSnippet|Overview|Play"})}videoBtn.attr("class","stop latestVideoPlayHotspotSnippet");videoBtn.children(".descriptionHeadline").children(".icon-player-news-video-play").removeClass("icon-player-news-video-play").addClass("icon-player-news-video-stop");videoBtn.children(".descriptionHeadline").children(".playVideo").html("STOP VIDEO");var videoHeight=292;if($(".playerReportBanner").length>0){videoHeight=260}var embedVideo;if(isNaN(videoPCID)){embedVideo='<div id="embedVideoContainer_snippetVideo" class="embedVideo"><iframe id="embedVideo_snippetVideo" name="embedVideo_snippetVideo" src="https://embed.cbssports.com/player/embed/?args=player_id%3DsnippetVideo%26channel%3D'+videoChannel+"%26source%3Dfantasy%26ids%3D"+videoPCID+"%26width%3D560%26height%3D"+videoHeight+'%26autoplay%3Dtrue%26dynamic_controls%3Dfalse%26comp_ads_enabled%3Dfalse%26comp_ad_w%3D300%26comp_ad_h%3D60%26autoplay_live%3Dtrue%26lazy_load%3Dfalse" width="560" height="'+videoHeight+'" marginwidth="0" marginheight="0" scrolling="no" frameborder="0" allowTransparency="true"></iframe></div>'}else{embedVideo='<div id="embedVideoContainer_snippetVideo" class="embedVideo"><iframe id="embedVideo_snippetVideo" name="embedVideo_snippetVideo" src="https://embed.cbssports.com/player/embed/?args=player_id%3DsnippetVideo%26channel%3D'+videoChannel+"%26pcid%3D"+videoPCID+"%26width%3D560%26height%3D"+videoHeight+'%26autoplay%3Dtrue%26dynamic_controls%3Dfalse%26comp_ads_enabled%3Dfalse%26comp_ad_w%3D300%26comp_ad_h%3D60%26autoplay_live%3Dtrue%26lazy_load%3Dfalse" width="560" height="'+videoHeight+'" marginwidth="0" marginheight="0" scrolling="no" frameborder="0" allowTransparency="true"></iframe></div>'}$(".snippetTabContainer").scrollTop(0);$("#rightLatestNewsSnippet").hide();$("#rightVideoSnippet").html(embedVideo);$("#rightVideoSnippet").show();$(".vidPlaySmOverview").hide();$(".vidThumbMedOverview").hide();this.showCloseVideoIcon()}else{if(arena!=""){om.trackClick({item:"PlayerVideo|"+arena+"|PlayerSnippet|Overview|Stop"})}videoBtn.attr("class","play latestVideoPlayHotspotSnippet");videoBtn.children(".descriptionHeadline").children(".icon-player-news-video-stop").removeClass("icon-player-news-video-stop").addClass("icon-player-news-video-play");videoBtn.children(".descriptionHeadline").children(".playVideo").html("PLAY VIDEO");$("#rightVideoSnippet").hide();$("#rightVideoSnippet").html("");$("#rightLatestNewsSnippet").show();$(".vidPlaySmOverview").show();$(".vidThumbMedOverview").show()}return false},videoPlayerNewsTab:function(elem,from){var videoBtn=$(elem);var videoBtnClass=videoBtn.attr("class");var videoPCID=videoBtn.attr("data-pcid");var videoChannel=videoBtn.attr("data-channel");var arena=videoBtn.attr("data-arena")||"";if(videoBtnClass=="play latestVideoPlayHotspotSnippet"){if(from=="snippet"&&arena!=""){om.trackClick({item:"PlayerVideo|"+arena+"|PlayerSnippet|News|Play"})}videoBtn.attr("class","stop latestVideoPlayHotspotSnippet");videoBtn.children(".descriptionHeadline").children(".icon-player-news-video-play").removeClass("icon-player-news-video-play").addClass("icon-player-news-video-stop");videoBtn.children(".descriptionHeadline").children(".playVideo").html("STOP VIDEO");var videoHeight=315;var topUpdateBtn=75;if($(".playerReportBanner").length>0){videoHeight=285;topUpdateBtn=100}var embedVideo='<div id="embedVideoContainer_snippetVideo" class="embedVideo"><iframe id="embedVideo_snippetVideo" name="embedVideo_snippetVideo" src="/video/player/embed?args=player_id%3DsnippetVideo%26channel%3D'+videoChannel+"%26pcid%3D"+videoPCID+"%26width%3D560%26height%3D"+videoHeight+'%26autoplay%3Dtrue%26dynamic_controls%3Dfalse%26comp_ads_enabled%3Dfalse%26comp_ad_w%3D300%26comp_ad_h%3D60%26autoplay_live%3Dtrue%26lazy_load%3Dfalse" width="560" height="'+videoHeight+'" marginwidth="0" marginheight="0" scrolling="no" frameborder="0" allowTransparency="true"></iframe></div>';$(".snippetTabContainer").scrollTop($(".playerNewsVideoContainer").position().top+55);$(".latestVideoPlayHotspotSnippet span.vidPlaySm").hide();$(".latestVideoPlayHotspotSnippet img.vidThumbMed").hide();$("#videoNewsIFrameContainer").html(embedVideo);$("#videoNewsIFrameContainer").show();this.showCloseVideoIcon()}else{if(from=="snippet"&&arena!=""){om.trackClick({item:"PlayerVideo|"+arena+"|PlayerSnippet|News|Stop"})}videoBtn.attr("class","play latestVideoPlayHotspotSnippet");videoBtn.children(".descriptionHeadline").children(".icon-player-news-video-stop").removeClass("icon-player-news-video-stop").addClass("icon-player-news-video-play");videoBtn.children(".descriptionHeadline").children(".playVideo").html("PLAY VIDEO");var topUpdateBtn=75;if($(".playerReportBanner").length>0){topUpdateBtn=100}$("#videoNewsIFrameContainer").hide();$("#videoNewsIFrameContainer").html("");$(".latestVideoPlayHotspotSnippet span.vidPlaySm").show();$(".latestVideoPlayHotspotSnippet img.vidThumbMed").show();$(".snippetTabContainer").scrollTop($(".playerNewsVideoContainer").position().top+10)}return false},showCloseVideoIcon:function(){var self=this;$("#embedVideoContainer_snippetVideo").prepend("<span class='closeRightVideoSnippet icon-times icon-black icon-hover-black icon-9' style='display:none;'></span>");$(".closeRightVideoSnippet").click(function(e){e.stopPropagation();self.videoPlayerHandler($(".latestVideoPlayHotspotSnippet"));$(".closeRightVideoSnippet").remove()});setTimeout(function(){$(".closeRightVideoSnippet").fadeIn()},2e3)},removeFromCache:function(playerId){for(var key in this.cache){if(key.indexOf(playerId)>=0){delete this.cache[key]}break}},handleReadMoreLessPlayerNews:function(){$("#snippetDiv").on("click","#readMoreOutlook",function(e){$("#shortOulook").hide();$("#fullOulook").show()});$("#snippetDiv").on("click","#readLessOutlook",function(e){$("#fullOulook").hide();$("#shortOulook").show();$("#playerNewsSnippet .featureData").scrollTop(0)});$("#snippetDiv").on("click","#readMoreNews",function(e){$(this).parent().parent().find("#shortNews").hide();$(this).parent().parent().find("#fullNews").show()});$("#snippetDiv").on("click","#readLessNews",function(e){$(this).parent().parent().find("#fullNews").hide();$(this).parent().parent().find("#shortNews").show()});$("#snippetDiv").on("click","#readMoreAnalysis",function(e){$(this).parent().parent().find("#shortAnalysis").hide();$(this).parent().parent().find("#fullAnalysis").show()});$("#snippetDiv").on("click","#readLessAnalysis",function(e){$(this).parent().parent().find("#fullAnalysis").hide();$(this).parent().parent().find("#shortAnalysis").show()})},handleOhtaniToggle:function(playerid){var self=this;var loc=this.location||"snippet";if($("#snippetDiv .catToggleJS a").length>0){for(var i=0;i<$("#snippetDiv .catToggleJS a").length;i++){(function(i){var paramHref=$($("#snippetDiv .catToggleJS a")[i]).attr("href");var url="/players/playerpage/snippet/"+playerid+"/"+paramHref+"&loc="+loc+"&selected_tab=overview&play_video=0";var cacheKey=url||playerid;if(!self.cache[cacheKey]){$.ajax({type:"GET",url:url,success:function(data){self.setMainCache(cacheKey,data);console.log("cached -> "+cacheKey)},dataType:"html"})}})(i)}}$("#snippetDiv").on("click",".catToggleJS a:not(.active)",function(e){e.preventDefault();e.stopPropagation();var href=$(this).attr("href");self.close();CBSi.widget.PlayerSnippet.open("/players/playerpage/snippet/"+playerid+"/"+href+"&loc="+loc+"&selected_tab=overview&play_video=0",playerid,{loc:loc});$("#snippetDiv").animate({borderSpacing:-360},{step:function(now,fx){$(this).css("-webkit-transform","rotateY("+now+"deg)");$(this).css("-moz-transform","rotateY("+now+"deg)");$(this).css("transform","rotateY("+now+"deg)")},duration:"slow"},"swing")})},setLocation:function(loc){this.location=loc||"snippet"}}})();
+
+$.fn.serializeObject = function() {
+  var arrayData, objectData;
+  arrayData = this.serializeArray();
+  objectData = {};
+
+  $.each(arrayData, function() {
+    var value;
+
+    if (this.value != null) {
+      value = this.value;
+    } else {
+      value = '';
+    }
+
+    if (objectData[this.name] != null) {
+      if (!objectData[this.name].push) {
+        objectData[this.name] = [objectData[this.name]];
+      }
+
+      objectData[this.name].push(value);
+    } else {
+      objectData[this.name] = value;
+    }
+  });
+
+  return objectData;
+};
+// these functions are defined in FANTASY/htdocs/script-fantasy.html
+function display(id, on_off) {
+    if ( !id.match( /#/ ) ) {
+        id = "#" + id;
+    }
+    id = id.replace(/:/, '\\:');
+    var toggle = on_off ? '' : 'none';
+    if($(id)[0]) $(id).css('display', toggle);
+}
+
+function confirmLink(message, url) {
+    if(confirm(message)) {
+       window.location.href = url;
+    }
+}
+
+function confirmSubmit(message, form_name) {
+    if(confirm(message)) {
+       getEl(form_name).submit();
+    }
+}
+
+function inspect(elm){
+  var str = "";
+  for (var i in elm){
+    str += i + ": " + elm.getAttribute(i) + "\n";
+  }
+  alert(str);
+}
+
+function getParameter (sPageURL, sParam) {
+  var sURLVariables = [];
+  var sURLVariables1 = sPageURL.split('?');
+  
+  if (sURLVariables1[1] && sURLVariables1[1].length > 0) {
+    sURLVariables = sURLVariables1[1].split('&');
+  }
+  
+  for (var i = 0; i < sURLVariables.length; i++) {
+    var sParameterName = sURLVariables[i].split('=');
+    if (sParameterName[0] == sParam) {
+      return sParameterName[1];
+    }
+  }
+  
+  return "";
+}
+
+$(document).delegate("a.playerLink, #page-contents a", "click", function(e) {
+    var snippetHref, cvals, data_from,
+        href   = this.href,
+        tab = $(this).attr("tab") || 'overview',
+        play_video = $(this).attr("play_video") || '0';
+    
+		//tab    = $(this).attr("tab")    || 'news',
+        //subTab = $(this).attr("subtab") || '';
+    
+    if ( href.match(/playerpage|players\/player\/news|players\/playerpage\/news/) ) {
+      e.preventDefault();
+
+      if ( href.match(/players\/player\/news|players\/playerpage\/news/) ) {
+        tab = 'news';
+      }
+      
+      data_from = getParameter(href, "data_from");
+      href = href.split("?")[0];
+	
+      var playerid = href.match(/\/(\d+)(\/|$)/);
+      snippetHref  = "/players/playerpage/snippet/" + playerid[1];
+      snippetHref += "?loc=snippet&selected_tab=" + tab + "&play_video="+play_video;
+	
+      if (data_from && data_from.length > 0) {
+        snippetHref += "&data_from="+data_from;
+      }
+  
+      var o_pos = $(this).data("o_pos") || "";
+      if (o_pos != "") {
+        snippetHref += "&o_pos="+o_pos;
+      }
+
+      var gambling_state = "";
+      if (gambling_state != "") {
+        snippetHref += "&force_gambling_state="+gambling_state;
+      }
+
+      CBSi.widget.PlayerSnippet.open( snippetHref ,playerid[1]);
+    }
+});
+
+CBSi.adsDeferredCallback = function( adsCallback ) {
+    var i, len, ad;
+
+    for ( i = 0, len = adsCallback.length; i < len; i++ ) {
+        ad = adsCallback[i];
+        if ( ad.divId && ad.divId.match(/234_100|244_100/) ) {
+            if ( CBSi.takeoverIsBlank != ad.isBlank ) {
+                CBSi.takeoverIsBlank = ad.isBlank;
+                $.ajax({
+                    type: "POST",
+                    url : "/data/common/takeover-tracking",
+                    data: { 'takeover_blank' : ad.isBlank},
+                    dataType: 'json'
+                });
+            }
+            break;
+        }
+    }
+
+    if ( CBSi.messageCenter ) CBSi.messageCenter.setDefaultPosition();
+}
+
+function refreshAdsTest() {
+    return;
+}
+
+</script>
+<script>
+        /* SWFObject v2.1 <http://code.google.com/p/swfobject/>
+	Copyright (c) 2007-2008 Geoff Stearns, Michael Williams, and Bobby van der Sluis
+	This software is released under the MIT License <http://www.opensource.org/licenses/mit-license.php>
+*/
+var swfobject=function(){var b="undefined",Q="object",n="Shockwave Flash",p="ShockwaveFlash.ShockwaveFlash",P="application/x-shockwave-flash",m="SWFObjectExprInst",j=window,K=document,T=navigator,o=[],N=[],i=[],d=[],J,Z=null,M=null,l=null,e=false,A=false;var h=function(){var v=typeof K.getElementById!=b&&typeof K.getElementsByTagName!=b&&typeof K.createElement!=b,AC=[0,0,0],x=null;if(typeof T.plugins!=b&&typeof T.plugins[n]==Q){x=T.plugins[n].description;if(x&&!(typeof T.mimeTypes!=b&&T.mimeTypes[P]&&!T.mimeTypes[P].enabledPlugin)){x=x.replace(/^.*\s+(\S+\s+\S+$)/,"$1");AC[0]=parseInt(x.replace(/^(.*)\..*$/,"$1"),10);AC[1]=parseInt(x.replace(/^.*\.(.*)\s.*$/,"$1"),10);AC[2]=/r/.test(x)?parseInt(x.replace(/^.*r(.*)$/,"$1"),10):0}}else{if(typeof j.ActiveXObject!=b){var y=null,AB=false;try{y=new ActiveXObject(p+".7")}catch(t){try{y=new ActiveXObject(p+".6");AC=[6,0,21];y.AllowScriptAccess="always"}catch(t){if(AC[0]==6){AB=true}}if(!AB){try{y=new ActiveXObject(p)}catch(t){}}}if(!AB&&y){try{x=y.GetVariable("$version");if(x){x=x.split(" ")[1].split(",");AC=[parseInt(x[0],10),parseInt(x[1],10),parseInt(x[2],10)]}}catch(t){}}}}var AD=T.userAgent.toLowerCase(),r=T.platform.toLowerCase(),AA=/webkit/.test(AD)?parseFloat(AD.replace(/^.*webkit\/(\d+(\.\d+)?).*$/,"$1")):false,q=false,z=r?/win/.test(r):/win/.test(AD),w=r?/mac/.test(r):/mac/.test(AD);/*@cc_on q=true;@if(@_win32)z=true;@elif(@_mac)w=true;@end@*/return{w3cdom:v,pv:AC,webkit:AA,ie:q,win:z,mac:w}}();var L=function(){if(!h.w3cdom){return }f(H);if(h.ie&&h.win){try{K.write("<script id=__ie_ondomload defer=true src=//:><\/script>");J=C("__ie_ondomload");if(J){I(J,"onreadystatechange",S)}}catch(q){}}if(h.webkit&&typeof K.readyState!=b){Z=setInterval(function(){if(/loaded|complete/.test(K.readyState)){E()}},10)}if(typeof K.addEventListener!=b){K.addEventListener("DOMContentLoaded",E,null)}R(E)}();function S(){if(J.readyState=="complete"){J.parentNode.removeChild(J);E()}}function E(){if(e){return }if(h.ie&&h.win){var v=a("span");try{var u=K.getElementsByTagName("body")[0].appendChild(v);u.parentNode.removeChild(u)}catch(w){return }}e=true;if(Z){clearInterval(Z);Z=null}var q=o.length;for(var r=0;r<q;r++){o[r]()}}function f(q){if(e){q()}else{o[o.length]=q}}function R(r){if(typeof j.addEventListener!=b){j.addEventListener("load",r,false)}else{if(typeof K.addEventListener!=b){K.addEventListener("load",r,false)}else{if(typeof j.attachEvent!=b){I(j,"onload",r)}else{if(typeof j.onload=="function"){var q=j.onload;j.onload=function(){q();r()}}else{j.onload=r}}}}}function H(){var t=N.length;for(var q=0;q<t;q++){var u=N[q].id;if(h.pv[0]>0){var r=C(u);if(r){N[q].width=r.getAttribute("width")?r.getAttribute("width"):"0";N[q].height=r.getAttribute("height")?r.getAttribute("height"):"0";if(c(N[q].swfVersion)){if(h.webkit&&h.webkit<312){Y(r)}W(u,true)}else{if(N[q].expressInstall&&!A&&c("6.0.65")&&(h.win||h.mac)){k(N[q])}else{O(r)}}}}else{W(u,true)}}}function Y(t){var q=t.getElementsByTagName(Q)[0];if(q){var w=a("embed"),y=q.attributes;if(y){var v=y.length;for(var u=0;u<v;u++){if(y[u].nodeName=="DATA"){w.setAttribute("src",y[u].nodeValue)}else{w.setAttribute(y[u].nodeName,y[u].nodeValue)}}}var x=q.childNodes;if(x){var z=x.length;for(var r=0;r<z;r++){if(x[r].nodeType==1&&x[r].nodeName=="PARAM"){w.setAttribute(x[r].getAttribute("name"),x[r].getAttribute("value"))}}}t.parentNode.replaceChild(w,t)}}function k(w){A=true;var u=C(w.id);if(u){if(w.altContentId){var y=C(w.altContentId);if(y){M=y;l=w.altContentId}}else{M=G(u)}if(!(/%$/.test(w.width))&&parseInt(w.width,10)<310){w.width="310"}if(!(/%$/.test(w.height))&&parseInt(w.height,10)<137){w.height="137"}K.title=K.title.slice(0,47)+" - Flash Player Installation";var z=h.ie&&h.win?"ActiveX":"PlugIn",q=K.title,r="MMredirectURL="+j.location+"&MMplayerType="+z+"&MMdoctitle="+q,x=w.id;if(h.ie&&h.win&&u.readyState!=4){var t=a("div");x+="SWFObjectNew";t.setAttribute("id",x);u.parentNode.insertBefore(t,u);u.style.display="none";var v=function(){u.parentNode.removeChild(u)};I(j,"onload",v)}U({data:w.expressInstall,id:m,width:w.width,height:w.height},{flashvars:r},x)}}function O(t){if(h.ie&&h.win&&t.readyState!=4){var r=a("div");t.parentNode.insertBefore(r,t);r.parentNode.replaceChild(G(t),r);t.style.display="none";var q=function(){t.parentNode.removeChild(t)};I(j,"onload",q)}else{t.parentNode.replaceChild(G(t),t)}}function G(v){var u=a("div");if(h.win&&h.ie){u.innerHTML=v.innerHTML}else{var r=v.getElementsByTagName(Q)[0];if(r){var w=r.childNodes;if(w){var q=w.length;for(var t=0;t<q;t++){if(!(w[t].nodeType==1&&w[t].nodeName=="PARAM")&&!(w[t].nodeType==8)){u.appendChild(w[t].cloneNode(true))}}}}}return u}function U(AG,AE,t){var q,v=C(t);if(v){if(typeof AG.id==b){AG.id=t}if(h.ie&&h.win){var AF="";for(var AB in AG){if(AG[AB]!=Object.prototype[AB]){if(AB.toLowerCase()=="data"){AE.movie=AG[AB]}else{if(AB.toLowerCase()=="styleclass"){AF+=' class="'+AG[AB]+'"'}else{if(AB.toLowerCase()!="classid"){AF+=" "+AB+'="'+AG[AB]+'"'}}}}}var AD="";for(var AA in AE){if(AE[AA]!=Object.prototype[AA]){AD+='<param name="'+AA+'" value="'+AE[AA]+'" />'}}v.outerHTML='<object classid="clsid:D27CDB6E-AE6D-11cf-96B8-444553540000"'+AF+">"+AD+"</object>";i[i.length]=AG.id;q=C(AG.id)}else{if(h.webkit&&h.webkit<312){var AC=a("embed");AC.setAttribute("type",P);for(var z in AG){if(AG[z]!=Object.prototype[z]){if(z.toLowerCase()=="data"){AC.setAttribute("src",AG[z])}else{if(z.toLowerCase()=="styleclass"){AC.setAttribute("class",AG[z])}else{if(z.toLowerCase()!="classid"){AC.setAttribute(z,AG[z])}}}}}for(var y in AE){if(AE[y]!=Object.prototype[y]){if(y.toLowerCase()!="movie"){AC.setAttribute(y,AE[y])}}}v.parentNode.replaceChild(AC,v);q=AC}else{var u=a(Q);u.setAttribute("type",P);for(var x in AG){if(AG[x]!=Object.prototype[x]){if(x.toLowerCase()=="styleclass"){u.setAttribute("class",AG[x])}else{if(x.toLowerCase()!="classid"){u.setAttribute(x,AG[x])}}}}for(var w in AE){if(AE[w]!=Object.prototype[w]&&w.toLowerCase()!="movie"){F(u,w,AE[w])}}v.parentNode.replaceChild(u,v);q=u}}}return q}function F(t,q,r){var u=a("param");u.setAttribute("name",q);u.setAttribute("value",r);t.appendChild(u)}function X(r){var q=C(r);if(q&&(q.nodeName=="OBJECT"||q.nodeName=="EMBED")){if(h.ie&&h.win){if(q.readyState==4){B(r)}else{j.attachEvent("onload",function(){B(r)})}}else{q.parentNode.removeChild(q)}}}function B(t){var r=C(t);if(r){for(var q in r){if(typeof r[q]=="function"){r[q]=null}}r.parentNode.removeChild(r)}}function C(t){var q=null;try{q=K.getElementById(t)}catch(r){}return q}function a(q){return K.createElement(q)}function I(t,q,r){t.attachEvent(q,r);d[d.length]=[t,q,r]}function c(t){var r=h.pv,q=t.split(".");q[0]=parseInt(q[0],10);q[1]=parseInt(q[1],10)||0;q[2]=parseInt(q[2],10)||0;return(r[0]>q[0]||(r[0]==q[0]&&r[1]>q[1])||(r[0]==q[0]&&r[1]==q[1]&&r[2]>=q[2]))?true:false}function V(v,r){if(h.ie&&h.mac){return }var u=K.getElementsByTagName("head")[0],t=a("style");t.setAttribute("type","text/css");t.setAttribute("media","screen");if(!(h.ie&&h.win)&&typeof K.createTextNode!=b){t.appendChild(K.createTextNode(v+" {"+r+"}"))}u.appendChild(t);if(h.ie&&h.win&&typeof K.styleSheets!=b&&K.styleSheets.length>0){var q=K.styleSheets[K.styleSheets.length-1];if(typeof q.addRule==Q){q.addRule(v,r)}}}function W(t,q){var r=q?"visible":"hidden";if(e&&C(t)){C(t).style.visibility=r}else{V("#"+t,"visibility:"+r)}}function g(s){var r=/[\\\"<>\.;]/;var q=r.exec(s)!=null;return q?encodeURIComponent(s):s}var D=function(){if(h.ie&&h.win){window.attachEvent("onunload",function(){var w=d.length;for(var v=0;v<w;v++){d[v][0].detachEvent(d[v][1],d[v][2])}var t=i.length;for(var u=0;u<t;u++){X(i[u])}for(var r in h){h[r]=null}h=null;for(var q in swfobject){swfobject[q]=null}swfobject=null})}}();return{registerObject:function(u,q,t){if(!h.w3cdom||!u||!q){return }var r={};r.id=u;r.swfVersion=q;r.expressInstall=t?t:false;N[N.length]=r;W(u,false)},getObjectById:function(v){var q=null;if(h.w3cdom){var t=C(v);if(t){var u=t.getElementsByTagName(Q)[0];if(!u||(u&&typeof t.SetVariable!=b)){q=t}else{if(typeof u.SetVariable!=b){q=u}}}}return q},embedSWF:function(x,AE,AB,AD,q,w,r,z,AC){if(!h.w3cdom||!x||!AE||!AB||!AD||!q){return }AB+="";AD+="";if(c(q)){W(AE,false);var AA={};if(AC&&typeof AC===Q){for(var v in AC){if(AC[v]!=Object.prototype[v]){AA[v]=AC[v]}}}AA.data=x;AA.width=AB;AA.height=AD;var y={};if(z&&typeof z===Q){for(var u in z){if(z[u]!=Object.prototype[u]){y[u]=z[u]}}}if(r&&typeof r===Q){for(var t in r){if(r[t]!=Object.prototype[t]){if(typeof y.flashvars!=b){y.flashvars+="&"+t+"="+r[t]}else{y.flashvars=t+"="+r[t]}}}}f(function(){U(AA,y,AE);if(AA.id==AE){W(AE,true)}})}else{if(w&&!A&&c("6.0.65")&&(h.win||h.mac)){A=true;W(AE,false);f(function(){var AF={};AF.id=AF.altContentId=AE;AF.width=AB;AF.height=AD;AF.expressInstall=w;k(AF)})}}},getFlashPlayerVersion:function(){return{major:h.pv[0],minor:h.pv[1],release:h.pv[2]}},hasFlashPlayerVersion:c,createSWF:function(t,r,q){if(h.w3cdom){return U(t,r,q)}else{return undefined}},removeSWF:function(q){if(h.w3cdom){X(q)}},createCSS:function(r,q){if(h.w3cdom){V(r,q)}},addDomLoadEvent:f,addLoadEvent:R,getQueryParamValue:function(v){var u=K.location.search||K.location.hash;if(v==null){return g(u)}if(u){var t=u.substring(1).split("&");for(var r=0;r<t.length;r++){if(t[r].substring(0,t[r].indexOf("="))==v){return g(t[r].substring((t[r].indexOf("=")+1)))}}}return""},expressInstallCallback:function(){if(A&&M){var q=C(m);if(q){q.parentNode.replaceChild(M,q);if(l){W(l,true);if(h.ie&&h.win){M.style.display="block"}}M=null;l=null;A=false}}}}}();
+        CBSi.namespace("io.JSXMLSocket");(function(){CBSi.io.JSXMLSocket=function(a){this.instanceName=a.instanceName;this.id=a.id;this.host=a.host;this.port=a.port;this.policyPort=a.policyPort;this.swf=a.swf||"/js-xmlsocket.swf";this.minFlashVersion=a.minFlashVersion?String(a.minFlashVersion):"9.0.0";this.log=a.log||function(){};this.reconnectWait=a.reconnectWait||[1,3,5,10];this.connectWait=a.connectWait||[1,3,5,10];this.maxReconnectAttempts=a.maxReconnectAttempts||12;this.reconnectAttempt=0;this.swfBgcolor=a.swfBgcolor||"#ffffff";this.haveConnected=false;this.isConnected=false;this.tryReconnect=true};CBSi.io.JSXMLSocket.prototype={initialize:function(){var b,g,f,a,d,e,c;if(swfobject.hasFlashPlayerVersion(this.minFlashVersion)){b=[this.swf,"?jsInstanceName=",this.instanceName,].join("");g={};f={allowscriptaccess:"true",swliveconnect:"true"};a={id:this.id,name:this.id,bgcolor:this.swfBgcolor};swfobject.embedSWF(b,this.id,"1","1","9.0.0",false,g,f,a)}else{d=swfobject.getFlashPlayerVersion();e=[d.major,d.minor,d.release];c=this.minFlashVersion.split(".");this.needFlashHandler(e,c)}},initialized:function(a){this.log("Flash movie initialized");this.systemInfo=a;this.movie=navigator.appName.indexOf("Microsoft")!=-1?window[this.id]:document[this.id];this.initHandler()},connect:function(){this.connectionAttemptHandler();if(!this.haveConnected){this.loadPolicyFile()}this.movie.connect(this.host,this.port)},disconnect:function(){this.movie.disconnect();this.isConnected=false},resetReconnectAttempts:function(){this.reconnectAttempt=0},determineReconnectWait:function(a){return a[this.reconnectAttempt-1]||a[this.reconnectWait.length-1]},reconnect:function(b){if(!this.tryReconnect){return}var c,a;this.reconnectAttempt++;if(!this.haveConnected){c=this.connectWait;a=this.connectWait.length;methodName="initialize"}else{if(this.haveConnected){c=this.reconnectWait;a=this.maxReconnectAttempts;methodName="connect"}}if(this.reconnectAttempt>a){this.connectionQuit()}else{this.setReconnectTimeout(methodName,c)}},setReconnectTimeout:function(a,c){var b=this.determineReconnectWait(c);this.log("Will attempt to reconnect in "+b+" seconds");setTimeout(this.instanceName+"."+a+"()",b*1000)},connectionQuit:function(){this.log("Not able to connect")},send:function(a){this.movie.send(a)},loadPolicyFile:function(a){this.movie.loadPolicyFile(a)},initHandler:function(){this.loadPolicyFile();this.connect()},exceptionHandler:function(a){setTimeout('throw("'+a+'");',1)},needFlashHandler:function(a,b){},connectionAttemptHandler:function(){},connectionFailedHandler:function(){},connectHandler:function(a){},closeHandler:function(a){},ioErrorHandler:function(a){},securityErrorHandler:function(a){},dataHandler:function(a){}}})();
+        CBSi.namespace("io.JSXMLSocket.JSON");(function(){CBSi.io.JSXMLSocket.JSON=function(a){CBSi.io.JSXMLSocket.JSON.superclass.constructor.call(this,a)};YAHOO.lang.extend(CBSi.io.JSXMLSocket.JSON,CBSi.io.JSXMLSocket,{loadPolicyFile:function(){if(this.policyPort){var a="xmlsocket://"+this.host+":"+this.policyPort;this.log("Loading policy file via "+a);this.movie.loadPolicyFile(a)}},initHandler:function(){this.connect()},connectionAttemptHandler:function(){this.log("Attempt #"+(this.reconnectAttempt+1)+" to connect to "+this.host+":"+this.port)},connectHandler:function(a){this.log("Connected to "+this.host+":"+this.port);this.haveConnected=true;this.resetReconnectAttempts();this.connected(a)},closeHandler:function(a){this.log("Lost connection to "+this.host+":"+this.port);this.reconnect()},ioErrorHandler:function(a){this.log("Connection Failed (Flash "+a.text+"): "+this.host+":"+this.port);this.connectionFailedHandler();this.reconnect()},securityErrorHandler:function(a){this.log("Connection Failed (Flash Security "+a.text+"): "+this.host+":"+this.port);this.connectionFailedHandler();this.reconnect()},dataHandler:function(d){var b=d.text,a;b=b.replace(/BSESCAPEBS/g,"\\");this.log("RECEIVED: "+b,2);try{a=YAHOO.lang.JSON.parse(b)}catch(c){this.log("Bad JSON: >"+b+"<");a={type:"error",payload:{status:600,message:"Invalid Message"}}}this.jsonEvent(a)},jsonEvent:function(b){this.log("XRAY: CBSi.io.JSXMLSocket.JSON.jsonEvent()");var c=b.type,d=b.event||b.subtype||"default",a;if(!c){this.eventError({type:"error",payload:{status:601,message:"Malformed Event: Missing event type"}})}else{if(!b.payload){this.eventError({type:"error",payload:{status:601,message:"Malformed Event: Missing event payload"}})}else{if(d&&this.events[c]&&this.events[c][d]){a=this.events[c][d]}else{if(this.events[c]){a=this.events[c]}}if(a){this[a](b)}else{this.eventError({type:"error",payload:{status:602,message:"Unknown Message Type: "+c}})}}}},sendRequest:function(b){var a;try{a=YAHOO.lang.JSON.stringify(b);this.log("SENDING: "+a,2);this.send(a)}catch(c){this.eventError({type:"error",payload:{status:603,message:"Cant stringify: "+c}})}},connected:function(a){}})})();
+        CBSi.namespace("io.JSXMLSocket.JSON.Chat");(function(){CBSi.io.JSXMLSocket.JSON.Chat=function(b){CBSi.io.JSXMLSocket.JSON.Chat.superclass.constructor.call(this,b);this.domain=b.domain;this.domainToken=b.domainToken;this.userAuth=b.userAuth;this.getLogs=b.getLogs;this.privateChatEpoch=b.privateChatEpoch||"";this.disableLogTracking=b.disableLogTracking||false;this.dupeLogin=false;this.events={auth:{reply:"eventAuthReply"},roster:{add:"eventRosterAdd",remove:"eventRosterRemove"},message:{"public":"eventMessagePublic",publicLog:"eventMessagePublicLog","private":"eventMessagePrivate",privateLog:"eventMessagePrivateLog"},error:{"default":"eventError"}}};YAHOO.lang.extend(CBSi.io.JSXMLSocket.JSON.Chat,CBSi.io.JSXMLSocket.JSON);var a=CBSi.io.JSXMLSocket.JSON.Chat.prototype;a.ready=function(){};a.connected=function(){this.haveConnected=true;this.isConnected=true;this.authenticate()};a.authenticate=function(){var b={domain:this.domain,queries:[]};if(this.getLogs==2||this.getLogs==4){b.queries.push({epochStart:"",epochEnd:"","private":"0",alias:"public"})}b.queries.push({from:this.userAuth.auth.id+"@"+this.domain,alias:"private"});if(this.getLogs!=1){this.userAuth.direc=[this._buildLogRequest(b)]}this.send(this.domainToken);this.sendRequest({type:"auth",event:"request",to:this.domain,payload:this.userAuth})};a.msg=function(e,b){var c,d={type:"message",event:"public",to:this.domain,payload:{body:e,attrib:b}};this.sendRequest(d);if(!this.disableLogTracking){d.from=this.userAuth.auth.id+"@"+this.domain;d.userAuth=this.userAuth;c=escape(YAHOO.lang.JSON.stringify(d));YAHOO.util.Connect.asyncRequest("POST","/data/chat/store-message?client_type="+this.userAuth.clientType,{success:function(g){var f=YAHOO.lang.JSON.parse(g.responseText);if(typeof(f)=="object"&&f.hasOwnProperty("disableLogTracking")){this.disableLogTracking=f.disableLogTracking}},failure:function(f){},scope:this},"chat_domain="+this.domain+"&chat_msg="+c)}};a.keepalive=function(){this.log("Sending keepalive");this.sendRequest({type:"keepalive"})};a.privMsg=function(d,c,b){this.sendRequest({type:"message",event:"private",to:d+"@"+this.domain,payload:{body:c,attrib:b}})};a.publicLogs=function(b,c){this.sendRequest(this._buildLogRequest({domains:[{domain:this.domain,epochRange:this._generateEpochRange(b,c),alias:"public"}]}))};a.privateLogs=function(d,b,c){this.sendRequest(this._buildLogRequest({domains:[{domain:this.domain+"."+d,epochRange:this._generateEpochRange(b,c),alias:"private"}]}))};a.eventAuthReply=function(b){if(b.payload.status>=300){this.log("Authentication Failed");this.tryReconnect=false;this.authFailedHandler(b)}else{this.log("Authentication Success");this.resetReconnectAttempts();this.privateChatEpoch="";this.ready(b)}};a.eventMessagePublic=function(b){this.log("Recieved Public Msg: "+b.payload.body)};a.eventMessagePrivate=function(b){var c=b.from.split("@")[0];this.log("Recieved Private Msg from "+c+": "+b.payload.body)};a.eventRosterAdd=function(b){this.log("eventRosterAdd: "+b)};a.eventRosterRemove=function(b){this.log("eventRosterRemove: "+b)};a.eventError=function(b){this.log("eventError: "+b)};a._buildLogRequest=function(c){var d,b,f,e={type:"log",event:"request",to:c.domain,payload:{queries:{}}};for(d=0,b=c.queries.length;d<b;d++){query=c.queries[d];f=[];if(query.domain){f.push("domain","eq",query.domain)}if(query.epochStart){f.push("timestamp",">",query.epochStart)}if(query.epochEnd){f.push("timestamp","<",query.epochEnd)}if(query.to){f.push("to","eq",query.to)}if(query.from){f.push("from","eq",query.from)}if(query["private"]){f.push("private","eq",query["private"])}e.payload.queries[query.alias]=f}return e};a._generateEpochRange=function(b,d){var c=(b)?b:"";if(d){if(!c){c="0"}c+=".."+d}return c}})();
+
+        CBSi.namespace("io.JSXMLSocketWS"),CBSi.io.JSXMLSocketWS=function(t){this.instanceName=t.instanceName,this.id=t.id,this.host=t.host,this.hosts=t.hosts,this.port=t.port,this.policyPort=t.policyPort,this.log=t.log||function(){},this.reconnectWait=t.reconnectWait||[1,3,5,10],this.connectWait=t.connectWait||[1,3,5,10],this.maxReconnectAttempts=t.maxReconnectAttempts||12,this.reconnectAttempt=0,this.reconnectHostUpdate=0,this.haveConnected=!1,this.isConnected=!1,this.tryReconnect=!0,this.usingWebSocket=!1,this.tryWebsocket=t.tryWebsocket||!0,this.tryPolling=t.tryPolling||!0,this.log("XRAY: CBSi.io.JSXMLSocketWS.new()")},CBSi.io.JSXMLSocketWS.prototype={initialize:function(){var t;this.log("XRAY: CBSi.io.JSXMLSocketWS.initialize()");this.tryWebsocket&&"false"!=this.tryWebsocket&&"WebSocket"in window&&(this.usingWebSocket=!0,this.host=this.hosts[this.reconnectAttempt%this.hosts.length],t="wss",this.port&&this.port.startsWith("80")&&(t="ws"),this.log("Creating new WebSocket "+t+"://"+this.host+":"+this.port),this.movie=new WebSocket(t+"://"+this.host+":"+this.port),(this.movie.parentobj=this).movie.onopen=function(){this.parentobj.connectHandler()},this.movie.onclose=function(){this.parentobj.closeHandler()},this.movie.onerror=function(t){this.parentobj.log("WebSocket ERROR name="+t.name+", msg="+t.message)},this.movie.onmessage=function(t){t={text:t.data};this.parentobj.dataHandler(t)})},initialized:function(t){this.log("XRAY: CBSi.io.JSXMLSocketWS.initialized()"),this.usingWebSocket&&this.log("WebSocket initialized"),this.systemInfo=t,this.usingWebSocket||(this.movie=(-1!=navigator.appName.indexOf("Microsoft")?window:document)[this.id]),this.initHandler()},connect:function(){this.log("Connecting "),this.connectionAttemptHandler(),this.haveConnected||this.loadPolicyFile(),this.usingWebSocket&&(this.log("Connecting with WebSocket"),this.haveConnected=!0)},disconnect:function(){this.usingWebSocket?this.movie.close():this.movie.disconnect(),this.isConnected=!1},resetReconnectAttempts:function(){this.reconnectAttempt=0},determineReconnectWait:function(t){return t[this.reconnectAttempt-1]||t[this.reconnectWait.length-1]},reconnect:function(t){var e,i;this.tryReconnect&&(this.reconnectAttempt++,methodName=(i=this.haveConnected?(this.haveConnected,e=this.reconnectWait,this.maxReconnectAttempts):(e=this.connectWait,this.connectWait.length),"initialize"),this.reconnectAttempt>i?this.connectionQuit():this.setReconnectTimeout(methodName,e))},setReconnectTimeout:function(t,e){e=this.determineReconnectWait(e);60<this.reconnectHostUpdate&&this.port.match(/host/)&&(this.updateHostAndPort(),e=3),this.reconnectHostUpdate+=e,this.log("Will attempt to reconnect in "+e+" seconds"),setTimeout(this.instanceName+"."+t+"()",1e3*e)},updateHostAndPort:function(){this.log("Requesting new host");var t={success:this.setNewHostPort,failure:this.errorGettingNewHostPort,scope:this};YAHOO.util.Connect.asyncRequest("POST","/Team B/base/get-server-host",t,""),this.reconnectHostUpdate=0},setNewHostPort:function(t){t=t.responseText.split("|");this.host=t[0],this.port=t[1],this.log("Requesting new host="+this.host+", port="+this.port)},errorGettingNewHostPort:function(){this.log("Not able to connect with Ajax")},connectionQuit:function(){this.log("Not able to connect")},send:function(t){this.usingWebSocket,this.movie.send(t)},sendSocket:function(t){this.usingWebSocket,this.movie.send(t)},loadPolicyFile:function(t){this.usingWebSocket||this.movie.loadPolicyFile(t)},initHandler:function(){this.loadPolicyFile(),this.connect()},exceptionHandler:function(t){setTimeout('throw("'+t+'");',1)},connectionAttemptHandler:function(){},connectionFailedHandler:function(){},connectHandler:function(t){},closeHandler:function(t){},ioErrorHandler:function(t){},securityErrorHandler:function(t){},dataHandler:function(t){}};
+        CBSi.namespace("io.JSXMLSocket.JSONWS");(function(){CBSi.io.JSXMLSocket.JSONWS=function(a){CBSi.io.JSXMLSocket.JSONWS.superclass.constructor.call(this,a);this.log("XRAY: CBSi.io.JSXMLSocket.JSONWS.new()")};YAHOO.lang.extend(CBSi.io.JSXMLSocket.JSONWS,CBSi.io.JSXMLSocketWS,{loadPolicyFile:function(){if(this.policyPort){var a="xmlsocket://"+this.host+":"+this.policyPort;this.log("Loading policy file via "+a);this.movie.loadPolicyFile(a)}},initHandler:function(){this.connect()},connectionAttemptHandler:function(){this.log("Attempt #"+(this.reconnectAttempt+1)+" to connect to "+this.host+":"+this.port)},connectHandler:function(a){this.log("Connected to "+this.host+":"+this.port);this.haveConnected=true;this.resetReconnectAttempts();this.connected(a)},closeHandler:function(a){this.log("Lost connection to "+this.host+":"+this.port);this.reconnect()},ioErrorHandler:function(a){this.log("Connection Failed (Flash "+a.text+"): "+this.host+":"+this.port);this.connectionFailedHandler();this.reconnect()},securityErrorHandler:function(a){this.log("Connection Failed (Flash Security "+a.text+"): "+this.host+":"+this.port);this.connectionFailedHandler();this.reconnect()},dataHandler:function(d){var b=d.text,a;b=b.replace(/BSESCAPEBS/g,"\\");this.log("RECEIVED: "+b,2);try{a=YAHOO.lang.JSON.parse(b.replace(/[\s\0]/g," "))}catch(c){this.log("Bad JSON msg="+c.message+": >"+b+"<");a={type:"error",payload:{status:600,message:"Invalid Message"}}}this.jsonEvent(a)},jsonEvent:function(b){this.log("XRAY: CBSi.io.JSXMLSocket.JSONWS.jsonEvent()");var c=b.type,d=b.event||b.subtype||"default",a;if(!c){this.eventError({type:"error",payload:{status:601,message:"Malformed Event: Missing event type"}})}else{if(!b.payload){this.eventError({type:"error",payload:{status:601,message:"Malformed Event: Missing event payload"}})}else{if(d&&this.events[c]&&this.events[c][d]){a=this.events[c][d]}else{if(this.events[c]){a=this.events[c]}}this.log("XRAY: CBSi.io.JSXMLSocket.JSONWS.jsonEvent()  type="+c);this.log("XRAY: CBSi.io.JSXMLSocket.JSONWS.jsonEvent()  event="+d);if(a){this[a](b)}else{this.eventError({type:"error",payload:{status:602,message:"Unknown Message Type: "+c}})}}}},sendRequest:function(b){var a;try{a=YAHOO.lang.JSON.stringify(b);this.log("SENDING: "+a,2);this.send(a)}catch(c){this.eventError({type:"error",payload:{status:603,message:"Cant stringify: "+c}})}},connected:function(a){}})})();
+        CBSi.namespace("io.JSXMLSocketWSChat"),CBSi.io.JSXMLSocketWSChat=function(t){this.instanceName=t.instanceName,this.id=t.id,this.host=t.host,this.hosts=t.hosts,this.rotateHosts=t.rotateHosts,this.port=t.port,this.policyPort=t.policyPort,this.log=t.log||function(){},this.reconnectWait=t.reconnectWait||[1,3,5,10],this.connectWait=t.connectWait||[1,3,5,10],this.maxReconnectAttempts=t.maxReconnectAttempts||12,this.reconnectAttempt=0,this.haveConnected=!1,this.isConnected=!1,this.tryReconnect=!0,this.usingWebSocket=!1,this.tryWebsocket=t.tryWebsocket||!0,this.tryPolling=t.tryPolling||!0,this.log("XRAY: CBSi.io.JSXMLSocketWSChat.new()")},CBSi.io.JSXMLSocketWSChat.prototype={initialize:function(){var t;this.log("XRAY: CBSi.io.JSXMLSocketWSChat.initialize()");t=1==this.rotateHosts?(t=this.hosts.split(","))[this.reconnectAttempt%t.length]:this.host,this.reconnectAttempt++,this.tryWebsocket&&"false"!=this.tryWebsocket&&"WebSocket"in window&&(this.usingWebSocket=!0,this.log("Creating new WebSocket wss://"+t+":"+this.port),this.movie=new WebSocket("wss://"+t+":"+this.port),(this.movie.parentobj=this).movie.onopen=function(){this.parentobj.connectHandler()},this.movie.onclose=function(){this.parentobj.closeHandler()},this.movie.onerror=function(t){this.parentobj.log("WebSocket ERROR name="+t.name+", msg="+t.message)},this.movie.onmessage=function(t){t={text:t.data};this.parentobj.dataHandler(t)})},initialized:function(t){this.log("XRAY: CBSi.io.JSXMLSocketWSChat.initialized()"),this.usingWebSocket&&this.log("WebSocket initialized"),this.systemInfo=t,this.usingWebSocket||(this.movie=(-1!=navigator.appName.indexOf("Microsoft")?window:document)[this.id]),this.initHandler()},connect:function(){this.log("Connecting "),this.connectionAttemptHandler(),this.haveConnected||this.loadPolicyFile(),this.usingWebSocket&&(this.log("Connecting with WebSocket"),this.haveConnected=!0)},disconnect:function(){this.usingWebSocket?this.movie.close():this.movie.disconnect(),this.isConnected=!1},resetReconnectAttempts:function(){this.reconnectAttempt=0},determineReconnectWait:function(t){return t[this.reconnectAttempt-1]||t[this.reconnectWait.length-1]},reconnect:function(t){var e,i;this.tryReconnect&&(this.reconnectAttempt++,this.haveConnected?this.haveConnected&&(e=this.reconnectWait,i=this.maxReconnectAttempts,methodName="initialize"):(e=this.connectWait,i=this.connectWait.length,methodName="initialize"),this.reconnectAttempt>i?this.connectionQuit():this.setReconnectTimeout(methodName,e))},setReconnectTimeout:function(t,e){e=this.determineReconnectWait(e);this.log("Will attempt to reconnect in "+e+" seconds"),setTimeout(this.instanceName+"."+t+"()",1e3*e)},connectionQuit:function(){this.log("Not able to connect")},send:function(t){this.usingWebSocket,this.movie.send(t)},sendSocket:function(t){this.usingWebSocket,this.movie.send(t)},loadPolicyFile:function(t){this.usingWebSocket||this.movie.loadPolicyFile(t)},initHandler:function(){this.loadPolicyFile(),this.connect()},exceptionHandler:function(t){setTimeout('throw("'+t+'");',1)},connectionAttemptHandler:function(){},connectionFailedHandler:function(){},connectHandler:function(t){},closeHandler:function(t){},ioErrorHandler:function(t){},securityErrorHandler:function(t){},dataHandler:function(t){}};
+        CBSi.namespace("io.JSXMLSocket.JSONWSChat");(function(){CBSi.io.JSXMLSocket.JSONWSChat=function(a){CBSi.io.JSXMLSocket.JSONWSChat.superclass.constructor.call(this,a);this.log("XRAY: CBSi.io.JSXMLSocket.JSONWSChat.new()")};YAHOO.lang.extend(CBSi.io.JSXMLSocket.JSONWSChat,CBSi.io.JSXMLSocketWSChat,{loadPolicyFile:function(){if(this.policyPort){var a="xmlsocket://"+this.host+":"+this.policyPort;this.log("Loading policy file via "+a);this.movie.loadPolicyFile(a)}},initHandler:function(){this.connect()},connectionAttemptHandler:function(){this.log("Attempt #"+(this.reconnectAttempt+1)+" to connect to "+this.host+":"+this.port)},connectHandler:function(a){this.log("Connected to "+this.host+":"+this.port);this.haveConnected=true;this.resetReconnectAttempts();this.connected(a)},closeHandler:function(a){this.log("Lost connection to "+this.host+":"+this.port);this.reconnect()},ioErrorHandler:function(a){this.log("Connection Failed (Flash "+a.text+"): "+this.host+":"+this.port);this.connectionFailedHandler();this.reconnect()},securityErrorHandler:function(a){this.log("Connection Failed (Flash Security "+a.text+"): "+this.host+":"+this.port);this.connectionFailedHandler();this.reconnect()},dataHandler:function(d){var b=d.text,a;b=b.replace(/BSESCAPEBS/g,"\\");this.log("RECEIVED: "+b,2);try{a=YAHOO.lang.JSON.parse(b.replace(/[\s\0]/g," "))}catch(c){this.log("Bad JSON msg="+c.message+": >"+b+"<");a={type:"error",payload:{status:600,message:"Invalid Message"}}}this.jsonEvent(a)},jsonEvent:function(b){this.log("XRAY: CBSi.io.JSXMLSocket.JSONWSChat.jsonEvent()");var c=b.type,d=b.event||b.subtype||"default",a;if(!c){this.eventError({type:"error",payload:{status:601,message:"Malformed Event: Missing event type"}})}else{if(!b.payload){this.eventError({type:"error",payload:{status:601,message:"Malformed Event: Missing event payload"}})}else{if(d&&this.events[c]&&this.events[c][d]){a=this.events[c][d]}else{if(this.events[c]){a=this.events[c]}}this.log("XRAY: CBSi.io.JSXMLSocket.JSONWSChat.jsonEvent()  type="+c);this.log("XRAY: CBSi.io.JSXMLSocket.JSONWSChat.jsonEvent()  event="+d);if(a){this[a](b)}else{this.eventError({type:"error",payload:{status:602,message:"Unknown Message Type: "+c}})}}}},sendRequest:function(b){var a;try{a=YAHOO.lang.JSON.stringify(b);this.log("SENDING: "+a,2);this.send(a)}catch(c){this.eventError({type:"error",payload:{status:603,message:"Cant stringify: "+c}})}},connected:function(a){}})})();
+        CBSi.namespace("io.JSXMLSocket.JSON.ChatWS");(function(){CBSi.io.JSXMLSocket.JSON.ChatWS=function(b){CBSi.io.JSXMLSocket.JSON.ChatWS.superclass.constructor.call(this,b);this.log("XRAY: in constructor CBSi.io.JSXMLSocket.JSON.ChatWS");this.domain=b.domain;this.domainToken=b.domainToken;this.userAuth=b.userAuth;this.getLogs=b.getLogs;this.privateChatEpoch=b.privateChatEpoch||"";this.disableLogTracking=b.disableLogTracking||false;this.dupeLogin=false;this.events={auth:{reply:"eventAuthReply"},roster:{add:"eventRosterAdd",remove:"eventRosterRemove"},message:{"public":"eventMessagePublic",publicLog:"eventMessagePublicLog","private":"eventMessagePrivate",privateLog:"eventMessagePrivateLog"},error:{"default":"eventError"}}};YAHOO.lang.extend(CBSi.io.JSXMLSocket.JSON.ChatWS,CBSi.io.JSXMLSocket.JSONWSChat);var a=CBSi.io.JSXMLSocket.JSON.ChatWS.prototype;a.ready=function(){};a.connected=function(){this.haveConnected=true;this.isConnected=true;this.authenticate()};a.authenticate=function(){var b={domain:this.domain,queries:[]};if(this.getLogs==2||this.getLogs==4){b.queries.push({epochStart:"",epochEnd:"","private":"0",alias:"public"})}b.queries.push({from:this.userAuth.auth.id+"@"+this.domain,alias:"private"});if(this.getLogs!=1){this.userAuth.direc=[this._buildLogRequest(b)]}this.send(this.domainToken);this.sendRequest({type:"auth",event:"request",to:this.domain,payload:this.userAuth})};a.msg=function(e,b){var c,d={type:"message",event:"public",to:this.domain,payload:{body:e,attrib:b}};this.sendRequest(d);if(!this.disableLogTracking){d.from=this.userAuth.auth.id+"@"+this.domain;d.userAuth=this.userAuth;c=escape(YAHOO.lang.JSON.stringify(d));YAHOO.util.Connect.asyncRequest("POST","/data/chat/store-message?client_type="+this.userAuth.clientType,{success:function(g){var f=YAHOO.lang.JSON.parse(g.responseText);if(typeof(f)=="object"&&f.hasOwnProperty("disableLogTracking")){this.disableLogTracking=f.disableLogTracking}},failure:function(f){},scope:this},"chat_domain="+this.domain+"&chat_msg="+c)}};a.keepalive=function(){this.log("Sending keepalive");this.sendRequest({type:"keepalive"})};a.privMsg=function(d,c,b){this.sendRequest({type:"message",event:"private",to:d+"@"+this.domain,payload:{body:c,attrib:b}})};a.publicLogs=function(b,c){this.sendRequest(this._buildLogRequest({domains:[{domain:this.domain,epochRange:this._generateEpochRange(b,c),alias:"public"}]}))};a.privateLogs=function(d,b,c){this.sendRequest(this._buildLogRequest({domains:[{domain:this.domain+"."+d,epochRange:this._generateEpochRange(b,c),alias:"private"}]}))};a.eventAuthReply=function(b){if(b.payload.status>=300){this.log("Authentication Failed");this.tryReconnect=false;this.authFailedHandler(b)}else{this.log("Authentication Success");this.resetReconnectAttempts();this.privateChatEpoch="";this.ready(b)}};a.eventMessagePublic=function(b){this.log("Recieved Public Msg: "+b.payload.body)};a.eventMessagePrivate=function(b){var c=b.from.split("@")[0];this.log("Recieved Private Msg from "+c+": "+b.payload.body)};a.eventRosterAdd=function(b){this.log("eventRosterAdd: "+b)};a.eventRosterRemove=function(b){this.log("eventRosterRemove: "+b)};a.eventError=function(b){this.log("eventError: "+b)};a._buildLogRequest=function(c){var d,b,f,e={type:"log",event:"request",to:c.domain,payload:{queries:{}}};for(d=0,b=c.queries.length;d<b;d++){query=c.queries[d];f=[];if(query.domain){f.push("domain","eq",query.domain)}if(query.epochStart){f.push("timestamp",">",query.epochStart)}if(query.epochEnd){f.push("timestamp","<",query.epochEnd)}if(query.to){f.push("to","eq",query.to)}if(query.from){f.push("from","eq",query.from)}if(query["private"]){f.push("private","eq",query["private"])}e.payload.queries[query.alias]=f}return e};a._generateEpochRange=function(b,d){var c=(b)?b:"";if(d){if(!c){c="0"}c+=".."+d}return c}})();
+
+        var FantasyGlobalChatJson = {
+   "auth_request" : {
+      "event" : "request",
+      "type" : "auth",
+      "payload" : {
+         "attrib" : {
+            "alt_id" : "810697DE-17F5-11E4-8D39-FA25BD63EFAB",
+            "name" : "SCRUBBED",
+            "team" : {
+               "id" : "16",
+               "abbr" : "SCRUBBED",
+               "name" : "SCRUBBED",
+               "is_vacant" : 0,
+               "long_abbr" : "SCRUBBED",
+               "division" : "",
+               "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100",
+               "short_name" : "SCRUBBED"
+            }
+         },
+         "auth" : {
+            "id" : "SCRUBBED",
+            "domain" : "redacted-league.football.cbssports.com"
+         },
+         "censor_swears" : 0,
+         "enable_push_notifications" : 1,
+         "league_type" : "mgmt",
+         "token" : "REDACTED",
+         "direc" : [
+            {
+               "event" : "request",
+               "type" : "log",
+               "payload" : {
+                  "queries" : {
+                     "private" : [
+                        "to",
+                        "eq",
+                        "owner-x1@example.invalid"
+                     ],
+                     "public" : [
+                        "private",
+                        "eq",
+                        0
+                     ]
+                  }
+               },
+               "to" : "redacted-league.football.cbssports.com"
+            }
+         ],
+         "service_level" : "gold",
+         "clientType" : "mobile"
+      },
+      "to" : "redacted-league.football.cbssports.com"
+   },
+   "chat_thread_status" : {
+      "active_thread" : [],
+      "threads" : {
+         "natemole" : 1787610813,
+         "craigtr97" : 1787610813,
+         "nn031" : "1504381950",
+         "gsnow4awk7o9" : 1787610813,
+         "scnm" : 1787610813,
+         "37bfb64892f6" : 1787610813,
+         "nickbarney1" : "1510184856",
+         "5277102e6de1" : 1787610813,
+         "rynekey54" : 1787610813,
+         "1" : "1535211265",
+         "thekutch825" : "1414585248",
+         "_public" : 1787610813,
+         "vdk1278" : "1414585248",
+         "rowerace21" : "1414585248",
+         "bamyers77" : 1787610813,
+         "windsor211" : 1787610813,
+         "ghandi20" : 1787610813,
+         "jclem44" : 1787610813
+      }
+   },
+   "chat_data" : {
+      "debug" : 0,
+      "socket" : {
+         "id" : "SCRUBBED",
+         "overrideHost" : "chat.prod.fantasy.cbssports.cloud",
+         "domainToken" : "2497936997",
+         "port" : 443,
+         "websocket_port" : 443,
+         "host" : "chat.prod.fantasy.cbssports.cloud",
+         "disableLogTracking" : 0,
+         "getLogs" : 4,
+         "domain" : "redacted-league.football.cbssports.com",
+         "policyPort" : 443
+      },
+      "prefs" : {
+         "priv_sound" : 1,
+         "timestamp" : 1,
+         "pub_sound" : 1,
+         "notification_frequency" : 7,
+         "port" : 443,
+         "manual_connect_override" : 0,
+         "auto_connect" : 1,
+         "pub_notification" : 1,
+         "chat_open_notification" : 0,
+         "priv_notification" : 1
+      },
+      "roster" : {
+         "allUsers" : [
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "810697DE-17F5-11E4-8D39-FA25BD63EFAB",
+                  "team" : {
+                     "id" : "16",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               },
+               "logged_in_owner" : 1
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "BB3F55F6-F76A-11E1-BCE0-FE82695972FB",
+                  "team" : {
+                     "id" : "1",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "BB314966-F76A-11E1-BCE0-FE82695972FB",
+                  "team" : {
+                     "id" : "6",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "DB9263D0-6678-11E6-A6C4-C42AEA5312D4",
+                  "team" : {
+                     "id" : "17",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "BB29590E-F76A-11E1-BCE0-FE82695972FB",
+                  "team" : {
+                     "id" : "10",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/10-1678481189.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "DC3F5D22-E22C-11EA-8F8D-2A7F71C5CCA1",
+                  "team" : {
+                     "id" : "20",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://sports.cbsimg.net/images/fantasy/teams/t.png?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "2DF9C0A8-A8A0-11E8-BBD6-E9EF852A6028",
+                  "team" : {
+                     "id" : "19",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/19-1761516248.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "BB457328-F76A-11E1-BCE0-FE82695972FB",
+                  "team" : {
+                     "id" : "2",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/2-2816.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "BB5C16C8-F76A-11E1-BCE0-FE82695972FB",
+                  "team" : {
+                     "id" : "7",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://redacted-league.football.cbssports.com/team-logo?logo_type=logo%3Atext&captype=helmet&capcolor=blk&logo=panther.gif&minilogo=18wheel.gif&flipbg=&fgtype=&flipfg=&bgtype=&bgcolor=&letters=&text_color=aliceblue&text_position=bottom&button_type=flat&button_color=none&?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "BB0DDEEA-F76A-11E1-BCE0-FE82695972FB",
+                  "team" : {
+                     "id" : "3",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/3-92326.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "BB64A720-F76A-11E1-BCE0-FE82695972FB",
+                  "team" : {
+                     "id" : "12",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/12-205937.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            },
+            {
+               "attrib" : {
+                  "silenced" : 0,
+                  "alt_id" : "68555394-72D2-11E6-8475-21F2E95312D4",
+                  "team" : {
+                     "id" : "18",
+                     "abbr" : "SCRUBBED",
+                     "name" : "SCRUBBED",
+                     "is_vacant" : 0,
+                     "division" : "",
+                     "long_abbr" : "SCRUBBED",
+                     "short_name" : "SCRUBBED",
+                     "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/18-64589.jpg?width=100&height=100"
+                  },
+                  "name" : "SCRUBBED"
+               },
+               "auth" : {
+                  "id" : "SCRUBBED"
+               }
+            }
+         ]
+      },
+      "chatWindow" : {
+         "displayPopup" : 1,
+         "compList" : {
+            "ad" : 0,
+            "roster" : 1,
+            "menuBar" : 1,
+            "chatArea" : 1,
+            "connectionStatus" : 1,
+            "form" : 1,
+            "title" : 1
+         }
+      },
+      "userAuth" : {
+         "attrib" : {
+            "alt_id" : "810697DE-17F5-11E4-8D39-FA25BD63EFAB",
+            "team" : {
+               "id" : "16",
+               "abbr" : "SCRUBBED",
+               "name" : "SCRUBBED",
+               "is_vacant" : 0,
+               "division" : "",
+               "long_abbr" : "SCRUBBED",
+               "short_name" : "SCRUBBED",
+               "logo" : "https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&height=100"
+            },
+            "name" : "SCRUBBED",
+            "imageUrl" : null
+         },
+         "auth" : {
+            "id" : "SCRUBBED",
+            "domain" : "redacted-league.football.cbssports.com"
+         },
+         "token" : "REDACTED"
+      },
+      "soundfx" : {
+         "swf" : "/soundfx-chat.swf"
+      },
+      "disable" : 0
+   }
+}
+
+        FantasyGlobalChatJson.year = 2026;
+    
+    </script>
+<script>
+    $(function(){
+        var globalSearch = new PlayerSearch({
+            'access_token': 'REDACTED',
+            'appendTo': '#fantNavSearchBox',
+            'get_eligible_only': 0,
+            'league_id': 'redacted-league',
+            'navSearch': 'fantNavSearch', // ID of element used to hide/show search input.
+            'player_search_text': '',
+        });
+        globalSearch.render();
+    });
+</script>
+<section id="viewer-hints">
+<pre data-pattern="myTeamId">    var currentYear = 2026;
+        var myTeamId = 16;
+        $(function() {
+            myF</pre>
+<pre data-pattern="long_abbr">            &quot;name&quot; : &quot;SCRUBBED&quot;,
+            &quot;team&quot; : {
+               &quot;id&quot; : &quot;16&quot;,
+               &quot;abbr&quot; : &quot;SCRUBBED&quot;,
+               &quot;name&quot; : &quot;SCRUBBED&quot;,
+               &quot;is_vacant&quot; : 0,
+               &quot;long_abbr&quot; : &quot;SCRUBBED&quot;,
+               &quot;division&quot; : &quot;&quot;,
+               &quot;logo&quot; : &quot;https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&amp;height=100&quot;,
+               &quot;sho</pre>
+<pre data-pattern="long_abbr">       &quot;id&quot; : &quot;16&quot;,
+                     &quot;abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;is_vacant&quot; : 0,
+                     &quot;division&quot; : &quot;&quot;,
+                     &quot;long_abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;short_name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;logo&quot; : &quot;https://fantasy-media.cbssports.com/football/redacted-league/team_logo/16-300655.jpg?width=100&amp;height=100&quot;
+</pre>
+<pre data-pattern="long_abbr">            &quot;id&quot; : &quot;1&quot;,
+                     &quot;abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;is_vacant&quot; : 0,
+                     &quot;division&quot; : &quot;&quot;,
+                     &quot;long_abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;short_name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;logo&quot; : &quot;https://fantasy-media.cbssports.com/football/redacted-league/team_logo/1-6115.jpg?width=100&amp;height=100&quot;
+   </pre>
+<pre data-pattern="long_abbr">          &quot;id&quot; : &quot;6&quot;,
+                     &quot;abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;is_vacant&quot; : 0,
+                     &quot;division&quot; : &quot;&quot;,
+                     &quot;long_abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;short_name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;logo&quot; : &quot;https://fantasy-media.cbssports.com/football/redacted-league/team_logo/6-103577.jpg?width=100&amp;height=100&quot;
+ </pre>
+<pre data-pattern="long_abbr">         &quot;id&quot; : &quot;17&quot;,
+                     &quot;abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;is_vacant&quot; : 0,
+                     &quot;division&quot; : &quot;&quot;,
+                     &quot;long_abbr&quot; : &quot;SCRUBBED&quot;,
+                     &quot;short_name&quot; : &quot;SCRUBBED&quot;,
+                     &quot;logo&quot; : &quot;https://fantasy-media.cbssports.com/football/redacted-league/team_logo/17-35601.jpg?width=100&amp;height=100&quot;
+  </pre>
+</section>
+</body>
+</html>
