@@ -23,6 +23,7 @@ import * as cbsExports from "../engine/platforms/cbs.js";
 import { IDS_URL, trimIds } from "../engine/sources/fantasypros.js";
 import { calibrationSection, sourcesChips } from "../panel/projections.js";
 import { PRO_TEAM, measureVolatility } from "../engine/league.js";
+import { buildDistribution } from "../engine/distribution.js";
 import { BENCH_SLOTS } from "../engine/lineup.js";
 
 let checks = 0, failures = 0;
@@ -712,6 +713,101 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "sigma is the sample standard deviation of those residuals");
   ok(measureVolatility(ps, REF.seasonId).measured === 0,
      "the current season, projections without actuals, measures nothing: the season filter and the null check both hold");
+}
+
+/* volatility fallback (D-15): a platform that publishes actuals but no prior-season
+   projections still gets a measured sigma, shrunk harder, and says which it is.
+
+   The recorded CBS league does keep prior-season projections (11-01 overturned the
+   assumption D-15 was written on), but the adapter builds every history row with
+   `proj: null` because the route it reads publishes points only. So this branch is
+   the CBS path in practice, and the histories below are synthetic either way. */
+{
+  const N0 = 10;
+  const sdOf = (res) => {
+    const m = res.reduce((a, b) => a + b, 0) / res.length;
+    return Math.sqrt(res.reduce((a, b) => a + (b - m) ** 2, 0) / (res.length - 1));
+  };
+  // Eight prior-season weeks, one of them a zero. Without a projection beside it a
+  // zero cannot be told from a bye, so the fallback measures the other seven.
+  const ACT = [12, 8, 14, 6, 11, 9, 20, 0];
+  const hist = (proj) => ACT.map((a, k) => ({ season: 2025, week: k + 1, actual: a, proj }));
+  const mkP = (id, pos, history) => ({ id, pos, history, proj: { 1: 10, 2: 12 } });
+
+  const played = ACT.filter((a) => a > 0);
+  const ownMean = played.reduce((a, b) => a + b, 0) / played.length;
+  const fbRes = played.map((a) => a - ownMean);
+  const fbSd = sdOf(fbRes);
+
+  // 1. actuals only, on its own
+  const a = measureVolatility([mkP(1, "WR", hist(null))], 2025);
+  ok(a.mode === "actuals-only" && a.counts.projection === 0 && a.counts.actualsOnly === 1,
+     "a prior season of actuals with no projections reports mode actuals-only and counts it");
+  const r1 = a.residuals.get(1) ?? [];
+  ok(r1.length === 7 && Math.abs(r1.reduce((x, y) => x + y, 0)) < 1e-9,
+     "seven residuals around his own prior-season mean, summing to zero");
+  ok(!r1.some((r) => Math.abs(r - (0 - ownMean)) < 1e-9),
+     "the zero week is left out: with no projection beside it a zero cannot be told from a bye");
+  ok(a.measured === 1 && a.bySigma.has(1), "he clears minWeeks, so he has a sigma and is measured");
+  ok(Math.abs(a.bySigma.get(1) - (7 * fbSd + N0 * a.byPos.get("WR")) / (7 + N0)) < 1e-9,
+     "his sigma is (n*sd + 10*prior)/(n + 10) - shrunk toward the positional prior");
+  ok(Math.abs(a.byPos.get("WR") - fbSd) < 1e-9 && Math.abs(a.global - fbSd) < 1e-9,
+     "the positional median and the global are the raw measurements, not the shrunk ones");
+
+  // 2. the same weeks with projections: the original branch, untouched
+  const b = measureVolatility([mkP(1, "WR", hist(10))], 2025);
+  const projRes = ACT.map((x) => x - 10);
+  ok(b.mode === "projection-residuals" && b.counts.projection === 1 && b.counts.actualsOnly === 0,
+     "the same weeks with projections take the original branch and report it");
+  ok(same([...(b.residuals.get(1) ?? [])].sort((x, y) => x - y), [...projRes].sort((x, y) => x - y)),
+     "its residuals are still actual minus projection, all eight weeks");
+  ok(Math.abs(b.bySigma.get(1) - sdOf(projRes)) < 1e-9,
+     "and its sigma is the unshrunk sample standard deviation - the projection branch shrinks nothing");
+
+  // 3. one of each, sharing a position
+  const wideAct = [30, 4, 28, 2, 26, 6, 24, 8];
+  const wide = { id: 2, pos: "WR", proj: { 1: 10, 2: 12 },
+    history: wideAct.map((x, k) => ({ season: 2025, week: k + 1, actual: x, proj: 10 })) };
+  const wideSd = sdOf(wideAct.map((x) => x - 10));
+  const m = measureVolatility([mkP(1, "WR", hist(null)), wide], 2025);
+  ok(m.mode === "projection-residuals" && m.counts.projection === 1 && m.counts.actualsOnly === 1,
+     "a mixed set counts both branches and reports the projection mode: one measured player is enough");
+  ok(Math.abs(m.byPos.get("WR") - wideSd) < 1e-9,
+     "the shared positional prior is the projection player's own sigma");
+  ok(Math.abs(m.bySigma.get(1) - (7 * fbSd + N0 * wideSd) / (7 + N0)) < 1e-9
+     && m.bySigma.get(1) > fbSd + 1e-9,
+     "the actuals-only player is pulled off his own measurement toward that prior");
+  ok(Math.abs(m.bySigma.get(2) - wideSd) < 1e-9,
+     "the projection player beside him is untouched");
+
+  // 4. no history at all: the panel's assumed +/-25 path
+  const none = measureVolatility([{ id: 1, pos: "WR", proj: {}, history: [] }], 2025);
+  ok(none.mode === "none" && none.measured === 0
+     && none.counts.projection === 0 && none.counts.actualsOnly === 0,
+     "no prior-season history at all is mode none, measured 0");
+
+  // 5. the fallback result still feeds buildDistribution
+  const dist = buildDistribution(a, new Map([[1, mkP(1, "WR", hist(null))]]));
+  const q = dist.of.get(1);
+  ok(q && [q.p10, q.p50, q.p90].every(Number.isFinite) && q.p10 < q.p90 && q.n === 7,
+     "buildDistribution turns the fallback residuals into finite, ordered quantiles");
+  ok(Number.isFinite(dist.cvOf.get(1)) && dist.cvOf.get(1) > 0,
+     "and into a finite coefficient of variation");
+}
+
+/* the panel says which volatility it measured, and on which platform (D-15) */
+{
+  const PANEL = fs.readFileSync(path.join(here, "..", "panel.js"), "utf8");
+  ok(/vol\.mode === "actuals-only"/.test(PANEL),
+     "the volatility step branches on vol.mode");
+  ok(/keeps no prior-season projections/.test(PANEL)
+     && /shrunk toward the positional prior/.test(PANEL),
+     "and names the degradation: no prior-season projections, so the sigmas are shrunk");
+  const line = PANEL.split("\n").find((l) => /keeps no prior-season projections/.test(l));
+  ok(/\$\{platform\.label\}/.test(line ?? ""),
+     "the fallback line names the platform rather than saying ESPN or nothing");
+  ok(/have prior-season history on \$\{platform\.label\}/.test(PANEL),
+     "the assumed +/-25 line names the platform too");
 }
 
 /* storage keys (D-08): five segments, a one-time migration, adopt-on-first-sight */
