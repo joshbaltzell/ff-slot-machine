@@ -9,9 +9,9 @@
  * actually awarded, and only something running here each week has both.
  *
  * So each run appends one row per player for the current week — every source's
- * number and the aggregate — and each later run joins ESPN's own actuals to the
- * weeks that have since been played. Once six weeks carry actuals the fitted slopes
- * replace the constants.
+ * number and the aggregate — and each later run joins the platform's own actuals,
+ * read from each player's `history` rows, to the weeks that have since been played.
+ * Once six weeks carry actuals the fitted slopes replace the constants.
  *
  * This is the only league-specific model in the extension, and it lives entirely in
  * `chrome.storage.local` under `ffsm.calib.{leagueId}.{seasonId}`. It is never sent
@@ -58,13 +58,15 @@ export const weeksWithActuals = (log) => Object.values(log?.weeks ?? {})
   .filter((e) => (e.rows ?? []).some((r) => Number.isFinite(r.actual))).length;
 
 /**
- * Fill `actual` on every logged row from ESPN's own weekly scores.
+ * Fill `actual` on every logged row from the platform's own weekly scores.
  *
- * `statSourceId: 0` is the actual, `1` is the projection, and ESPN returns the prior
- * season's rows for the same scoring period in the same payload — so `seasonId` is
- * part of the match, not an optional extra. Matching without it reads last season.
+ * Each player's `history` rows are `{season, week, actual, proj}`, built by the
+ * platform adapter, and every row keeps its season for the same reason the old
+ * match did: a platform can return the prior season's row for the same week in the
+ * same payload — so `season` is part of the match, not an optional extra. Matching
+ * without it reads last season. The actual is rounded to cents here, on read.
  *
- * @param players Map<id, {rawStats}> or an iterable of player records
+ * @param players Map<id, {history}> or an iterable of player records
  * @returns {{log, filled}} — mutates the rows in `log`
  */
 export function attachActuals(log, players, seasonId) {
@@ -78,12 +80,8 @@ export function attachActuals(log, players, seasonId) {
       if (Number.isFinite(r.actual)) { filled++; continue; }
       const p = byId.get(r.id);
       if (!p) continue;
-      const st = (p.rawStats ?? []).find((x) => x.statSourceId === 0 && x.statSplitTypeId === 1
-        && x.seasonId === seasonId && x.scoringPeriodId === w);
-      if (st && Number.isFinite(st.appliedTotal)) {
-        r.actual = Math.round(st.appliedTotal * 100) / 100;
-        filled++;
-      }
+      const h = (p.history ?? []).find((x) => x.season === seasonId && x.week === w && Number.isFinite(x.actual));
+      if (h) { r.actual = Math.round(h.actual * 100) / 100; filled++; }
     }
   }
   return { log, filled };

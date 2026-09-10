@@ -52,11 +52,13 @@ export const PRO_TEAM = {
 /**
  * Per-player weekly volatility, measured from last season rather than assumed.
  *
- * ESPN returns the prior season's ACTUAL weekly scores (statSourceId 0) in the same
- * response as its projections (statSourceId 1), so the residual between them is a
- * real, league-scored measurement of how far a player lands from his projection.
+ * Each player carries `history: [{season, week, actual, proj}]`, built by the
+ * platform adapter from whatever the platform reports. Where a prior season carries
+ * both the projection and the points actually scored, the residual between them is
+ * a real, league-scored measurement of how far a player lands from his projection.
  * No external data source is needed, and none would be better: this one is already
- * scored under the league's own rules.
+ * scored under the league's own rules. Rows are filtered on `season` - the same
+ * scoring period exists in every season, and reading the wrong one measures low.
  *
  * Returns {bySigma: Map(playerId -> sigma), byPos: Map(pos -> sigma), global}.
  * Players without enough history fall back to their position, then to the global.
@@ -70,10 +72,10 @@ export function measureVolatility(players, priorSeason, minWeeks = 6) {
 
   for (const p of players) {
     const act = new Map(), prj = new Map();
-    for (const st of p.rawStats ?? []) {
-      if (st.statSplitTypeId !== 1 || st.seasonId !== priorSeason) continue;
-      if (st.statSourceId === 0) act.set(st.scoringPeriodId, st.appliedTotal);
-      else if (st.statSourceId === 1) prj.set(st.scoringPeriodId, st.appliedTotal);
+    for (const h of p.history ?? []) {
+      if (h.season !== priorSeason) continue;
+      if (h.actual != null) act.set(h.week, h.actual);
+      if (h.proj != null) prj.set(h.week, h.proj);
     }
     // Only weeks he was expected to play: a projection near zero means he was not
     // in the plan, and counting those measures roster churn rather than volatility.

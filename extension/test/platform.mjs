@@ -225,7 +225,7 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
        && same([...model.teams.get(id).roster].sort((a, b) => a - b), F.rosters[name])),
      "each team's roster equals the fixture roster set");
   ok(ps.every((p) => p.teamId != null && model.teams.get(p.teamId).roster.has(p.id)), "every player's teamId points at the team that rosters him");
-  ok(ps.every((p) => !("rawStats" in p) || Array.isArray(p.rawStats)), "rawStats, when present, is the stats array");
+  ok(ps.every((p) => Array.isArray(p.history)), "every player carries a history array");
   ok(same(model.notes, []), "the ESPN adapter emits no notes");
 }
 

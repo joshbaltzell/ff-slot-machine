@@ -227,6 +227,33 @@ export async function loadSchedule(ref, teamsById, opts = {}) {
 }
 
 /**
+ * A player's weekly history in the platform-neutral shape the engine reads:
+ * `[{ season, week, actual, proj }]`, one row per (season, week) ESPN reports,
+ * `actual` and `proj` `number|null`, in the order the rows were first seen.
+ *
+ * The builder rule is the two readers it replaced: keep only one-week splits
+ * (`statSplitTypeId === 1`), group by (seasonId, scoringPeriodId), and take
+ * `statSourceId 0` as the actual and `1` as the projection; any other source is
+ * ignored. Nothing is rounded here - `measureVolatility` always used the raw value
+ * and `attachActuals` rounds on read, and moving the rounding would move numbers.
+ * Every row keeps its season on purpose: ESPN returns last season's rows for the
+ * same scoring period alongside this season's, and a reader that keys on week
+ * alone measures ~15% low. Both readers filter on `season`.
+ */
+export function historyOf(stats) {
+  const by = new Map();
+  for (const st of stats ?? []) {
+    if (st.statSplitTypeId !== 1) continue;
+    const k = `${st.seasonId}:${st.scoringPeriodId}`;
+    const row = by.get(k) ?? { season: st.seasonId, week: st.scoringPeriodId, actual: null, proj: null };
+    if (st.statSourceId === 0) row.actual = st.appliedTotal;
+    else if (st.statSourceId === 1) row.proj = st.appliedTotal;
+    by.set(k, row);
+  }
+  return [...by.values()];
+}
+
+/**
  * The unrostered pool, scored under this league's own settings.
  *
  * One request, not one per week: a player's `stats` array already carries every
@@ -259,7 +286,7 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
       injuryStatus: p.injuryStatus ?? null,
       injured: p.injured === true,
       nfl: PRO_TEAM[p.proTeamId] ?? "?",
-      teamId: null, proj, rawStats: p.stats ?? [],
+      teamId: null, proj, history: historyOf(p.stats),
       owned: Math.round((p.ownership?.percentOwned ?? 0) * 10) / 10,
     });
   }
@@ -336,7 +363,7 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
           injuryStatus: p.injuryStatus ?? null,
           injured: p.injured === true,
           nfl: PRO_TEAM[p.proTeamId] ?? "?",
-          teamId: t.id, proj: {}, rawStats: p.stats ?? [],
+          teamId: t.id, proj: {}, history: historyOf(p.stats),
         };
         pl.teamId = t.id;
         if (p.injuryStatus != null) pl.injuryStatus = p.injuryStatus;

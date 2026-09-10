@@ -141,9 +141,9 @@ export async function runProjections({ model, ref, say = () => {}, progress = ()
         week: currentWeek, rows, now: opts.now ?? Date.now() });
 
       const log = await loadLog({ storage, leagueId: ref.leagueId, seasonId: ref.seasonId });
-      // Write the joined actuals back. ESPN's `rawStats` only carries a week for as
-      // long as it carries it; an actual visible this session and gone the next is
-      // lost for good unless it is persisted the moment it is seen.
+      // Write the joined actuals back. A player's `history` only carries a week for
+      // as long as the platform does; an actual visible this session and gone the
+      // next is lost for good unless it is persisted the moment it is seen.
       const { filled } = attachActuals(log, model.players, ref.seasonId);
       if (filled) await storage.set({ [logKey(ref.leagueId, ref.seasonId)]: log });
       out.weeksStored = weeksStored(log);
