@@ -15,7 +15,11 @@ import { fileURLToPath } from "url";
 import { PLATFORMS, byId, detect, hashRosters, leagueKey, migrateStorageKeys, nextLeagueRecord }
   from "../engine/platforms/index.js";
 import espn, { espnUrl, readSettings, historyOf } from "../engine/platforms/espn.js";
-import cbs, { cbsUrl, publicUrl, readSettings as cbsReadSettings } from "../engine/platforms/cbs.js";
+import cbs, { CBS_HOST_RE, cbsUrl, publicUrl, readSettings as cbsReadSettings } from "../engine/platforms/cbs.js";
+// The token table is read off the namespace rather than named: whether cbs.js exports
+// it at all is one of the things asserted below, and a missing named import is a
+// load-time SyntaxError that would take the other seven hundred assertions with it.
+import * as cbsExports from "../engine/platforms/cbs.js";
 import { IDS_URL, trimIds } from "../engine/sources/fantasypros.js";
 import { PRO_TEAM, measureVolatility } from "../engine/league.js";
 import { BENCH_SLOTS } from "../engine/lineup.js";
@@ -300,6 +304,46 @@ ok(same(PLATFORMS.map((p) => p.id), ["espn", "cbs"]), "PLATFORMS is [espn, cbs]"
 ok(same(byId("espn"), espn) && byId("nope") === null && byId(undefined) === null, "byId: espn resolves, unknown and missing are null");
 ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => manifest.host_permissions.includes(h)),
    "manifest host_permissions cover every adapter's hosts");
+
+/* the manifest surface and the content script (11-07)
+
+   The content script is not a module - Chrome has no `type: module` for one - so the
+   two patterns it needs are duplicated from cbs.js rather than imported. That is the
+   one sanctioned duplication in this codebase, and it is only safe while something
+   checks the copies still agree: these assertions read content.js as TEXT and require
+   the adapter's own regex sources to appear in it verbatim. Change either side and
+   this fails. */
+{
+  const CONTENT = fs.readFileSync(path.join(here, "..", "content.js"), "utf8");
+  const blocks = manifest.content_scripts ?? [];
+  const matches = blocks.flatMap((c) => c.matches ?? []);
+
+  ok(blocks.length === 2 && blocks.every((c) => same(c.js, ["content.js"]) && same(c.css, ["content.css"])
+       && c.run_at === "document_idle"),
+     "two content-script blocks, both the same script and stylesheet at document_idle");
+  ok(matches.includes("https://fantasy.espn.com/football/*") && matches.includes("https://*.football.cbssports.com/*"),
+     "manifest content_scripts cover both platforms' league pages");
+  ok(!matches.some((m) => /all_urls|www\.cbssports/.test(m)),
+     "no content script runs on the CBS lobby, and none on <all_urls>");
+  ok(!(manifest.host_permissions ?? []).some((h) => /all_urls/.test(h)),
+     "host_permissions names hosts, never <all_urls>");
+  ok(/ESPN/.test(manifest.description) && /CBS/.test(manifest.description),
+     "the store description names both platforms, not ESPN alone");
+
+  ok(CONTENT.includes(CBS_HOST_RE.source),
+     "content.js carries cbs.js's own host regex, character for character");
+  const TOKENS = cbsExports.TOKEN_PATTERNS;
+  const P1 = Array.isArray(TOKENS?.[0]) ? TOKENS[0][1] : null;
+  ok(P1 instanceof RegExp && CONTENT.includes(P1.source),
+     "content.js carries cbs.js's exported P1 token pattern, character for character");
+  ok(/ffsm\.token/.test(CONTENT) && /chrome\.runtime\.onMessage/.test(CONTENT),
+     "content.js answers the panel's ffsm.token hand-over");
+  ok(!/password|oauth/i.test(CONTENT),
+     "content.js names no password and no oauth route");
+  ok(/platform:\s*"cbs"/.test(CONTENT) && /platform:\s*"espn"/.test(CONTENT),
+     "content.js decides the platform itself and names both");
+  ok(!/ESPN/.test(CONTENT), "no user-visible ESPN literal is left in content.js");
+}
 
 /* espn reproduces the fixture */
 {
