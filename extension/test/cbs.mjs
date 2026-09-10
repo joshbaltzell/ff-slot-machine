@@ -1028,6 +1028,83 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
   ok(cookieRef.session.teamHint === HINT, "...remembered on the ref for the rest of the run");
 }
 
+/* degradation matrix: each feed removed on its own (HONEST-DEGRADATION) */
+// One row per feed COVERAGE.md lists. An optional feed costs exactly one note and
+// the league still loads; a required one fails loudly, and not as an auth error -
+// the panel shows the sign-in screen only for AUTH.
+{
+  const drop = (t, route, params = {}) => {
+    for (const s of SESSIONS) delete t[cbsUrl(REF, route, params, s)];
+    return t;
+  };
+  // A roster row with no bye week is the only thing that makes the adapter read the
+  // public player list at all, so the row that exercises it needs one.
+  const noBye = () => {
+    const e = structuredClone(env("rosters.json"));
+    delete e.body.rosters.teams[0].players[0].bye_week;
+    return e;
+  };
+  const withRosters = (t, rosters) => {
+    for (const s of SESSIONS) t[cbsUrl(REF, "league/rosters", { team_id: "all" }, s)] = rosters;
+    return t;
+  };
+
+  const OPTIONAL = [
+    ["scoring rules", () => drop(cbsTable(), "league/scoring/rules"), /^CBS: scoring rules unavailable/],
+    ["standings", () => cbsTable({ standings: false }), /^CBS: standings unavailable/],
+    ["weekly scoring", () => cbsTable({ history: null }), /^CBS: weekly scoring for this season is unavailable/],
+    ["prior-season scoring", () => cbsTable({ prior: null }), /^CBS: weekly scoring for 2025 is unavailable/],
+    ["the injuries feed", () => cbsTable({ injuries: false }), /^CBS: the injury feed is unavailable/],
+    ["the id crosswalk", () => cbsTable({ crosswalk: false }), /^CBS: id crosswalk unavailable/],
+    ["the public player list", () => withRosters(cbsTable(), noBye()), /^CBS: the player list is unavailable/],
+  ];
+  for (const [label, build, re] of OPTIONAL) {
+    const { model } = await load(build());
+    ok(model.players.size === ROSTER_IDS.length && model.teams.size === ROSTER_TEAMS.length
+       && model.weeks.length === WEEKS.length,
+       `${label}: the league still loads, with every player, team and week`);
+    ok(model.notes.filter((n) => re.test(n)).length === 1, `${label}: exactly one note names it`);
+    ok(model.notes.every((n) => n.startsWith("CBS: ")), `${label}: every note still names the platform`);
+    ok(model.notes.every((n) => !n.includes("TESTTOKEN") && !n.includes("redacted-league")),
+       `${label}: no note carries a token or the league's own slug`);
+  }
+  // The same public list, present: the bye it fills is the whole reason to read it.
+  const listed = withRosters(cbsTable(), noBye());
+  listed[publicUrl("players/list")] = file("public/players-list.json");
+  const { model: filled } = await load(listed);
+  ok(!filled.notes.some((n) => /player list is unavailable/.test(n)),
+     "a live player list raises no note");
+
+  const REQUIRED = [
+    ["league/rules", () => drop(cbsTable(), "league/rules")],
+    ["league/details", () => drop(cbsTable(), "league/details")],
+    ["league/rosters", () => drop(cbsTable(), "league/rosters", { team_id: "all" })],
+    ["a projections week", () => drop(cbsTable(), "league/stats",
+      { stats_type: "projections", period: "week1", player_status: "all" })],
+  ];
+  for (const [label, build] of REQUIRED) {
+    let err = null;
+    try { await load(build()); } catch (e) { err = e; }
+    ok(err instanceof Error, `${label} failing costs the run: there is no model without it`);
+    ok(err?.code !== "AUTH",
+       `...and it is not reported as an auth failure, so the panel shows the error rather than the sign-in screen`);
+  }
+
+  // A projections week that answers 200 with no rows at all (assumption A-11-06-1):
+  // zeros for that week and a note, not a throw and not a silent gap.
+  const empty = cbsTable();
+  for (const s of SESSIONS)
+    empty[cbsUrl(REF, "league/stats", { stats_type: "projections", period: "week3", player_status: "all" }, s)] =
+      { statusCode: 200, statusMessage: "OK", body: { league_stats: { players: [] } } };
+  const { model: hollow } = await load(empty);
+  ok(hollow.players.size === ROSTER_IDS.length, "a projections week with no rows still loads the league");
+  ok([...hollow.players.values()].every((p) => p.proj[3] === 0),
+     "...that week projects zero for everyone");
+  ok([...hollow.players.values()].some((p) => p.proj[1] > 0), "...and the other weeks are untouched");
+  ok(hollow.notes.filter((n) => /^CBS: the week 3 projection/.test(n)).length === 1,
+     "...and exactly one note says which week went quiet");
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("CBS OK");
