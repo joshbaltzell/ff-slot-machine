@@ -717,6 +717,45 @@ export function historyFromWeeklyScoring(body, season) {
   return out;
 }
 
+/* ---------- the season, and the schedule that states it ---------- */
+
+/* `league/schedules?period=all` is the only recorded route that carries a real date,
+ * and `loadLeague` has to read it early enough to stamp `history` with the right
+ * season. `loadSchedule` wants the same body a moment later, so the one already
+ * fetched is parked here, keyed on the ref exactly as a session is, and taken by the
+ * first reader. Consumed once: a second `loadSchedule` on the same ref fetches again,
+ * which is the safe direction. */
+const SCHEDULES = new WeakMap();
+
+/** `"9/9/26"` -> 2026. CBS writes M/D/YY; anything else reads null rather than guessing. */
+export function seasonFromPeriodStart(start) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/.exec(String(start ?? "").trim());
+  if (!m) return null;
+  const yy = Number(m[3]);
+  return yy < 100 ? 2000 + yy : yy;
+}
+
+/**
+ * The season the schedule states, from the first regular-season period's start date.
+ *
+ * A CBS league URL carries no season, so `content.js`, `panel.js`'s `refFromInput`
+ * and `parseLeagueUrl` all seed `seasonId` from the calendar year. The NFL fantasy
+ * season runs into January, so from 1 January that guess is a year high, and the
+ * cost is not cosmetic: the storage and calibration keys move to a season that has
+ * not started, orphaning a log the user has been accumulating, and `attachHistory`
+ * stamps rows with a season `measureVolatility(players, ref.seasonId - 1)` will not
+ * look for. Read it instead. Null when no period carries a parseable date.
+ */
+export function seasonFromSchedule(body) {
+  const periods = body?.schedule?.periods ?? [];
+  const regular = periods.filter((p) => /regular/i.test(String(p?.type ?? "")));
+  for (const p of (regular.length ? regular : periods)) {
+    const year = seasonFromPeriodStart(p?.start);
+    if (year != null) return year;
+  }
+  return null;
+}
+
 /* ---------- the loader ---------- */
 
 /**
@@ -743,6 +782,25 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   const settings = readSettings(rules, details, scoring, notes);
   const weeks = [...settings.regularSeasonWeeks, ...settings.playoffWeeks];
   const codes = configuredCodes(rules);
+
+  // The season, before anything is stamped with it. This has to happen ahead of
+  // attachHistory, and the body is parked for loadSchedule so the route is read once.
+  try {
+    const sched = await get(ref, "league/schedules", { period: "all" }, opts);
+    SCHEDULES.set(ref, sched);
+    const stated = seasonFromSchedule(sched);
+    const guessed = num(ref.seasonId);
+    if (stated == null) {
+      notes.push(`CBS: the schedule did not publish a season year - the season is taken from the calendar (${guessed})`);
+    } else if (guessed !== stated) {
+      notes.push(`CBS: the league page carries no season, so the calendar guessed ${guessed}; `
+                 + `the schedule's own dates say ${stated} - reading ${stated}`);
+      ref.seasonId = stated;
+    }
+  } catch (err) {
+    notes.push(`CBS: the schedule did not publish a season year (${err.message ?? err}) `
+               + `- the season is taken from the calendar (${num(ref.seasonId)})`);
+  }
 
   // Injury words are a public feed; a dead one leaves `pro_status` to speak.
   const injuries = await loadInjuries(opts);
@@ -1089,7 +1147,11 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
  */
 export async function loadSchedule(ref, teamsById, opts = {}) {
   await openSession(ref, opts);
-  const body = await get(ref, "league/schedules", { period: "all" }, opts);
+  // loadLeague reads this same route to settle the season; take that body if it is
+  // still going, so the panel's run asks for it once rather than twice.
+  let body = SCHEDULES.get(ref);
+  if (body) SCHEDULES.delete(ref);
+  else body = await get(ref, "league/schedules", { period: "all" }, opts);
   const byWeek = new Map();
   for (const period of body?.schedule?.periods ?? []) {
     const wk = num(period?.id);

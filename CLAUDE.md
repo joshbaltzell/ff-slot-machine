@@ -462,6 +462,21 @@ password endpoint `general/oauth/mobile/login` is never called and the string do
 appear in the extension. `acceptsToken` is what puts a paste field on the sign-in screen,
 so an adapter with no sanctioned token route never offers one.
 
+**A CBS league URL carries no season, so the season is read off the schedule rather
+than the wall clock.** All three entry points — `content.js`, `panel.js`'s
+`refFromInput` and `parseLeagueUrl` — seed `seasonId` from the calendar year, because
+there is nothing in the URL to read. The NFL fantasy season runs into January, so from
+1 January that guess is a year high, and the cost is not cosmetic: the storage and
+calibration keys move to a season that has not started, orphaning a log the user has
+been accumulating for months, and `attachHistory` stamps rows with a season
+`measureVolatility(players, ref.seasonId - 1)` never looks for, so volatility silently
+measures nothing in the weeks that matter most. `loadLeague` therefore reads
+`league/schedules?period=all` before it stamps anything, takes the year from the first
+regular-season period's `start` (`"9/9/26"`), reconciles it onto the ref and notes the
+disagreement. The body is parked for `loadSchedule`, so the route is still read once
+per run. A schedule that publishes no parseable date leaves the guess standing and says
+so — the reconciliation is a nicety and never costs the run.
+
 **CBS states a lineup as a per-position range under a cap, and the shared flex is where
 that does not fit. This is the most important CBS limitation in this file.** ESPN
 publishes fixed slot counts; CBS publishes a minimum and a maximum per position plus an

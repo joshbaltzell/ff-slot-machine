@@ -1098,6 +1098,45 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
      "WR-07: every free-agent note names the platform, like every other note");
 }
 
+/* WR-09: the season CBS's own schedule states, not the one the wall clock guesses */
+{
+  // A CBS league URL carries no season, so all three entry points (content.js,
+  // panel.js's refFromInput, cbs.parseLeagueUrl) seed seasonId from the calendar
+  // year. The NFL fantasy season runs into January, so from 1 January that guess is
+  // a year high: the storage and calibration keys move to a season that does not
+  // exist yet, orphaning the log, and measureVolatility looks for a prior season
+  // nothing is stamped with. league/schedules?period=all publishes real dates.
+  const january = async (season) => {
+    const f = countingFetch(cbsTable());
+    const ref = { ...REF, seasonId: season };
+    const model = await cbs.loadLeague(ref, () => {}, { fetchImpl: f, storage: mkStorage(), now: 0 });
+    return { ref, model, f };
+  };
+  const { ref: right, model: mRight, f: fRight } = await january(2026);
+  ok(right.seasonId === 2026 && !mRight.notes.some((n) => /season/.test(n) && /schedule/.test(n)),
+     "WR-09: a guess the schedule agrees with is left alone, and says nothing");
+  ok(fRight.calls.filter((u) => u.includes("league/schedules")).length === 1,
+     "...and the schedule is read once, not once here and once again for the matchups");
+
+  const { ref: wrong, model: mWrong, f: fWrong } = await january(2027);
+  ok(wrong.seasonId === 2026,
+     "WR-09: a run on 2 January reads 2026 off the schedule's own dates, not 2027 off the clock");
+  ok(mWrong.notes.some((n) => /^CBS: the league page carries no season/.test(n) && n.includes("2027") && n.includes("2026")),
+     "...and the note names both the guess and the reading");
+  ok(fWrong.calls.some((u) => u.includes("timeframe=2025")) && !fWrong.calls.some((u) => u.includes("timeframe=2026")),
+     "...so the prior season asked for is 2025, which is where the volatility history actually is");
+  ok([...mWrong.players.values()].every((p) => (p.history ?? []).every((h) => h.season === 2026 || h.season === 2025)),
+     "...and every history row is stamped with a season measureVolatility will look for");
+
+  // The reconciliation is a nicety and must never cost the run.
+  const noSched = cbsTable({ schedule: false });
+  const { model: mDead, ref: refDead } = await load(noSched, {}, { ...REF, seasonId: 2027 });
+  ok(refDead.seasonId === 2027 && mDead.players.size === ROSTER_IDS.length,
+     "WR-09: a dead schedule route leaves the guess standing and the league still loads");
+  ok(mDead.notes.some((n) => /^CBS: the schedule did not publish a season year/.test(n)),
+     "...and says the season is the calendar's guess rather than a reading");
+}
+
 /* schedule: real matchups, by week, keyed on the names the Engine keys on */
 {
   const { model } = await load(cbsTable());
