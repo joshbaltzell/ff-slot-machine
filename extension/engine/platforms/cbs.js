@@ -558,6 +558,18 @@ export function readSettings(rules, details, scoring, notes = []) {
   let playoffTeams = num(r.schedule?.num_playoff_teams?.value);
   if (playoffTeams == null) { playoffTeams = 6; notes.push("CBS: no playoff team count in the rules - assuming 6"); }
 
+  // One playoff period is one playoff round, because CBS publishes the period count and
+  // never says which weeks form a round. ESPN derives its rounds from the bracket
+  // instead, and the two readings can disagree: a two-week final, or a period the league
+  // spends on a consolation or third-place game, gives the simulation a deeper bracket
+  // than the league runs. The periods are still what is trusted - they are read, and the
+  // bracket size is the thing being inferred from - but a disagreement is named rather
+  // than assumed away.
+  const bracketRounds = Math.max(1, Math.ceil(Math.log2(Math.max(playoffTeams, 2))));
+  if (poCount !== bracketRounds)
+    notes.push(`CBS: ${poCount} playoff period(s) for a ${playoffTeams}-team bracket (${bracketRounds} rounds) - `
+               + "CBS does not publish which weeks form a round, so each period is modelled as one round");
+
   // A Yes/No field, not prose: read it, and only fall back when it is neither.
   const reseedRaw = keyOf(r.schedule?.reseed?.value);
   let playoffReseed;

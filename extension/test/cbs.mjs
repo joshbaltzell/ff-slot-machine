@@ -196,6 +196,31 @@ const REF = { platform: "cbs", leagueId: "redacted-league", seasonId: 2026 };
   ok(same(s.playoffWeeks, [15, 16, 17]) && same(s.playoffRoundWeeks, [[15], [16], [17]]) && s.playoffRounds === 3,
      "three playoff periods follow them, one round each");
   ok(s.playoffTeams === 7, "the playoff team count is read (7), not assumed");
+  // WR-05. One playoff period is modelled as one round, because CBS does not publish
+  // which weeks form a round. For a 7-team bracket that happens to be right - three
+  // rounds - so the recorded league raises nothing. A league whose periods and bracket
+  // disagree (a two-week final, a consolation week counted in) must say so.
+  ok(!notes.some((n) => /playoff period/.test(n)),
+     "a 7-team bracket over 3 playoff periods agrees with itself, so no round note is raised");
+  {
+    const mk = (teams, periods) => {
+      const nn = [];
+      const st = readSettings(
+        { rules: { roster: { positions: [{ abbr: "QB", min_active: 1, max_active: 1 }],
+                             statuses: [{ description: "Active Players", max: 1, min: 1 }] },
+                   schedule: { num_playoff_teams: { value: String(teams) } } } },
+        { league_details: { regular_season_periods: 14, playoff_periods: periods } }, null, nn);
+      return [st, nn];
+    };
+    const [s4, n4] = mk(4, 3);
+    ok(s4.playoffRounds === 3 && n4.some((n) => /3 playoff period\(s\) for a 4-team bracket \(2 rounds\)/.test(n)),
+       "WR-05: three periods for a four-team bracket keeps the periods and notes the disagreement");
+    ok(n4.some((n) => /does not publish which weeks form a round/.test(n)),
+       "...and the note says why the periods are trusted over the bracket");
+    const [, n8b] = mk(8, 3);
+    ok(!n8b.some((n) => /playoff period/.test(n)),
+       "WR-05: an eight-team bracket over three periods agrees, and says nothing");
+  }
   ok(s.playoffReseed === false, "reseed is read as No, not defaulted to true");
   ok(s.seedingTiebreak === "TOTAL_POINTS_SCORED" && notes.some((n) => /tiebreaker is published as prose/.test(n)),
      "the tiebreaker sentence is not parsed: the default is used and the note says so");
