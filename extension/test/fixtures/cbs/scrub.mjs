@@ -157,13 +157,110 @@ const bodiesOf = (bundle) => Object.entries(bundle.responses ?? {})
   .map(([key, r]) => [key, r.body]);
 
 /* ===================== scrub rules ===================== */
-/* RED: the rules are not written yet — collect nothing, replace nothing, check nothing. */
+
+/** Collect every secret in the bundle. Returns the replacement tables the scrubber and the check share. */
 function collect(bundle) {
-  return { slug: String(bundle.slug ?? ""), tokens: new Set(), league: null, teams: new Map(), abbrs: new Map(), owners: new Map() };
+  const c = { slug: String(bundle.slug ?? "").trim(), tokens: new Set(), league: null, teams: new Map(), abbrs: new Map(), owners: new Map() };
+  const addTeam = (v) => {
+    const s = String(v).trim();
+    if (!s || c.teams.has(s) || /^Team [A-Z]+$/.test(s) || /^\d+$/.test(s)) return;
+    c.teams.set(s, `Team ${letters(c.teams.size)}`);
+  };
+  const addAbbr = (v) => { const s = String(v).trim(); if (s && !c.abbrs.has(s)) c.abbrs.set(s, `TM${letters(c.abbrs.size)}`); };
+  const addOwner = (v) => {
+    const s = String(v).trim();
+    if (!s || /^\d+$/.test(s) || c.owners.has(s) || c.teams.has(s) || SKIP_WORDS.test(s)) return;
+    const n = c.owners.size + 1;
+    c.owners.set(s, s.includes("@") ? `owner-${n}@example.invalid` : `Owner ${n}`);
+  };
+  // 1. tokens: every P1-P3 match in every string of the bundle, plus their URL-encoded forms
+  const bad = /^(REDACTED|null|undefined|true|false|token|access_token)$/i;
+  mapStrings(bundle, (s) => {
+    for (const [, src] of TOKEN_PATTERNS) for (const m of s.matchAll(re(src))) {
+      const t = m[1];
+      if (t.length >= 12 && !bad.test(t)) {
+        c.tokens.add(t);
+        const enc = encodeURIComponent(t); if (enc !== t) c.tokens.add(enc);
+        try { const dec = decodeURIComponent(t); if (dec !== t && dec.length >= 12) c.tokens.add(dec); } catch { /* not encoded */ }
+      }
+    }
+    return s;
+  });
+  // league display name from league/details
+  const d = bundle.responses?.["league/details"]?.body;
+  for (const cand of [d?.body?.league?.name, d?.body?.name, d?.body?.league_name, d?.league?.name, d?.name, d?.league_name]) {
+    if (typeof cand === "string" && cand.trim().length >= 3 && !/^\d+$/.test(cand)) { c.league = cand.trim(); break; }
+  }
+  // 3. team names (and abbreviations) first, so an owner field holding a team name is not mistaken for a person
+  for (const [key, body] of bodiesOf(bundle)) {
+    traverse(structuredClone(body), TEAM_ROUTES.has(key) ? ["teams"] : [], (kind, v) => { if (kind === "team") addTeam(v); else if (kind === "abbr") addAbbr(v); });
+  }
+  // 4. owner strings
+  for (const [key, body] of bodiesOf(bundle)) {
+    traverse(structuredClone(body), TEAM_ROUTES.has(key) ? ["teams"] : [], (kind, v) => { if (kind === "owner") addOwner(v); });
+  }
+  return c;
 }
-function makeScrubber() { return (s) => s; }
-function deepScrub(value) { return structuredClone(value); }
-function findLeaks() { return []; }
+
+/** Build the string scrubber from the tables. `skip` disables named rules (self-test only). */
+function makeScrubber(c, skip = new Set()) {
+  const tokens = [...c.tokens].sort((a, b) => b.length - a.length);
+  const named = [];
+  if (c.league && !skip.has("league")) named.push([c.league, "Redacted League"]);
+  if (!skip.has("teams")) named.push(...[...c.teams].sort(byLenDesc));
+  if (!skip.has("owners")) named.push(...[...c.owners].sort(byLenDesc));
+  if (c.slug && !skip.has("slug")) named.push([c.slug, "redacted-league"]);
+  let extraEmails = 0;
+  return (s) => {
+    if (typeof s !== "string" || !s) return s;
+    let t = s;
+    if (!skip.has("tokens")) {
+      for (const tok of tokens) t = t.split(tok).join("REDACTED");
+      t = t.replace(re(TOKEN_PATTERNS[0][1]), 'var token = "REDACTED"');
+      t = t.replace(re(TOKEN_PATTERNS[1][1]), '"access_token": "REDACTED"');
+      t = t.replace(re(TOKEN_PATTERNS[2][1]), "access_token=REDACTED");
+    }
+    for (const [from, to] of named) if (from.length >= 3) t = t.replace(bounded(from), to);
+    if (!skip.has("owners")) t = t.replace(EMAIL_RE, (m) => (m.endsWith("@example.invalid") ? m : `owner-x${++extraEmails}@example.invalid`));
+    return t;
+  };
+}
+
+/** Rewrite name-shaped fields in place (covers names too short for the global pass), then every string. */
+function deepScrub(value, c, scrub, key = null) {
+  const clone = structuredClone(value);
+  const inPlace = (kind, v) => {
+    const s = v.trim();
+    if (kind === "team") return c.teams.get(s);
+    if (kind === "abbr") return c.abbrs.get(s);
+    if (kind === "owner") return c.owners.get(s) ?? c.teams.get(s);
+    return undefined;
+  };
+  if (clone && typeof clone === "object" && "body" in clone) traverse(clone.body, key && TEAM_ROUTES.has(key) ? ["teams"] : [], inPlace);
+  else traverse(clone, [], inPlace);
+  return mapStrings(clone, scrub);
+}
+
+/** Re-read written files; return one line per surviving secret. Never prints a secret. */
+function findLeaks(files, c) {
+  const leaks = [];
+  const named = [[c.slug, "the slug"], [c.league, "the league name"],
+    ...[...c.teams.keys()].map((n, i) => [n, `team name ${i + 1}`]),
+    ...[...c.owners.keys()].map((n, i) => [n, `owner string ${i + 1}`])];
+  for (const f of files) {
+    const text = fs.readFileSync(f, "utf8");
+    const rel = path.basename(f);
+    for (const tok of c.tokens) {
+      if (text.includes(tok)) { leaks.push(`${rel}: a token value survives`); continue; }
+      if (tok.length >= 16) for (let i = 0; i + 12 <= tok.length; i++) if (text.includes(tok.slice(i, i + 12))) { leaks.push(`${rel}: a 12-character token fragment survives`); break; }
+    }
+    for (const [n, label] of named) if (n && n.length >= 3 && bounded(n).test(text)) leaks.push(`${rel}: ${label} survives`);
+    for (const m of text.matchAll(EMAIL_RE)) if (!m[0].endsWith("@example.invalid")) { leaks.push(`${rel}: an e-mail address outside example.invalid survives`); break; }
+    if (/access_token=[^R&"]{8,}/.test(text)) leaks.push(`${rel}: an access_token= value survives`);
+    if (/var token\s*=\s*"(?!REDACTED)/.test(text)) leaks.push(`${rel}: a var token value survives`);
+  }
+  return leaks;
+}
 
 /* ===================== end scrub rules ===================== */
 
