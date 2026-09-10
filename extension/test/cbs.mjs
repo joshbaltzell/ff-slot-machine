@@ -751,9 +751,10 @@ const load = async (table, over = {}, base = REF) => {
   // that object, the live token is persisted, which D-10 and the Platforms section both
   // forbid. The session is per-run state, not part of the ref.
   {
-    const ref = { platform: "cbs", leagueId: "myleague", seasonId: 2026 };
+    const ref = { platform: "cbs", leagueId: REF.leagueId, seasonId: 2026 };
     const before = JSON.stringify(ref);
-    const sess = await openSession(ref, { session: { mode: "token", token: "LIVE-TOKEN-0123456789" }, fetchImpl: deadFetch() });
+    const f = countingFetch(cbsTable());
+    const sess = await openSession(ref, { session: { mode: "token", token: "LIVE-TOKEN-0123456789" }, fetchImpl: f });
     ok(sess.token === "LIVE-TOKEN-0123456789", "an explicitly passed session is used");
     ok(JSON.stringify(ref) === before, "...and openSession leaves the caller's ref untouched: no session, no token on it");
     ok(!JSON.stringify(ref).includes("LIVE-TOKEN"), "...so a ref serialized to storage cannot carry the token");
@@ -762,12 +763,69 @@ const load = async (table, over = {}, base = REF) => {
   }
   {
     // A ref that arrives carrying a session (how a pasted token is handed in) is still read.
-    const ref = { platform: "cbs", leagueId: "myleague", seasonId: 2026, session: { mode: "token", token: "PASTED" } };
-    const sess = await openSession(ref, { fetchImpl: deadFetch() });
+    const ref = { platform: "cbs", leagueId: REF.leagueId, seasonId: 2026, session: { mode: "token", token: "PASTED" } };
+    const sess = await openSession(ref, { fetchImpl: countingFetch(cbsTable()) });
     ok(sess.token === "PASTED", "a session already on the ref is honoured, as the paste path needs");
   }
-  const opened = await openSession({ ...REF }, { session: { mode: "token", token: "T" }, fetchImpl: deadFetch() });
-  ok(opened.mode === "token" && opened.token === "T", "a session handed in is used as it is, with no probe");
+
+  // WR-08. Routes 2, 3 and 4 each re-probe league/details before their session is
+  // accepted, "so a stale token is refused at the door rather than four requests
+  // later" - the docstring and CLAUDE.md both say every non-primary route does. Route
+  // 1, the token the user just pasted, used to be the exception: an expired paste
+  // failed at the first real request instead, and the panel showed "Could not load
+  // that league" with the token field gone rather than the sign-in screen.
+  {
+    const ref = { platform: "cbs", leagueId: REF.leagueId, seasonId: 2026 };
+    const f = countingFetch(cbsTable());
+    const sess = await openSession(ref, { session: { mode: "token", token: "T" }, fetchImpl: f });
+    ok(sess.mode === "token" && sess.token === "T", "WR-08: a session handed in is used when CBS accepts it");
+    ok(f.calls.filter((u) => u.includes("league/details")).length === 1,
+       "...after exactly one probe, the same one every other route pays for");
+    ok((f.calls[0] ?? "").startsWith("https://api.cbssports.com/fantasy/"),
+       "...sent to the token host, so the probe tests the token and not the cookie");
+  }
+  {
+    // A stale pasted token, refused the way CBS refuses one, with the cookie dead too:
+    // the AUTH error arrives at the door.
+    const ref = { platform: "cbs", leagueId: REF.leagueId, seasonId: 2026,
+                  session: { mode: "token", token: "STALE" } };
+    let e = null;
+    try { await openSession(ref, { fetchImpl: countingFetch(refuseAll(cbsTable({ page: null }))), handover: null }); }
+    catch (err) { e = err; }
+    ok(e?.code === "AUTH",
+       "WR-08: a stale pasted token with no other route left is an AUTH error, not a mystery four requests later");
+  }
+  {
+    // A stale paste when the cookie does work: the chain carries on rather than
+    // stopping on the token the user happened to have to hand.
+    const ref = { platform: "cbs", leagueId: REF.leagueId, seasonId: 2026,
+                  session: { mode: "token", token: "STALE" } };
+    const t = cbsTable();
+    for (const k of Object.keys(t))
+      if (k.startsWith("https://api.cbssports.com/fantasy/league/")) t[k] = httpError(400, "User not signed in");
+    const sess = await openSession(ref, { fetchImpl: countingFetch(t), handover: null });
+    ok(sess?.mode === "cookie",
+       "WR-08: a refused paste falls through to the cookie rather than ending the run");
+    ok(sessionFor(ref, {}) === sess,
+       "...and the session the run reads is the accepted one, not the refused paste on the ref");
+  }
+  {
+    // The same, handed in through opts rather than on the ref: whatever accept()
+    // settled on is what every later get() must send, or the rest of the run would
+    // keep presenting a token CBS has already refused.
+    const ref = { platform: "cbs", leagueId: REF.leagueId, seasonId: 2026 };
+    const t = cbsTable();
+    for (const k of Object.keys(t))
+      if (k.startsWith("https://api.cbssports.com/fantasy/league/")) t[k] = httpError(400, "User not signed in");
+    const stale = { mode: "token", token: "STALE" };
+    const f = countingFetch(t);
+    const sess = await openSession(ref, { fetchImpl: f, handover: null, session: stale });
+    ok(sess?.mode === "cookie" && sessionFor(ref, { session: stale })?.mode === "cookie",
+       "WR-08: an accepted session outranks a refused one still sitting in opts");
+    ok(!f.inits.some((i) => i?.headers?.Authorization === "STALE" && f.inits.indexOf(i) > 0)
+       || f.calls.filter((u) => u.startsWith("https://api.cbssports.com/")).length === 1,
+       "...so the refused token is presented once, at the door, and never again");
+  }
 }
 
 /* session: the four sanctioned routes, in order, and no fifth (D-10, D-11) */

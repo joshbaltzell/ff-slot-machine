@@ -449,9 +449,13 @@ browser's own session with no token at all; that is measured, not assumed. It do
 infer the league from the hostname, so every request must carry an explicit `league_id` or
 it answers 400. When the cookie is refused the chain runs: a session already on the ref (a
 token the user pasted), the cookie, the token in the signed-in league page's own script
-text, then a hand-over from this extension's content script on an open CBS tab. Each
-non-primary route re-probes the cheapest authenticated endpoint before its session is
-accepted, so a stale token is refused at the door rather than four requests later. The
+text, then a hand-over from this extension's content script on an open CBS tab. **Every
+one of the four re-probes** `league/details` before its session is accepted, the pasted
+token included, so a stale token is refused at the door rather than four requests later —
+and a refusal falls through to the next route rather than ending the run, because a
+manager whose paste has expired usually still has a good cookie. The winner is recorded
+per run and outranks the candidate the caller handed in, so a refused token is presented
+once and never again. The
 token lives on the run's `ref` in memory: never in `chrome.storage`, never in a URL, never
 in a log line, never in a note, and never shared between two concurrent runs. The
 password endpoint `general/oauth/mobile/login` is never called and the string does not

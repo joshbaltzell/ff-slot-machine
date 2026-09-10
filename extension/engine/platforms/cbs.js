@@ -266,7 +266,11 @@ const authError = () =>
  * token must never ride along (D-10). A session the caller put on the ref is still read —
  * that is how a pasted token arrives. */
 const SESSIONS = new WeakMap();
-export const sessionFor = (ref, opts = {}) => opts.session ?? SESSIONS.get(ref) ?? ref.session ?? null;
+/* An opened session outranks a candidate: `openSession` probes each route before it
+ * accepts one and records the winner here, so a token the caller handed in that CBS
+ * refused must not go on being presented for the rest of the run. During the probe
+ * itself nothing is recorded yet, and `accept` passes its candidate through `opts`. */
+export const sessionFor = (ref, opts = {}) => SESSIONS.get(ref) ?? opts.session ?? ref.session ?? null;
 
 async function get(ref, route, params = {}, opts = {}) {
   const session = sessionFor(ref, opts);
@@ -383,10 +387,10 @@ export async function defaultHandover() {
  * that is how a pasted token arrives.
  */
 export async function openSession(ref, opts = {}) {
+  // Already opened for this run: accept() probed it once and there is nothing to
+  // re-check.
   const held = SESSIONS.get(ref);
   if (held) return held;
-  if (ref.session) return ref.session;
-  if (opts.session) { SESSIONS.set(ref, opts.session); return opts.session; }
 
   // The re-probe every non-cookie route goes through. Null means "refused"; a real
   // error (a 500, a dead network) is not an auth answer and is not swallowed.
@@ -400,6 +404,19 @@ export async function openSession(ref, opts = {}) {
       return null;
     }
   };
+
+  // Route 1: a session the caller handed in - the token the user pasted. It goes
+  // through the same door as routes 3 and 4 rather than being trusted on sight. An
+  // expired paste used to fail at the first real request instead, which only becomes
+  // an AUTH error if CBS happens to word that particular refusal the way the panel
+  // needs; otherwise the user was told "Could not load that league" and the field he
+  // had just used was gone. A refusal here falls through to the rest of the chain
+  // rather than ending the run: the cookie may well work.
+  const handedIn = opts.session ?? ref.session ?? null;
+  if (handedIn) {
+    const session = await accept(handedIn);
+    if (session) return session;
+  }
 
   const cookie = await accept({ mode: "cookie", token: null, teamHint: null });
   if (cookie) return cookie;
