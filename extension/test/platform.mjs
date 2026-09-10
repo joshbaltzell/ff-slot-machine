@@ -901,6 +901,21 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "when the new key already exists the existing new value wins and the legacy key is removed");
   ok(all2["ffsm.dismissed.7"] === 5, "a three-segment dismissal key is not a league key and is untouched");
 
+  // IN-06. LEGACY_KEY's id segment is [^.]+, so a non-numeric one is a shape the
+  // pattern accepts even though no ESPN id ever looked like that. Number() would make
+  // it NaN, which survives the structured clone and comes back as the string "NaN" in
+  // ffsm.league.espn.NaN.2026 the next time leagueKey runs - plus an ESPN request for
+  // league NaN. Defensive only, and cheaper than the debugging session.
+  const st3 = mkStorage();
+  await st3.set({ "ffsm.league.abc.2026": { at: 1 }, "ffsm.league.7.2026": { at: 2 } });
+  await migrateStorageKeys(st3);
+  const all3 = await st3.get(null);
+  ok(all3["ffsm.league.espn.abc.2026"]?.ref?.leagueId === "abc",
+     "IN-06: a legacy id that is not a number is kept as it is, never coerced to NaN");
+  ok(all3["ffsm.league.espn.7.2026"]?.ref?.leagueId === 7,
+     "...and a numeric one is still a Number, as every real ESPN id is");
+  ok(!JSON.stringify(all3).includes("NaN"), "...so nothing NaN-shaped reaches storage");
+
   // The worker's next record, pure.
   const adopted = nextLeagueRecord({ rosterHash: null, at: 1 }, "h1", 5);
   ok(adopted.rosterHash === "h1" && adopted.latestHash === "h1" && adopted.changed === false && adopted.checkedAt === 5 && adopted.at === 1,

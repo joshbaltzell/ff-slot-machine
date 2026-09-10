@@ -84,9 +84,15 @@ export const migrateStorageKeys = async (storage) => {
     const [, kind, id, season] = m;
     const newKey = `ffsm.${kind}.espn.${id}.${season}`;
     if (!(newKey in all)) {
+      // Every real ESPN league id is numeric, so this is defensive - but LEGACY_KEY's
+      // id segment is [^.]+, and a bare Number() on something that is not a number
+      // gives NaN, which survives chrome.storage's structured clone and comes back as
+      // ffsm.league.espn.NaN.{season} the next time leagueKey runs, with an ESPN
+      // request for league NaN behind it. Keep what was there instead.
+      const n = Number(id);
       const value = kind === "league"
         ? { ...old, rosterHash: null, changed: false,
-            ref: { platform: "espn", leagueId: Number(id), seasonId: Number(season) } }
+            ref: { platform: "espn", leagueId: Number.isFinite(n) ? n : id, seasonId: Number(season) } }
         : old;
       await storage.set({ [newKey]: value });
     }
