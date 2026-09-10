@@ -629,8 +629,13 @@ async function start(ref) {
            <button class="btn" id="usetok">Use token</button>`
         : "";
       $("#bootact").innerHTML =
+        // IN-01: signIn is safe today - every path that produces a CBS ref validates
+        // the slug against [a-z0-9-]+ and cbs.signInUrl encodeURIComponents it - but
+        // it is one unvalidated ref away from attribute injection on the page that
+        // holds the user's session, and the fix is a function call. rel goes with it:
+        // target="_blank" hands the opener to whatever this points at.
         `<p style="font-size:13px;color:var(--dim)">Sign in at
-         <a href="${signIn}" target="_blank">${new URL(signIn).host}</a>,
+         <a href="${esc(signIn)}" target="_blank" rel="noopener noreferrer">${esc(new URL(signIn).host)}</a>,
          then reload this page.</p>${paste}`;
       if (platform?.acceptsToken) $("#usetok").onclick = () => {
         const token = $("#tok").value.trim();

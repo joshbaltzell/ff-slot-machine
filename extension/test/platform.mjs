@@ -376,6 +376,13 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "the AUTH screen offers a token paste only for an adapter that accepts one");
   ok(/session: \{ mode: "token", token, teamHint: null \}/.test(PANEL),
      "a pasted token becomes ref.session and start() runs again");
+  // IN-01: the sign-in link is built by interpolation on the page that holds the
+  // user's session, so the adapter's URL goes through esc() and the link disowns
+  // its opener - safe today only because every CBS ref validates its slug.
+  ok(/href="\$\{esc\(signIn\)\}"/.test(PANEL) && !/href="\$\{signIn\}"/.test(PANEL),
+     "the sign-in href is escaped, not interpolated raw");
+  ok(/rel="noopener noreferrer"/.test(PANEL),
+     "...and the target=_blank link does not hand over its opener");
   ok(!/(chrome\.storage[^;]*token|token[^;]*chrome\.storage)/.test(PANEL),
      "and it never reaches chrome.storage");
   ok(!/password/i.test(PANEL) && !/password/i.test(HTML),
