@@ -131,6 +131,42 @@ function copy(text, btn) {
    reset the column the user chose. */
 const SORT = new Map();
 
+/* ============ what the page is showing ============
+   All of this sits beside SORT and for the same reason: `render()` rebuilds the whole
+   document on every filter change, so anything the user chose has to live outside it
+   or it is silently reset. SORT proved the pattern; these follow it.
+
+   ACTIVE is the open tab, OPEN_TRADE the row whose detail is showing, COLS the trade
+   columns the user wants. MEMO is different in kind - it is not a choice but a cache,
+   for the handful of section builders that cost real time. */
+const TABS = [
+  ["home",    "Home"],
+  ["trades",  "Trades"],
+  ["waivers", "Waivers"],
+  ["team",    "My team"],
+  ["league",  "League"],
+];
+let ACTIVE = "home";
+let OPEN_TRADE = null;
+
+/* The trade table has seventeen columns and answers one question with about six of
+   them. These are the six, plus whichever column the current objective ranks by -
+   `alwaysCol` adds that, because grid() silently declines to sort by a key it cannot
+   find and a hidden sort column would look like a table in insertion order. */
+const KEY_COLS = ["car", "recv", "send", "partner", "gain", "theirs", "market"];
+let COLS = new Set(KEY_COLS);
+
+/* Section builders that cost real time: projectSeason runs twenty thousand seasons,
+   freeAgentUpgrades is a search, gameplan is a local search. All three used to run on
+   every keystroke of the player filter and every step of the min-gain slider, because
+   every section was built eagerly whether or not it was on screen. Keyed by hand
+   rather than by argument hashing, so a key has to name what it depends on. */
+const MEMO = new Map();
+const once = (key, fn) => {
+  if (!MEMO.has(key)) MEMO.set(key, fn());
+  return MEMO.get(key);
+};
+
 function grid(id, cols, rows, opts = {}) {
   const st = SORT.get(id) ?? { key: opts.sort, dir: opts.dir ?? -1 };
   SORT.set(id, st);
@@ -800,7 +836,7 @@ function usageBars(strip, proj, thin, weeks, outgoing = false) {
   }).join("")}</div>`;
 }
 
-function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new Map()) {
+export function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new Map()) {
   // Whichever platform this league was read from. `start()` published the adapter;
   // every string below that used to say ESPN says this instead.
   const LABEL = window.__platform?.label ?? "your platform";
@@ -836,7 +872,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   // currentWeek exceeds all of them, and indexOf returns -1. Clamping that to 0 used
   // to silently show week 1's game as "this week"; instead, no index means no plan.
   const curIdx = W.indexOf(model.settings.currentWeek ?? W[0]);
-  const plan = DIST && eng.sigmaOf && curIdx >= 0 ? gameplan(eng, myTeam, curIdx) : null;
+  const plan = DIST && eng.sigmaOf && curIdx >= 0
+    ? once("plan", () => gameplan(eng, myTeam, curIdx)) : null;
   const thisWeek = weekSection(plan, { esc, name: nm, myTeam });
 
   /* ---------- filter state ---------- */
@@ -1028,22 +1065,45 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   }
 
   /* ---------- grids ---------- */
+  // Every column carries its own cell, so the visible set can change without the row
+  // template and the header list drifting apart. They used to be two positional lists
+  // seventeen long, which was fine only while the answer was always all seventeen.
   const tradeCols = [
-    { key: "car", label: "", sortable: false },
+    { key: "car", label: "", sortable: false,
+      cell: () => `<td class="rank"><span class="car">&#9656;</span></td>` },
     { key: "shape", label: "Shape", num: true, value: (r) => r.t.shape,
-      hint: HINT.shape + " " + ROSTER_HINT.shape21 },
+      hint: HINT.shape + " " + ROSTER_HINT.shape21,
+      cell: (r) => `<td class="num nowrap">${esc(r.t.shape)}</td>` },
     { key: "recv", label: mineOnly ? "You receive" : "Receives",
-      value: (r) => side(r.t).received.map(nm).join(" "), hint: HINT.recv },
+      value: (r) => side(r.t).received.map(nm).join(" "), hint: HINT.recv,
+      // The two badges live here rather than in the Playoffs and Partner-bye columns
+      // they used to sit in. `later` is a statement about the trade - this one is worse
+      // until December - not about the playoff number, so it belongs beside the names
+      // like the injury badge does, and it survives the column being hidden.
+      cell: (r) => {
+        const me = side(r.t);
+        return `<td>${mineOnly ? "" : `<div class="side-l">${esc(me.team)}</div>`}
+          <div class="pkg">${pkg(me.received)}${
+            laterNotNow(me) ? ' <span class="tag warn">later</span>' : ""}${
+            byeDriven(r.t) ? ' <span class="tag">bye</span>' : ""}</div>${moveNote(me, nm)}</td>`;
+      } },
     { key: "send", label: mineOnly ? "You send" : "Sends",
-      value: (r) => side(r.t).sent.map(nm).join(" "), hint: HINT.send },
+      value: (r) => side(r.t).sent.map(nm).join(" "), hint: HINT.send,
+      cell: (r) => `<td><div class="pkg">${pkg(side(r.t).sent)}</div></td>` },
     { key: "partner", label: "Partner",
-      value: (r) => others(r.t).map((o) => o.team).join(" "), hint: HINT.partner },
+      value: (r) => others(r.t).map((o) => o.team).join(" "), hint: HINT.partner,
+      cell: (r) => `<td class="nowrap" style="color:var(--dim)">${
+        others(r.t).map((o) => esc(o.team)).join(" + ")}</td>` },
     { key: "weeks", label: "Weeks helped", num: true,
-      value: (r) => side(r.t).weekly.filter((x) => x > 0.005).length, hint: HINT.weeks },
+      value: (r) => side(r.t).weekly.filter((x) => x > 0.005).length, hint: HINT.weeks,
+      cell: (r) => `<td class="num">${side(r.t).weekly.filter((x) => x > 0.005).length}<span
+        style="color:var(--faint)">/${W.length}</span></td>` },
     { key: "gain", label: mineOnly ? "Your gain" : "Gain", num: true,
-      value: (r) => side(r.t).gain, hint: HINT.gain },
+      value: (r) => side(r.t).gain, hint: HINT.gain,
+      cell: (r) => `<td class="num ${cls(side(r.t).gain)}">${f2(side(r.t).gain)}</td>` },
     { key: "dwins", label: "Δ wins", num: true,
-      value: (r) => side(r.t).win ?? 0, hint: HINT.dwins },
+      value: (r) => side(r.t).win ?? 0, hint: HINT.dwins,
+      cell: (r) => `<td class="num">${fw(side(r.t).win ?? 0)}</td>` },
     { key: "dtitle", label: "Δ title", num: true,
       // A dash in the cell must sort as a dash: fall through to Δ wins, below every
       // resolved title delta, so the significance rule and the order agree.
@@ -1052,58 +1112,51 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         const v = s.team === myTeam ? significant(r.t.odds, "title") : null;
         return v ?? -1e6 + (s.win ?? 0);
       },
-      hint: HINT.dtitle },
+      hint: HINT.dtitle,
+      cell: (r) => `<td class="num">${fpp(side(r.t).team === myTeam
+        ? significant(r.t.odds, "title") : null)}</td>` },
     { key: "dbye", label: "Δ bye", num: true,
       value: (r) => {
         const s = side(r.t);
         const v = s.team === myTeam ? significant(r.t.odds, "bye") : null;
         return v ?? -1e6 + (s.win ?? 0);
       },
-      hint: HINT.dbye },
+      hint: HINT.dbye,
+      cell: (r) => `<td class="num">${fpp(side(r.t).team === myTeam
+        ? significant(r.t.odds, "bye") : null)}</td>` },
     { key: "theirs", label: "Partner gain", num: true,
-      value: (r) => Math.min(...others(r.t).map((o) => o.gain)), hint: HINT.theirs },
-    { key: "combined", label: "Combined", num: true, value: (r) => r.t.total, hint: HINT.combined },
-    { key: "reg", label: "Reg. season", num: true, value: (r) => side(r.t).reg, hint: HINT.reg },
-    { key: "po", label: "Playoffs", num: true, value: (r) => side(r.t).playoff, hint: HINT.po },
+      value: (r) => Math.min(...others(r.t).map((o) => o.gain)), hint: HINT.theirs,
+      cell: (r) => `<td class="num" style="color:var(--dim)">${
+        others(r.t).map((o) => f2(o.gain)).join(" / ")}</td>` },
+    { key: "combined", label: "Combined", num: true, value: (r) => r.t.total, hint: HINT.combined,
+      cell: (r) => `<td class="num">${r.t.total.toFixed(2)}</td>` },
+    { key: "reg", label: "Reg. season", num: true, value: (r) => side(r.t).reg, hint: HINT.reg,
+      cell: (r) => `<td class="num ${cls(side(r.t).reg)}">${f2(side(r.t).reg)}</td>` },
+    { key: "po", label: "Playoffs", num: true, value: (r) => side(r.t).playoff, hint: HINT.po,
+      cell: (r) => `<td class="num ${cls(side(r.t).playoff)}">${f2(side(r.t).playoff)}</td>` },
     { key: "byehelp", label: "Partner bye help", num: true,
-      value: (r) => Math.max(...others(r.t).map((o) => o.bye)), hint: HINT.byehelp },
-    { key: "balance", label: "Balance", num: true, value: (r) => balance(r.t), hint: HINT.balance },
-    marketCol(mkt),
+      value: (r) => Math.max(...others(r.t).map((o) => o.bye)), hint: HINT.byehelp,
+      cell: (r) => `<td class="num ${cls(others(r.t)[0].bye)}">${f2(others(r.t)[0].bye)}</td>` },
+    { key: "balance", label: "Balance", num: true, value: (r) => balance(r.t), hint: HINT.balance,
+      cell: (r) => `<td>${balance(r.t) === null ? '<span class="dim">&mdash;</span>'
+        : `<div class="bal"><div class="track"><i style="width:${
+          (balance(r.t) * 100).toFixed(0)}%"></i></div><span class="balpct">${
+          (balance(r.t) * 100).toFixed(0)}%</span></div>`}</td>` },
+    { ...marketCol(mkt), cell: (r) => marketCell(r.t, mkt) },
   ];
-  const tradeGrid = grid("tradeGrid", tradeCols, shown, {
+  // The objective's own column is never optional: grid() sorts by `SORT`'s key only if
+  // it can find it among the columns, and hiding it would leave the table in insertion
+  // order with nothing to say so. A filter that reads a hidden column reveals it too.
+  const forced = new Set([objSort(window.__objective ?? "title")]);
+  if (F.only.has("even")) forced.add("balance");
+  const visible = tradeCols.filter((c) => COLS.has(c.key) || forced.has(c.key));
+  const tradeGrid = grid("tradeGrid", visible, shown, {
     sort: objSort(window.__objective ?? "title"), dir: -1,
     empty: '<div class="empty"><b>No trades match</b>Lower the minimum gain, enable '
          + 'more shapes, or clear the player filter.</div>',
-    row: ({ t, i }) => {
-      const me = side(t), rest = others(t);
-      return `<tr class="tr-row${me.team === myTeam ? " mine" : ""}" data-i="${i}">
-        <td class="rank"><span class="car">&#9656;</span></td>
-        <td class="num nowrap">${esc(t.shape)}</td>
-        <td>${mineOnly ? "" : `<div class="side-l">${esc(me.team)}</div>`}
-            <div class="pkg">${pkg(me.received)}</div>${moveNote(me, nm)}</td>
-        <td><div class="pkg">${pkg(me.sent)}</div></td>
-        <td class="nowrap" style="color:var(--dim)">${rest.map((o) => esc(o.team)).join(" + ")}</td>
-        <td class="num">${me.weekly.filter((x) => x > 0.005).length}<span
-          style="color:var(--faint)">/${W.length}</span></td>
-        <td class="num ${cls(me.gain)}">${f2(me.gain)}</td>
-        <td class="num">${fw(me.win ?? 0)}</td>
-        <td class="num">${fpp(me.team === myTeam ? significant(t.odds, "title") : null)}</td>
-        <td class="num">${fpp(me.team === myTeam ? significant(t.odds, "bye") : null)}</td>
-        <td class="num" style="color:var(--dim)">${rest.map((o) => f2(o.gain)).join(" / ")}</td>
-        <td class="num">${t.total.toFixed(2)}</td>
-        <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
-        <td class="num ${cls(me.playoff)}">${f2(me.playoff)}${
-          laterNotNow(me) ? ' <span class="tag">later</span>' : ""}</td>
-        <td class="num ${cls(rest[0].bye)}">${f2(rest[0].bye)}${
-          byeDriven(t) ? ' <span class="tag">bye</span>' : ""}</td>
-        <td>${balance(t) === null ? '<span class="dim">&mdash;</span>'
-          : `<div class="bal"><div class="track"><i style="width:${
-            (balance(t) * 100).toFixed(0)}%"></i></div><span class="balpct">${
-            (balance(t) * 100).toFixed(0)}%</span></div>`}</td>
-        ${marketCell(t, mkt)}
-      </tr>
-      <tr class="detail" data-for="${i}" hidden><td colspan="${tradeCols.length}"></td></tr>`;
-    },
+    row: (r) => `<tr class="tr-row${side(r.t).team === myTeam ? " mine" : ""}"
+      data-i="${r.i}" tabindex="0" role="button" aria-expanded="false"
+      aria-controls="tradeDetail">${visible.map((c) => c.cell(r)).join("")}</tr>`,
   });
 
   // Floor and ceiling per game, averaged over the weeks he is projected to play.
@@ -1159,8 +1212,10 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     </tr>`; },
   });
 
+  const faTeam = mineOnly ? viewing : myTeam;
   const upgrades = eng.freeAgents.length
-    ? eng.freeAgentUpgrades(mineOnly ? viewing : myTeam, { minGain: 0.05, limit: 25 }) : [];
+    ? once(`fa:${faTeam}`, () => eng.freeAgentUpgrades(faTeam, { minGain: 0.05, limit: 25 }))
+    : [];
   const wv = waiverView(upgrades, uv, eng,
     { budget: myBudget, myRemaining: Math.max(0, myBudget - mySpent), weeksLeft: eng.NW });
   const faGrid = grid("faGrid", [
@@ -1245,9 +1300,9 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   const divCount = model.settings.divisionCount ?? 0;
   const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
   const divSeed = divCount > 1 && (window.__divSeed ?? false);
-  const proj = projectSeason(eng, schedule, model.settings,
+  const proj = once("season", () => projectSeason(eng, schedule, model.settings,
     { sims: SIMS, sigma: SIGMA, divisionSeeding: divSeed, divisionOf,
-      records: window.__records ?? null });
+      records: window.__records ?? null }));
   const maxTitle = Math.max(...proj.map((x) => x.titlePct), 1e-9);
   const seasonGrid = grid("seasonGrid", [
     { key: "name", label: "Team", value: (r) => r.team },
@@ -1303,41 +1358,69 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   $("#boot").hidden = true;
   const app = $("#app");
   app.hidden = false;
-  app.innerHTML = `
-  <header class="masthead"><div class="wrap"><div class="mast-in">
-    <div>
-      <div class="eyebrow"><b>${esc(model.settings.name)}</b><span>·</span>
-        <span>${model.teams.size} teams · ${eng.starters} starters ·
-        weeks ${W[0]}–${W.at(-1)}</span></div>
-      <h1>FF Slot <em>Machine</em></h1>
-      <div class="mast-meta">${esc(myTeam.toUpperCase())} · LIVE FROM ${esc(LABEL.toUpperCase())}</div>
-    </div>
-    <div class="mast-right"><button class="ghost" id="theme">Light</button></div>
-  </div>
-  <div class="tiles">
-    <div class="tile"><div class="k">Projected record</div>
-      <div class="v">${me ? `${me.wins.toFixed(1)}–${me.losses.toFixed(1)}` : "—"}</div>
-      <div class="s">${me ? pct(me.playoffPct) + " to make the playoffs" : ""}</div></div>
-    <div class="tile hot"><div class="k">Offers for you</div>
-      <div class="v">${myOffers.length}</div>
-      <div class="s">${trades.length} league-wide</div></div>
-    <div class="tile hot"><div class="k">Best available · ${esc(OBJECTIVES.find(([k]) => k === obj)?.[1] ?? "Championship")}</div>
-      <div class="v">${bestText}</div>
-      <div class="s">${!best ? "none found"
-        : byWins ? "title odds inside simulation error · ranked by wins"
-        : "via " + esc(best.t.sides.find((s) => s.team !== myTeam).team)}</div></div>
-    <div class="tile"><div class="k">Trade chips</div>
-      <div class="v">${benchCount}</div>
-      <div class="s">players under 25% usage</div></div>
-  </div></div></header>
+  // ---------- the five tabs ----------
+  // Each is a thunk: only the open one is ever built. That is what makes a re-render
+  // on every slider step affordable, and it is the seam a progressive load fills in.
+  const questionable = eng.roster.get(myTeam).filter((i) => statusRank(AV, eng.ids[i]) > 0).length;
+  const swing = plan ? plan.pWinBest - plan.pWinMean : 0;
+  const partnerOf = (t) => t.sides.find((x) => x.team !== myTeam)?.team ?? "";
 
-  <div class="wrap">
-    ${thisWeek}
+  const COUNTS = { home: null, trades: shown.length, waivers: upgrades.length,
+                   team: questionable, league: model.teams.size };
+
+  const PANELS = {
+    home: () => `
+    <section class="home">
+      <div class="hero">
+        <button class="hero-c" data-go="trades">
+          <div class="k">Best move</div>
+          <div class="v">${bestText}</div>
+          <div class="s">${!best ? "nothing worth sending"
+            : `${esc(side(best.t).received.map(nm).join(" + "))} <span class="ar">&larr;</span> ${
+               esc(side(best.t).sent.map(nm).join(" + "))}`}</div>
+          <div class="s2">${!best ? ""
+            : `via ${esc(partnerOf(best.t))}${
+               byWins ? " · title odds inside simulation error, ranked by wins" : ""}${
+               laterNotNow(side(best.t)) ? ' <span class="tag warn">later</span>' : ""}`}</div>
+        </button>
+        <button class="hero-c" data-go="league">
+          <div class="k" data-hint="${esc(HINT.podds)}"><span class="hint">Playoff odds</span></div>
+          <div class="v ${me && me.playoffPct >= 0.5 ? "up" : "down"}">${me ? pct(me.playoffPct) : "&mdash;"}</div>
+          <div class="s">${me ? `${me.wins.toFixed(1)}&ndash;${me.losses.toFixed(1)} projected` : ""}</div>
+          <div class="s2">${esc(OBJECTIVES.find(([k]) => k === obj)?.[1] ?? "Championship")}</div>
+        </button>
+        <button class="hero-c" data-go="team">
+          <div class="k" data-hint="${esc(DIST_HINT.pwin)}"><span class="hint">This week</span></div>
+          <div class="v ${plan && plan.pWinMean >= 0.5 ? "up" : "down"}">${
+            plan ? pct(plan.pWinMean) : "&mdash;"}</div>
+          <div class="s">${plan ? `to beat ${esc(plan.opponent)}` : "no game scheduled"}</div>
+          <div class="s2">${plan && swing >= SWAP_MIN
+            ? `<span class="tag g">+${(swing * 100).toFixed(1)}pp available</span>` : ""}</div>
+        </button>
+      </div>
+      <div class="tiles">
+        <button class="tile go" data-go="trades"><div class="k">Trades</div>
+          <div class="v">${shown.length}</div>
+          <div class="s">${trades.length} league-wide &middot; explore &rarr;</div></button>
+        <button class="tile go" data-go="waivers"><div class="k">Adds</div>
+          <div class="v">${upgrades.length}</div>
+          <div class="s">${upgrades.length ? `best +${f2(upgrades[0].gain)} a week` : "nothing helps"
+            } &middot; explore &rarr;</div></button>
+        <button class="tile go" data-go="team"><div class="k">Availability</div>
+          <div class="v ${questionable ? "down" : ""}">${questionable}</div>
+          <div class="s">of your ${eng.roster.get(myTeam).length} &middot; explore &rarr;</div></button>
+        <button class="tile go" data-go="team"><div class="k">Trade chips</div>
+          <div class="v">${benchCount}</div>
+          <div class="s">under 25% usage &middot; explore &rarr;</div></button>
+      </div>
+    </section>`,
+
+    trades: () => `
     <section>
       <h2 class="secttl">${mineOnly ? "Offers for you" : "Every trade in the league"}</h2>
-      <p class="sectsub">${shown.length} of ${trades.length} offers. Every side has to
-        come out ahead. <b>Click a row</b> for the week-by-week detail and a pitch you
-        can send. <b>Click a column heading</b> to sort; hover one to see what it means.</p>
+      <p class="sectsub">${shown.length} of ${trades.length} offers, and every side
+        has to come out ahead. Open one for the week-by-week detail and a pitch you can
+        send.</p>
       <div class="panel">
         <div class="bar">
           <div class="fld"><label for="obj" data-hint="${esc(HINT.objective)}"><span class="hint">Objective</span></label>
@@ -1367,22 +1450,32 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
             <input type="search" id="q" value="${esc(F.q)}" placeholder="filter by name…"
                    spellcheck="false"></div>
           <button class="ghost" id="reset">Reset</button>
+          <details class="colmenu"><summary class="ghost">Columns</summary>
+            <div class="colbox" id="cols">
+              ${tradeCols.filter((c) => c.key !== "car").map((c) => `<label><input
+                type="checkbox" data-k="${c.key}"${COLS.has(c.key) ? " checked" : ""}${
+                forced.has(c.key) && !COLS.has(c.key) ? " disabled" : ""}>${
+                esc(c.label || c.key)}</label>`).join("")}
+              <div class="colbtns"><button class="ghost" id="colskey">Key</button
+                ><button class="ghost" id="colsall">All</button></div>
+            </div></details>
         </div>
         ${tradeGrid}
+        <div id="tradeDetail" class="detwrap" role="region"
+             aria-label="Trade detail" hidden></div>
       </div>
     </section>
 
-    <section>
-      <h2 class="secttl">${mineOnly && viewing !== myTeam
-        ? esc(viewing) + "'s usage" : "Your least-used players"}</h2>
-      <p class="sectsub">How often each player cracks the optimal lineup. Points parked
-        on a bench are what another roster would actually start.</p>
-      <div class="panel">${rosterGrid}</div>
-    </section>
+    <details class="more">
+      <summary>Buy low, sell high<span>what the crowd thinks they are worth</span></summary>
+      ${arbitrageSection(eng, model, mkt, { myTeam, grid })}
+    </details>
+    <details class="more">
+      <summary>Assets and targets<span>usage behind the projections</span></summary>
+      ${assetsSection(eng, model, uv, { myTeam, grid, trades })}
+    </details>`,
 
-    ${streamingSection({ eng, model, team: mineOnly ? viewing : myTeam,
-                         env: window.__env, grid, esc })}
-
+    waivers: () => `
     <section>
       <h2 class="secttl">Free agents worth adding — quiet vs contested</h2>
       <p class="sectsub">A full roster makes a pickup a swap, so every row names the drop.
@@ -1393,14 +1486,33 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       <div class="panel">${faGrid}</div>
     </section>
 
-    ${dropSection(eng, model, { team: mineOnly ? viewing : myTeam, grid, avail: AV })}
+    <details class="more">
+      <summary>Drop candidates<span>ranked, if you would rather choose the drop yourself</span></summary>
+      ${dropSection(eng, model, { team: mineOnly ? viewing : myTeam, grid, avail: AV })}
+    </details>
+    <details class="more">
+      <summary>Streaming planner<span>three weeks of hold-or-churn for the one-man slots</span></summary>
+      ${streamingSection({ eng, model, team: mineOnly ? viewing : myTeam,
+                           env: window.__env, grid, esc })}
+    </details>
+    <details class="more">
+      <summary>Breakout watch<span>who is being handed a job</span></summary>
+      ${breakoutSection(eng, model, uv, { myTeam, grid })}
+    </details>`,
 
-    ${arbitrageSection(eng, model, mkt, { myTeam, grid })}
+    team: () => `
+    ${thisWeek}
+    <section>
+      <h2 class="secttl">${mineOnly && viewing !== myTeam
+        ? esc(viewing) + "'s usage" : "Your least-used players"}</h2>
+      <p class="sectsub">How often each player cracks the optimal lineup. Points parked
+        on a bench are what another roster would actually start.</p>
+      <div class="panel">${rosterGrid}</div>
+    </section>
 
-    ${assetsSection(eng, model, uv, { myTeam, grid, trades })}
+`,
 
-    ${breakoutSection(eng, model, uv, { myTeam, grid })}
-
+    league: () => `
     <section>
       <h2 class="secttl">League strength</h2>
       <p class="sectsub">Each roster's ceiling — what it scores with its best lineup every
@@ -1447,54 +1559,142 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       </div>
     </section>
 
-    ${calibrationSection(window.__calibState ?? {}, { grid, esc, label: LABEL })}
+    <details class="more">
+      <summary>Calibration<span>how well the projections have held up in this league</span></summary>
+      ${calibrationSection(window.__calibState ?? {}, { grid, esc, label: LABEL })}
+    </details>`,
+  };
 
+  if (!PANELS[ACTIVE]) ACTIVE = "home";
+
+  const ae = document.activeElement;
+  const focused = ae && app.contains(ae) && ae.id
+    ? { id: ae.id, at: ae.selectionStart ?? null } : null;
+
+  app.innerHTML = `
+  <header class="masthead"><div class="wrap"><div class="mast-in">
+    <div>
+      <div class="eyebrow"><b>${esc(model.settings.name)}</b><span>·</span>
+        <span>${model.teams.size} teams · ${eng.starters} starters ·
+        weeks ${W[0]}–${W.at(-1)}</span></div>
+      <h1>FF Slot <em>Machine</em></h1>
+      <div class="mast-meta">${esc(myTeam.toUpperCase())} · LIVE FROM ${esc(LABEL.toUpperCase())}</div>
+    </div>
+  </div></div></header>
+
+  <nav><div class="wrap nav-in">
+    <div class="tabs" role="tablist" aria-label="Sections">
+      ${TABS.map(([id, label]) => `<button class="tab" role="tab" id="tab-${id}"
+        aria-controls="panel-${id}" aria-selected="${id === ACTIVE}"
+        tabindex="${id === ACTIVE ? 0 : -1}" data-tab="${id}"
+        aria-label="${esc(label)}${COUNTS[id] == null ? "" : `, ${COUNTS[id]}`}"
+        >${esc(label)}${COUNTS[id] == null ? ""
+          : `<span class="n" aria-hidden="true">${COUNTS[id]}</span>`}</button>`).join("")}
+    </div>
+    <span class="spacer"></span>
+    <button class="ghost" id="theme">Light</button>
+  </div></nav>
+
+  <div class="wrap">
+    <div id="panel-${ACTIVE}" role="tabpanel" aria-labelledby="tab-${ACTIVE}" tabindex="0">
+      ${PANELS[ACTIVE]()}
+    </div>
     <footer>Live from ${esc(LABEL)}. Nothing leaves your machine.
       <button class="ghost" id="refresh">Refresh data</button></footer>
   </div>`;
 
   /* ---------- behaviour ---------- */
   const rerender = () => render(eng, model, trades, myTeam, schedule);
+  window.__rerender = rerender;    // onhashchange fires outside render()'s closure
+  // Half of these controls only exist while one particular tab is open. Binding by
+  // property against `$("#mg")` used to be safe because every section was always on the
+  // page; now it throws on any other tab, so every binding goes through this.
+  const on = (sel, ev, fn) => { const el = app.querySelector(sel); if (el) el[ev] = fn; };
+  const each = (sel, fn) => app.querySelectorAll(sel).forEach(fn);
+
   bindSort(app, rerender);
   initTooltips(app);
   bindEnvChips(app);
+  bindSourcesChips(app);
 
-  app.querySelectorAll("#tradeGrid tr.tr-row").forEach((row) => {
-    row.onclick = () => {
-      const n = row.dataset.i;
-      const det = app.querySelector(`tr.detail[data-for="${n}"]`);
-      const wasOpen = row.classList.contains("open");
-      app.querySelectorAll("#tradeGrid tr.tr-row.open").forEach((r) => {
-        r.classList.remove("open");
-        app.querySelector(`tr.detail[data-for="${r.dataset.i}"]`).hidden = true;
-      });
-      if (wasOpen) return;
-      row.classList.add("open");
-      const t = trades[Number(n)];
-      if (!det.dataset.built) {
-        det.firstElementChild.innerHTML = detailFor(t);
-        det.dataset.built = "1";
-        initTooltips(det);
-        det.querySelectorAll(".copy").forEach((btn) => {
-          btn.onclick = (ev) => {
-            ev.stopPropagation();
-            const other = t.sides.find((s) => s.team === btn.dataset.team);
-            copy(pitchText(t, other), btn);
-          };
-        });
-      }
-      det.hidden = false;
-      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const switchTab = (id) => {
+    if (id === ACTIVE || !TABS.some(([t]) => t === id)) return;
+    ACTIVE = id;
+    // Writing the hash is what makes Back work and what survives the four chip groups
+    // that reload the page. `onhashchange` guards against reacting to this write.
+    if (location.hash.slice(1) !== id) location.hash = id;
+    rerender();
+    app.querySelector(`#tab-${id}`)?.focus();
+  };
+  each(".tab", (b) => {
+    b.onclick = () => switchTab(b.dataset.tab);
+    b.onkeydown = (e) => {
+      const ids = TABS.map(([t]) => t);
+      const at = ids.indexOf(b.dataset.tab);
+      const to = e.key === "ArrowRight" ? ids[(at + 1) % ids.length]
+        : e.key === "ArrowLeft" ? ids[(at - 1 + ids.length) % ids.length]
+        : e.key === "Home" ? ids[0]
+        : e.key === "End" ? ids.at(-1) : null;
+      if (!to) return;
+      e.preventDefault();
+      switchTab(to);
     };
   });
+  each("[data-go]", (b) => { b.onclick = () => switchTab(b.dataset.go); });
 
-  app.querySelectorAll("#shapes button").forEach((b) => {
+  /* The per-trade detail is a pane under the table now, not a hidden row inside it.
+     Inside `.scroll` it needed `position:sticky;left:0` and a hand-computed width to
+     escape its own horizontal scroller; out here it is just a block in the page. */
+  const detail = app.querySelector("#tradeDetail");
+  const openTrade = (row) => {
+    const n = Number(row.dataset.i);
+    const wasOpen = row.classList.contains("open");
+    each("#tradeGrid tr.tr-row.open", (r) => {
+      r.classList.remove("open");
+      r.setAttribute("aria-expanded", "false");
+    });
+    if (wasOpen) { OPEN_TRADE = null; detail.hidden = true; return; }
+    row.classList.add("open");
+    row.setAttribute("aria-expanded", "true");
+    OPEN_TRADE = n;
+    const t = trades[n];
+    detail.innerHTML = detailFor(t);
+    detail.hidden = false;
+    initTooltips(detail);
+    detail.querySelectorAll(".copy").forEach((btn) => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const other = t.sides.find((s) => s.team === btn.dataset.team);
+        copy(pitchText(t, other), btn);
+      };
+    });
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  each("#tradeGrid tr.tr-row", (row) => {
+    row.onclick = () => openTrade(row);
+    // The rows have been clickable and unreachable from a keyboard since they were
+    // written. `bindSort` already does exactly this for the sortable headers.
+    row.onkeydown = (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      openTrade(row);
+    };
+  });
+  // A filter change rebuilds the table, so an open trade has to be reopened - or
+  // quietly forgotten, if the change is what filtered it out.
+  if (OPEN_TRADE != null) {
+    const back = app.querySelector(`#tradeGrid tr.tr-row[data-i="${OPEN_TRADE}"]`);
+    OPEN_TRADE = null;
+    if (back) openTrade(back);
+  }
+
+  each("#shapes button", (b) => {
     b.onclick = () => {
       F.shapes.has(b.dataset.v) ? F.shapes.delete(b.dataset.v) : F.shapes.add(b.dataset.v);
       rerender();
     };
   });
-  app.querySelectorAll("#only button").forEach((b) => {
+  each("#only button", (b) => {
     b.onclick = () => {
       const v = b.dataset.v;
       if (F.only.has(v)) F.only.delete(v);
@@ -1508,72 +1708,122 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
       rerender();
     };
   });
-  app.querySelectorAll("#divseed button").forEach((b) => {
+  each("#cols input", (cb) => {
+    cb.onchange = () => {
+      cb.checked ? COLS.add(cb.dataset.k) : COLS.delete(cb.dataset.k);
+      // Hiding the column the table is sorted by would leave it in insertion order
+      // with nothing on screen to say so. Hand the sort back to the objective.
+      const st = SORT.get("tradeGrid");
+      if (st && !COLS.has(st.key)) SORT.delete("tradeGrid");
+      chrome.storage.local.set({ "ffsm.tradeCols": [...COLS] });
+      rerender();
+    };
+  });
+  on("#colsall", "onclick", () => {
+    COLS = new Set(tradeCols.map((c) => c.key));
+    chrome.storage.local.set({ "ffsm.tradeCols": [...COLS] });
+    rerender();
+  });
+  on("#colskey", "onclick", () => {
+    COLS = new Set(KEY_COLS);
+    SORT.delete("tradeGrid");
+    chrome.storage.local.set({ "ffsm.tradeCols": [...COLS] });
+    rerender();
+  });
+  each("#divseed button", (b) => {
     b.onclick = async () => {
-      const on = b.dataset.v === "1";
-      if (on === (window.__divSeed === true)) return;
-      await chrome.storage.local.set({ "ffsm.divSeed": on });
+      const on_ = b.dataset.v === "1";
+      if (on_ === (window.__divSeed === true)) return;
+      await chrome.storage.local.set({ "ffsm.divSeed": on_ });
       location.reload();      // odds are computed at load; a rebuild is the honest path
     };
   });
-  app.querySelectorAll("#calib button").forEach((b) => {
+  each("#calib button", (b) => {
     b.onclick = async () => {
-      const on = b.dataset.v === "1";
-      if (on === (window.__calibrate !== false)) return;
-      await chrome.storage.local.set({ "ffsm.calibrate": on });
+      const on_ = b.dataset.v === "1";
+      if (on_ === (window.__calibrate !== false)) return;
+      await chrome.storage.local.set({ "ffsm.calibrate": on_ });
       location.reload();      // projections feed everything; a rebuild is the honest path
     };
   });
-  bindSourcesChips(app);
-  $("#mg").oninput = (e) => {
+  on("#mg", "oninput", (e) => {
     F.minGain = +e.target.value / 100;
-    $("#mgv").textContent = F.minGain.toFixed(2);
+    app.querySelector("#mgv").textContent = F.minGain.toFixed(2);
     rerender();
-  };
+  });
   let qt;
-  $("#q").oninput = (e) => {
+  on("#q", "oninput", (e) => {
     clearTimeout(qt);
     const v = e.target.value.trim().toLowerCase();
     qt = setTimeout(() => { F.q = v; rerender(); }, 180);
-  };
-  $("#who").onchange = (e) => {
+  });
+  on("#who", "onchange", (e) => {
     window.__view = e.target.value;
     if (e.target.value !== "__all__")
       chrome.storage.local.set({ "ffsm.myTeam": e.target.value });
     rerender();
-  };
-  $("#obj").onchange = (e) => {
+  });
+  on("#obj", "onchange", (e) => {
     window.__objective = e.target.value;
     chrome.storage.local.set({ "ffsm.objective": e.target.value });
     SORT.delete("tradeGrid");          // let the new objective set the default sort
     rerender();
-  };
-  $("#reset").onclick = () => {
+  });
+  on("#reset", "onclick", () => {
     window.__filters = null;
     window.__view = myTeam;
     rerender();
-  };
-  $("#theme").onclick = () =>
-    theme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
-  $("#refresh").onclick = async () => {
+  });
+  on("#theme", "onclick", () =>
+    theme(document.documentElement.dataset.theme === "light" ? "dark" : "light"));
+  on("#refresh", "onclick", async () => {
     // Refresh drops the cached league. It must not drop the user's choices, and it
     // must not drop anything they cannot get back: the calibration log accumulates
     // one week at a time and needs six of them, so a wiped log is six weeks of
     // waiting with no explanation. Its keys are dynamic (`ffsm.calib.{platform}.{league}.{season}`),
     // so no literal list can name them — they are matched by prefix instead.
     const KEEP = ["ffsm.myTeam", "ffsm.objective", "ffsm.calibrate", "ffsm.divSeed",
-                  "ffsm.aggregate", "ffsm.environment"];
+                  "ffsm.aggregate", "ffsm.environment", "ffsm.tradeCols"];
     const all = await chrome.storage.local.get(null);
     const keep = Object.fromEntries(Object.entries(all).filter(([k]) =>
       KEEP.includes(k) || k.startsWith("ffsm.calib.")));
     await chrome.storage.local.clear();
     if (Object.keys(keep).length) await chrome.storage.local.set(keep);
     location.reload();
-  };
+  });
+
+  // Restoring the caret is not a nicety: the player filter debounces for 180ms and then
+  // replaces the whole document, so every pause in typing used to drop focus to <body>
+  // and the box had to be clicked again.
+  if (focused?.id) {
+    const back = app.querySelector(`#${focused.id}`);
+    if (back) {
+      back.focus();
+      if (focused.at != null && back.setSelectionRange) back.setSelectionRange(focused.at, focused.at);
+    }
+  }
 }
 
 (async function init() {
   document.documentElement.dataset.theme = "dark";
+  // The tab lives in the hash, never in the query string: `?from=` is read below and
+  // must not be disturbed, and setting a hash does not reload. It earns its keep at
+  // once - four chip groups deliberately call location.reload(), and without this they
+  // all landed the user back on the first screen.
+  const wanted = location.hash.slice(1);
+  if (TABS.some(([t]) => t === wanted)) ACTIVE = wanted;
+  window.onhashchange = () => {
+    const id = location.hash.slice(1);
+    // switchTab writes the hash itself; without this guard that write renders twice.
+    if (id === ACTIVE || !TABS.some(([t]) => t === id)) return;
+    ACTIVE = id;
+    window.__rerender?.();
+  };
+  try {
+    const saved = (await chrome.storage.local.get("ffsm.tradeCols"))["ffsm.tradeCols"];
+    if (Array.isArray(saved) && saved.length) COLS = new Set(saved);
+  } catch { /* storage unavailable; the key set is the default */ }
+
   const params = new URLSearchParams(location.search);
   const from = params.get("from");
   const ref = from ? detect(from) : null;

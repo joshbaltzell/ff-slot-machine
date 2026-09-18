@@ -28,7 +28,7 @@ extension/
   manifest.json      MV3
   background.js      opens the page; nothing else lives here
   panel.html/.js     the UI
-  panel.css          the analytics-terminal look
+  panel.css          the analytics-terminal look, and the tab bar
   engine/
     league.js        what every platform shares: slot and position labels, pro teams,
                      volatility; re-exports platforms/espn.js so old imports still work
@@ -64,7 +64,7 @@ extension/
       fantasypros.js FantasyPros ECR via DynastyProcess
       sleeperstats.js Sleeper's weekly box score, one request per played week
       fantasycalc.js FantasyCalc crowd values keyed on espnId
-      vegas.js       Vegas lines and implied team totals
+      vegas.js       Vegas lines and implied team totals, one request a week
       weather.js     stadium weather for outdoor/retractable games
       stadiums.js    stadium roof and location lookup
   panel/
@@ -92,6 +92,8 @@ extension/
     cbs.mjs          the CBS adapter on the recorded league, offline
     fixtures/cbs/    19 scrubbed payloads from a real CBS league, and the capture
                      kit that recorded them; run-all is non-recursive, so no test
+    panelui.mjs      the results screen rendered headlessly: the five tabs, the
+                     default column set, the detail pane
     run-all.mjs      runs every *.mjs in the directory
 ```
 
@@ -315,6 +317,31 @@ the same scoring period alongside the current one. Matching on `statSourceId`,
 `statSplitTypeId` and `scoringPeriodId` alone silently reads last season — measured
 ~15% low.
 
+**The roster is read from the payload that has no week on it.** `view=mRoster&view=mTeam`
+without a `scoringPeriodId` is the league as it stands now, and `fingerprint` was already
+fetching it. `loadLeague` reads the league out of that blob and hashes the same one, then
+fetches only the weeks whose projections the blob did not already carry - a player's
+`stats` array often holds several scoring periods at once, so on some leagues that is no
+week requests at all. The old loop asked for all seventeen weeks and `restrictToRemaining`
+threw the played ones away, which was not merely waste: rosters were unioned across every
+fetched week, so a man dropped in September was still on his old team in November and the
+search would trade him away. Two things must not drift. The fingerprint must stay a
+nicety - when that request fails the week payloads build the league exactly as they always
+did, with a null hash, and `platform.mjs` asserts it. And the bye argmax must count only
+the weeks actually fetched: an unfetched week is silent for every player on every pro
+team, and an argmax over silence hands everybody a bye they have already taken.
+
+**One request prices a week, not thirty-one.** `vegas.js` used to walk ESPN's core API -
+a week index, then an event body, then an odds body reachable only through a `$ref` inside
+that body - so fifteen games cost ~31 requests and ~8 serial round trips, 63% of the whole
+run, for a clamped `[0.6, 1.4]` multiplier over two weeks. The site scoreboard route carries
+every game's line inline. `buildWeek` did not change: it already read a competitor as
+`refId(team.$ref) ?? Number(id)`, and on this route `competitor.id` **is** the pro-team id,
+so a fallback written for robustness turned out to be the whole adapter. One book is quoted
+rather than several, so `pickOdds` takes its documented fallback - the first row with a
+total. The rule that a week with no line is left out entirely, never defaulted to zero,
+is unchanged and is what makes a dead feed identity rather than a distortion.
+
 **Projections are calibrated before the engine sees them.** `panel.js` runs
 `shrinkProjections` on the model after free agents are merged and before `Engine` is
 built; fixture tests run with it off. `measureVolatility` reads `rawStats`, so sigma
@@ -419,6 +446,56 @@ are not CORS-open and would need either a host permission for a redirecting CDN 
 copy of the data in the repo. The measured effect is also small next to the implied
 total, which the environment factor already carries. Revisit only with a CORS-open
 source.
+
+**The results screen is five tabs, and `render()` still rebuilds all of it.** There is no
+patching layer and there should not be one: `render()` was always idempotent and always
+re-invoked on every filter change, so the cheap way to make that affordable was to build
+one tab instead of fourteen sections. Each tab is a thunk in `PANELS`; only the open one is
+ever called. Anything the user chose therefore has to live outside `render()` or it is
+silently reset on the next keystroke - `ACTIVE`, `OPEN_TRADE` and `COLS` sit beside `SORT`
+for exactly the reason `SORT` does, and the tab is mirrored into `location.hash` because
+four chip groups deliberately call `location.reload()` and used to land the user back on
+the first screen. Three things this fixed that were bugs rather than layout: every section
+was built eagerly, so `projectSeason` at twenty thousand seasons, `freeAgentUpgrades` and
+`gameplan` all re-ran on every step of the min-gain slider (`once()` now memoizes them, and
+every chip that could invalidate one reloads the page anyway); the player filter debounced
+for 180ms and then replaced the document, dropping focus to `<body>` on every pause in
+typing; and the trade rows were clickable and completely unreachable from a keyboard.
+
+**The trade table defaults to eight of its seventeen columns, and two of them are not
+optional.** Seventeen columns answer one question with about six. The default set is the
+deal, the partner, your gain, their gain and the crowd's price - `theirs` promoted from
+column eleven, because "helps my team and theirs" is the whole job - plus the market
+balance. Nothing is deleted; the rest are a click away in the Columns menu and persist to
+`ffsm.tradeCols`. Two invariants, each a silent failure if missed. `grid()` sorts by
+`SORT`'s key only if it can find that key among the columns it was handed, so the current
+objective's own column is forced visible and hiding the active sort key hands the sort back
+to the objective - otherwise the table reads as insertion order with nothing on screen to
+say so. And a filter that keys on a hidden column reveals it: "Even splits" reads `balance`.
+
+**A badge on a trade is a statement about the trade, not about a column.** Phase 12's
+`later` tag and the `bye` tag used to live inside the Playoffs and Partner-bye cells, which
+made them casualties of any column change. They sit beside the incoming players now, where
+`pkg()` already puts the injury badge, so a list the user reads as "trades that help me"
+still cannot quietly contain trades that hurt until December whatever the column set is.
+The Home screen's "Best move" card carries the same tag for the same reason - the widened
+gate means it can pick one.
+
+**The per-trade detail is a pane, not a row.** It used to be a hidden `<tr>` inside a
+horizontally scrolling table, which is why it needed `position:sticky;left:0` and a
+hand-computed `width:min(calc(100vw - 56px),1324px)` to escape its own scroller. Outside
+the table it is an ordinary block that inherits `.wrap`, and both the hack and the
+duplicated `.det` rule are gone. `panelui.mjs` asserts the stylesheet no longer contains
+them, because that is the kind of thing that gets copied back in.
+
+**`panelui.mjs` renders the page.** Every other test here checks a function that returns a
+string; the assembly of those strings is where the tabs live, and `platform.mjs` reads
+`panel.js` as text, which cannot tell you that `render()` throws on the Waivers tab. The
+test stubs a DOM thin enough to be obviously inert - `querySelector` answers null and
+`querySelectorAll` answers empty, so every binding is skipped and what survives is the
+markup - and imports `panel.js` once per tab under a distinct URL, because `init()` reads
+the tab out of `location.hash` exactly once. It is not a substitute for opening Chrome. It
+is the difference between knowing the markup is right and knowing nothing at all.
 
 ## Platforms
 
@@ -653,15 +730,15 @@ baseline is `.planning/phases/11-cbs-platform/run-all-before.txt`):
 ```bash
 node extension/test/run-all.mjs 2>&1 \
   | sed -E 's/[0-9]+ ms per trade/N ms per trade/' \
-  | awk '/^=== (platform|cbs|horizon)\.mjs ===/{skip=1; next} /^=== /{skip=0} !skip' \
+  | awk '/^=== (platform|cbs|horizon|panelui)\.mjs ===/{skip=1; next} /^=== /{skip=0} !skip' \
   | sed -E 's/^[0-9]+ files, /N files, /'
 ```
 
 An empty diff means the nine pre-existing files' assertion counts and output are
 byte-identical. Each phase that adds a test file adds it to the mask - a new file's
 output is new by definition, and leaving it in would mean the diff could never be
-empty again. Phase 12 added `horizon`. Anything else is a behaviour change in ESPN's
-path, whatever the commit message says.
+empty again. Phase 12 added `horizon`; the tab restructure added `panelui`. Anything
+else is a behaviour change in ESPN's path, whatever the commit message says.
 
 ## The daily reminder
 

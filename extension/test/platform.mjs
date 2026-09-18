@@ -407,6 +407,15 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "there is no password field, and no password anything, in the panel");
   ok(/Reading your league<\/p>/.test(HTML) && !/from ESPN/.test(HTML),
      "the boot copy in the markup names no platform: JS fills it in once one is known");
+
+  // MV3's default extension-page CSP is `script-src 'self'`, which blocks inline
+  // handler attributes outright. Every handler in this codebase is assigned as a
+  // property after the markup is inserted, and nothing on screen says so - a later
+  // `onclick="..."` in a template would simply never fire, in a page that has never
+  // been opened in a browser since Phase 1.
+  for (const [f, src] of [["panel.js", PANEL], ["panel.html", HTML]])
+    ok(!/\son(click|change|input|keydown|hashchange|submit)\s*=\s*["']/.test(src),
+       `${f} binds no handler as an inline attribute - the CSP would drop it`);
 }
 
 /* the copy sweep: the panel names the platform it is reading (11-07)
