@@ -72,12 +72,28 @@ const Steps = {
     if (!li) return;
     li.dataset.s = state;
     if (note != null) li.querySelector(".note").textContent = note;
-    if (state === "run") $("#bootnow").textContent = li.children[1].textContent;
+    if (state === "run") {
+      $("#bootnow").textContent = li.children[1].textContent;
+      this.working(li.children[1].textContent);
+    }
     const done = [...document.querySelectorAll("#steps li")]
       .filter((x) => x.dataset.s === "done" || x.dataset.s === "skip").length;
     $("#bootbar").style.width = `${(done / PHASES.length * 100).toFixed(0)}%`;
   },
-  stop() { clearInterval(this._t); },
+  /* The page is on screen long before the run is over, and the checklist above went
+     with the boot screen. This is what is left of it: one line, outside #app so a
+     re-render cannot take it away. */
+  working(label) {
+    const box = $("#working");
+    if (!box || !$("#boot").hidden) return;
+    $("#workingtxt").textContent = `${label}\u2026`;
+    box.hidden = false;
+  },
+  stop() {
+    clearInterval(this._t);
+    const box = $("#working");
+    if (box) box.hidden = true;
+  },
 };
 
 const say = (text, cls = "") => {
@@ -91,6 +107,10 @@ const say = (text, cls = "") => {
 const progress = (frac) => {
   const li = $('#steps li[data-s="run"]');
   if (li) li.querySelector(".note").textContent = `${Math.round(frac * 100)}%`;
+  // The boot screen is gone once the page paints, but the searches behind it are not.
+  const txt = $("#workingtxt");
+  if (txt && $("#boot")?.hidden && frac > 0)
+    txt.textContent = `${txt.textContent.replace(/ \d+%$/, "")} ${Math.round(frac * 100)}%`;
 };
 
 function theme(next) {
@@ -147,6 +167,9 @@ const TABS = [
   ["league",  "League"],
 ];
 let ACTIVE = "home";
+/* The open trade, held as the trade itself rather than its row index: the list is
+   re-sorted as later shapes and then the season odds arrive, and an index would
+   quietly come back pointing at a different deal. */
 let OPEN_TRADE = null;
 
 /* The trade table has seventeen columns and answers one question with about six of
@@ -366,6 +389,14 @@ async function start(ref) {
     if (s.divisions > 1)
       say(`note: ${s.divisions} divisions - playoff odds ignore divisional seeding`, "err");
 
+    // Two feeds that depend on nothing below them and on each other not at all. They
+    // used to be awaited in sequence, several steps apart, so the run cost their sum
+    // where it should have cost their maximum - and the Sleeper file is five megabytes.
+    // Settled rather than awaited, so a rejection here cannot escape before the step
+    // that reports it: "a dead feed costs a dash, not the run".
+    const sleeper$ = loadSleeperPlayers().then((sl) => ({ sl }), (e) => ({ e }));
+    const schedule$ = platform.loadSchedule(ref, model.teams).then((sch) => ({ sch }), (e) => ({ e }));
+
     // Free agents are optional: a failure here should not cost you the trade search.
     try {
       Steps.set("agents", "run");
@@ -400,15 +431,17 @@ async function start(ref) {
     // detail and nothing else.
     let sleeperByEspn = null;
     Steps.set("injuries", "run");
-    try {
-      const sl = await loadSleeperPlayers();
-      sleeperByEspn = sl.byEspn;
-      say(`  injury reports for ${sl.byEspn.size} players`
-        + `${sl.fromCache ? " (cached)" : ""}${sl.stale ? ", stale" : ""}`, "ok");
-      Steps.set("injuries", "done", `${sl.byEspn.size}`);
-    } catch (e) {
-      say(`  practice reports unavailable (${e.message}) - using ${platform.label} status only`, "err");
-      Steps.set("injuries", "warn", `${platform.label} only`);
+    {
+      const { sl, e } = await sleeper$;
+      if (sl) {
+        sleeperByEspn = sl.byEspn;
+        say(`  injury reports for ${sl.byEspn.size} players`
+          + `${sl.fromCache ? " (cached)" : ""}${sl.stale ? ", stale" : ""}`, "ok");
+        Steps.set("injuries", "done", `${sl.byEspn.size}`);
+      } else {
+        say(`  practice reports unavailable (${e.message}) - using ${platform.label} status only`, "err");
+        Steps.set("injuries", "warn", `${platform.label} only`);
+      }
     }
     const av = buildAvailability(model, sleeperByEspn, model.weeks, s.currentWeek);
     for (const line of availabilityLines(av.summary)) say(line, "ok");
@@ -509,13 +542,16 @@ async function start(ref) {
 
     let schedule = new Map();
     Steps.set("schedule", "run");
-    try {
-      schedule = await platform.loadSchedule(ref, model.teams);
-      say(`schedule: ${schedule.size} weeks of real matchups`, "ok");
-      Steps.set("schedule", "done", `${schedule.size} wks`);
-    } catch {
-      say("schedule unavailable - season projection will use all-play", "err");
-      Steps.set("schedule", "warn", "all-play");
+    {
+      const { sch } = await schedule$;
+      if (sch) {
+        schedule = sch;
+        say(`schedule: ${schedule.size} weeks of real matchups`, "ok");
+        Steps.set("schedule", "done", `${schedule.size} wks`);
+      } else {
+        say("schedule unavailable - season projection will use all-play", "err");
+        Steps.set("schedule", "warn", "all-play");
+      }
     }
     window.__schedule = schedule;
 
@@ -550,28 +586,22 @@ async function start(ref) {
     window.__vol = vol;
     // Measured floors and ceilings, from the residuals measureVolatility keeps.
     window.__dist = buildDistribution(vol, model.players);
-    // FantasyCalc's crowd values: what the manager on the other side is thinking.
-    // Display and ranking only - nothing below this line reads them, and a dead feed
-    // costs a dash in one column, not the search.
+    // FantasyCalc's crowd values and the usage box score. Both are display and ranking
+    // only - nothing in search.js, lineup.js, season.js or odds.js reads either - and
+    // between them they carried eight and fifteen second timeouts, sitting directly in
+    // front of thirty seconds of search. They are started here and awaited after the
+    // page is on screen, so their worst case costs a section arriving late rather than
+    // the whole report arriving late.
     Steps.set("market", "run");
-    const loadedMarket = await marketOrNull(model.settings, model.teams.size, say);
-    window.__market = marketView(eng, loadedMarket);
-    // Zero priced players is not a healthy load - an empty feed should read the same
-    // as a dead one, not go green.
-    const marketHealthy = !!loadedMarket && loadedMarket.byEspn.size > 0;
-    Steps.set("market", marketHealthy ? "done" : "warn",
-      loadedMarket ? `${loadedMarket.byEspn.size} priced` : "unavailable");
-
-    // Usage: what the box score has not caught up with yet. Evidence only - nothing
-    // below this line reads it, and a dead feed costs two sections and two columns,
-    // not the search - so the computation, not just the load, is guarded.
     Steps.set("usage", "run");
-    try {
-      const loadedUsage = await usageOrNull(model, ref.seasonId, say);
-      window.__usage = await usageViewStored(model, loadedUsage, s.currentWeek, say);
-    } catch { window.__usage = null; }
-    Steps.set("usage", window.__usage ? "done" : "warn",
-      window.__usage ? `${window.__usage.table.rows.size} players` : "unavailable");
+    const market$ = marketOrNull(model.settings, model.teams.size, say)
+      .then((m) => ({ m }), () => ({ m: null }));
+    const usage$ = (async () => {
+      try {
+        const loaded = await usageOrNull(model, ref.seasonId, say);
+        return await usageViewStored(model, loaded, s.currentWeek, say);
+      } catch { return null; }
+    })();
 
     Steps.set("s1", "run");
     // `accept` widens the gate, not the search: the enumeration is identical and only
@@ -585,21 +615,6 @@ async function start(ref) {
     say(`  ${one.length} mutually beneficial`, "ok");
 
     Steps.set("s1", "done", `${one.length}`);
-    // A consolidation is scored to the roster limit: the sender fills the seat it
-    // empties from waivers, the receiver drops his least useful man. Exhaustive.
-    Steps.set("s21", "run");
-    const t21 = Date.now();
-    const twoOne = await eng.findTwoForOne(0.05, (n, tot) => progress(n / tot));
-    say(`  ${twoOne.length} consolidations in ${((Date.now() - t21) / 1000).toFixed(1)}s`, "ok");
-    Steps.set("s21", "done", `${twoOne.length}`);
-    Steps.set("s2", "run", "slowest step");
-    const two = await eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot), { accept: ACCEPT });
-    say(`  ${two.length} mutually beneficial`, "ok");
-
-    Steps.set("s2", "done", `${two.length}`);
-    Steps.set("s3", "run");
-    const three = await eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
-    say(`  ${three.length} cycles`, "ok");
 
     // `dedupe` keeps at most three trades per team pair, taken from a list ordered by
     // combined gain - and a trade whose value is in the playoff weeks has a low
@@ -617,15 +632,48 @@ async function start(ref) {
       for (const t of list) (isStash(t) ? later : now).push(t);
       return [...dedupe(now, 3), ...dedupe(later, 2)];
     };
-    const trades = [...split(one), ...dedupe(twoOne, 3), ...split(two), ...dedupe(three, 3)]
-      .sort((a, b) => b.total - a.total);
-    Steps.set("s3", "done", `${three.length}`);
 
-    // Wins, not points, decide a season. The exact search is done; these passes only
-    // re-score its survivors, so recall is unaffected.
-    Steps.set("win", "run");
+    /* First paint, here rather than at the end.
+       Both of the things this tool is for are already answerable: the 1-for-1 list is
+       real, and the waiver table needs only the Engine - render() computes it and it
+       never waited on a search at all. What follows adds shapes to the list and then
+       refines it, and each stage paints again. The shapes were already ordered cheapest
+       first for exactly this reason; it just had nowhere to show the result until now.
+
+       `enrich` runs per batch instead of once over the merged list. It is per-trade
+       independent - one extra lineup solve a side - so batching changes no number. */
     eng.setSchedule(schedule);
-    await eng.enrich(trades, (n, tot) => progress(n / tot));
+    window.__objective = (await chrome.storage.local.get("ffsm.objective"))["ffsm.objective"] ?? "title";
+    const trades = [];
+    const show = async (batch) => {
+      await eng.enrich(batch, () => {});
+      trades.push(...batch);
+      trades.sort((a, b) => b.total - a.total);
+      render(eng, model, trades, myTeam, schedule);
+    };
+    Steps.set("win", "run");
+    await show(split(one));
+
+    // A consolidation is scored to the roster limit: the sender fills the seat it
+    // empties from waivers, the receiver drops his least useful man. Exhaustive.
+    Steps.set("s21", "run");
+    const t21 = Date.now();
+    const twoOne = await eng.findTwoForOne(0.05, (n, tot) => progress(n / tot));
+    say(`  ${twoOne.length} consolidations in ${((Date.now() - t21) / 1000).toFixed(1)}s`, "ok");
+    Steps.set("s21", "done", `${twoOne.length}`);
+    await show(dedupe(twoOne, 3));
+
+    Steps.set("s2", "run", "slowest step");
+    const two = await eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot), { accept: ACCEPT });
+    say(`  ${two.length} mutually beneficial`, "ok");
+    Steps.set("s2", "done", `${two.length}`);
+    await show(split(two));
+
+    Steps.set("s3", "run");
+    const three = await eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
+    say(`  ${three.length} cycles`, "ok");
+    Steps.set("s3", "done", `${three.length}`);
+    await show(dedupe(three, 3));
     Steps.set("win", "done", `${trades.length} trades`);
 
     // A Δ odds figure is a difference between two simulated worlds. When neither
@@ -667,6 +715,24 @@ async function start(ref) {
         + `in ${(fine.ms / 1000).toFixed(1)}s`, "ok");
       Steps.set("odds", "done", `${mine.length} trades · ${refine.length} refined`);
     }
+    // The odds columns were dashes until this point and are numbers now.
+    render(eng, model, trades, myTeam, schedule);
+
+    // Last: the two display-only feeds, which have been in flight since before the
+    // search started. Whatever they cost has already been spent behind a page the
+    // user could read, which is the whole reason they were moved.
+    {
+      const { m } = await market$;
+      window.__market = marketView(eng, m);
+      // Zero priced players is not a healthy load - an empty feed should read the same
+      // as a dead one, not go green.
+      Steps.set("market", m && m.byEspn.size > 0 ? "done" : "warn",
+        m ? `${m.byEspn.size} priced` : "unavailable");
+      window.__usage = await usage$;
+      Steps.set("usage", window.__usage ? "done" : "warn",
+        window.__usage ? `${window.__usage.table.rows.size} players` : "unavailable");
+      render(eng, model, trades, myTeam, schedule);
+    }
 
     Steps.set("build", "run");
     say(`${trades.length} offers after dedupe`, "ok");
@@ -691,14 +757,25 @@ async function start(ref) {
 
     Steps.set("build", "done");
     Steps.stop();
-    window.__objective = (await chrome.storage.local.get("ffsm.objective"))["ffsm.objective"] ?? "title";
-    render(eng, model, trades, myTeam, schedule);
   } catch (err) {
     Steps.stop();
     const running = $('#steps li[data-s="run"]');
     if (running) running.dataset.s = "warn";
     $("#bootmsg").textContent = "Could not finish loading.";
     say(String(err.message ?? err), "err");
+    // The page paints before the run is over, so a failure after the first paint used
+    // to land on a boot screen nobody can see any more. The report on screen is real
+    // and stays; the strip says what did not finish rather than quietly vanishing.
+    if ($("#boot").hidden) {
+      const box = $("#working");
+      if (box) {
+        box.hidden = false;
+        box.dataset.err = "1";
+        $("#workingtxt").textContent =
+          `Stopped early: ${String(err.message ?? err)}. What is on screen is complete.`;
+      }
+      return;
+    }
     // Adapters mark "not signed in / no access" with err.code. The message is theirs
     // to word and is never pattern-matched here.
     if (err.code === "AUTH") {
@@ -1656,8 +1733,8 @@ export function render(eng, model, trades, myTeam, schedule = window.__schedule 
     if (wasOpen) { OPEN_TRADE = null; detail.hidden = true; return; }
     row.classList.add("open");
     row.setAttribute("aria-expanded", "true");
-    OPEN_TRADE = n;
     const t = trades[n];
+    OPEN_TRADE = t;
     detail.innerHTML = detailFor(t);
     detail.hidden = false;
     initTooltips(detail);
@@ -1683,8 +1760,9 @@ export function render(eng, model, trades, myTeam, schedule = window.__schedule 
   // A filter change rebuilds the table, so an open trade has to be reopened - or
   // quietly forgotten, if the change is what filtered it out.
   if (OPEN_TRADE != null) {
-    const back = app.querySelector(`#tradeGrid tr.tr-row[data-i="${OPEN_TRADE}"]`);
+    const at = trades.indexOf(OPEN_TRADE);
     OPEN_TRADE = null;
+    const back = at >= 0 ? app.querySelector(`#tradeGrid tr.tr-row[data-i="${at}"]`) : null;
     if (back) openTrade(back);
   }
 

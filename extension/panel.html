@@ -80,4 +80,9 @@
 
 <div id="app" hidden></div>
 
+<!-- The page appears before the search has finished, so the checklist above goes with
+     it. This says what is still running, and it lives outside #app because render()
+     replaces that on every filter change. -->
+<div id="working" hidden><i></i><span id="workingtxt"></span></div>
+
 <script type="module" src="panel.js"></script>

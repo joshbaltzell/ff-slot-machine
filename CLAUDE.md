@@ -447,6 +447,35 @@ copy of the data in the repo. The measured effect is also small next to the impl
 total, which the environment factor already carries. Revisit only with a CORS-open
 source.
 
+**The page paints after the 1-for-1 search, and four more times after that.** Both of
+the things this tool is for are answerable long before the run is over: the 1-for-1 list
+is a real list, and the waiver table needs only the Engine - `render()` computes it and it
+never waited on a search at all. So `start()` paints there and then again after each of
+2-for-1, 2-for-2 and three-way, after the season odds resolve the Δ columns from dashes to
+numbers, and once more when the two display-only feeds land. The shapes were already
+ordered cheapest first for exactly this reason; there was simply nowhere to show the
+result until the screen had tabs. `enrich` moved to per batch, which changes no number -
+it is per-trade independent, one extra lineup solve a side.
+
+Three things this rearrangement must keep true. `marketOrNull` and `usageOrNull` are
+**started** before the search and **awaited** after the first paint - they are display-only
+by the rule above, and between them they carried 8 and 15 seconds of timeout sitting in
+front of thirty seconds of search; `platform.mjs` pins that ordering by source index,
+because nothing else can see it. The boot checklist disappears with the boot screen, so
+`#working` - a strip outside `#app`, where a re-render cannot reach it - says what is still
+running, and the `catch` reports a late failure there instead of writing to a `#bootmsg`
+nobody can see any more. And `OPEN_TRADE` holds the trade rather than its row index,
+because each paint re-sorts the list and an index would come back pointing at a different
+deal.
+
+**Independent feeds start together.** `loadSleeperPlayers` (five megabytes) and
+`loadSchedule` depend on nothing below them and on each other not at all, yet were awaited
+several steps apart, so the run cost their sum where it should have cost their maximum.
+They are settled rather than awaited at the point they start, so a rejection cannot escape
+before the step that reports it. Environment is deliberately **not** hoisted: it folds its
+factor into `p.proj` before the Engine is constructed and that ordering is load-bearing -
+and now that Vegas is two requests rather than sixty-two, there is nothing left to hoist.
+
 **The results screen is five tabs, and `render()` still rebuilds all of it.** There is no
 patching layer and there should not be one: `render()` was always idempotent and always
 re-invoked on every filter change, so the cheap way to make that affordable was to build

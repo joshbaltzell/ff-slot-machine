@@ -441,3 +441,17 @@ details.more > section, details.more > div{border-top:1px solid var(--line)}
   html{scroll-behavior:auto}
   .tab,.car,.hero-c,.tile.go,#tip{transition:none}
 }
+
+/* still-working strip, shown between the first paint and the last */
+#working{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;
+  display:flex;align-items:center;gap:10px;padding:9px 16px;
+  background:var(--raised);border:1px solid var(--line-hi);box-shadow:var(--shadow);
+  font-family:var(--mono);font-size:11px;color:var(--dim);max-width:calc(100vw - 32px)}
+#working[hidden]{display:none}
+#working[data-err] i{border-color:var(--warn);border-right-color:transparent;animation:none}
+#working[data-err]{color:var(--warn);border-color:var(--warn)}
+#working i{width:9px;height:9px;flex:none;border-radius:50%;
+  border:2px solid var(--accent);border-right-color:transparent;
+  animation:workspin .8s linear infinite}
+@keyframes workspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){#working i{animation:none}}

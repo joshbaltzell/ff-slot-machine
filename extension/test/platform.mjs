@@ -408,6 +408,27 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
   ok(/Reading your league<\/p>/.test(HTML) && !/from ESPN/.test(HTML),
      "the boot copy in the markup names no platform: JS fills it in once one is known");
 
+  // The load order is the feature, and nothing else can see it: `start()` cannot be
+  // imported (panel.js touches document while it evaluates) and no fixture drives it.
+  // These are index comparisons over the source, the same trick the schema block uses.
+  {
+    const at = (needle) => PANEL.indexOf(needle);
+    const paint = at("await show(split(one))");
+    ok(paint > 0, "the page paints after the 1-for-1 search, not after all of them");
+    ok(at("const sleeper$ =") > 0 && at("const schedule$ =") > 0
+       && at("const sleeper$ =") < at('Steps.set("injuries", "run")')
+       && at("const schedule$ =") < at('Steps.set("schedule", "run")'),
+       "the independent feeds are started before the steps that report them");
+    ok(at("marketOrNull(") < paint && at("await market$") > paint,
+       "FantasyCalc is in flight before the first paint and awaited after it");
+    ok(at("usageOrNull(") < paint && at("await usage$") > paint,
+       "…and so is the usage box score: both are display-only, and between them they "
+       + "carried 23 seconds of timeout in front of the search");
+    ok(at("attachOdds(") > paint, "season odds are computed behind a page, not in front of one");
+    const renders = (PANEL.match(/\n\s*render\(eng, model, trades, myTeam, schedule\);/g) ?? []).length;
+    ok(renders >= 2, `the run paints more than once (${renders})`);
+  }
+
   // MV3's default extension-page CSP is `script-src 'self'`, which blocks inline
   // handler attributes outright. Every handler in this codebase is assigned as a
   // property after the markup is inserted, and nothing on screen says so - a later
