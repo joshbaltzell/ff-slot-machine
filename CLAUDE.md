@@ -447,6 +447,20 @@ copy of the data in the repo. The measured effect is also small next to the impl
 total, which the environment factor already carries. Revisit only with a CORS-open
 source.
 
+**The league model is deliberately not cached, and that is a reversal.** The plan for
+this work called for parking `loadLeague`'s return in `chrome.storage` behind a short TTL
+and a fingerprint check, because the ESPN loader cost nineteen uncached requests every
+run. It does not any more: reading the roster from the no-period payload and fetching only
+the weeks that payload did not answer took that to two, sometimes eleven, and the
+fingerprint request the cache would need as its freshness check is now **one of them**. So
+the saving fell to a handful of requests, against the cost of a hand-written serializer for
+`players` and `teams` - Maps and Sets do not survive `chrome.storage` - which is the one
+data structure every number in this app is read from. A model that loses a `roster` or a
+`proj` on the way through is a league the engine scores wrong and nothing on screen says
+so. The four chip groups that `location.reload()` were the other argument for it, and they
+re-run thirty seconds of search either way, so the network was never their bottleneck.
+Revisit only if the loader goes back to costing many requests.
+
 **The page paints after the 1-for-1 search, and four more times after that.** Both of
 the things this tool is for are answerable long before the run is over: the 1-for-1 list
 is a real list, and the waiver table needs only the Engine - `render()` computes it and it
