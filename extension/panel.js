@@ -27,7 +27,7 @@ import { usageOrNull, usageViewStored, assetsSection, breakoutSection,
          waiverView, faCrowdCols, faCrowdCells } from "./panel/usage.js";
 import { buildDistribution, attachCovariance, playerRange } from "./engine/distribution.js";
 import { gameplan } from "./engine/gameplan.js";
-import { DIST_HINT, weekSection, stackLine, stackNote } from "./panel/distributions.js";
+import { DIST_HINT, SWAP_MIN, weekSection, stackLine, stackNote } from "./panel/distributions.js";
 
 const $ = (s) => document.querySelector(s);
 
@@ -56,8 +56,16 @@ const PHASES = [
 
 const Steps = {
   started: 0,
+  /* When each step started, and how long it ran. Without this "it feels slower" has no
+     answer: the checklist said which step was running and never what any of them cost,
+     and several of them now overlap, so the order they finish in is not the order they
+     were paid for. */
+  _at: new Map(),
+  timings: [],
   init() {
     this.started = Date.now();
+    this._at.clear();
+    this.timings.length = 0;
     $("#steps").innerHTML = PHASES.map(([k, label]) =>
       `<li data-k="${k}" data-s="wait"><span class="ic"></span>
         <span>${label}</span><span class="note"></span></li>`).join("");
@@ -71,7 +79,16 @@ const Steps = {
     const li = $(`#steps li[data-k="${key}"]`);
     if (!li) return;
     li.dataset.s = state;
-    if (note != null) li.querySelector(".note").textContent = note;
+    if (state === "run") this._at.set(key, Date.now());
+    let ms = null;
+    if (state !== "run" && this._at.has(key)) {
+      ms = Date.now() - this._at.get(key);
+      this._at.delete(key);
+      this.timings.push([li.children[1].textContent, ms]);
+    }
+    if (note != null)
+      li.querySelector(".note").textContent =
+        ms == null ? note : `${note} · ${(ms / 1000).toFixed(1)}s`;
     if (state === "run") {
       $("#bootnow").textContent = li.children[1].textContent;
       this.working(li.children[1].textContent);
@@ -93,6 +110,13 @@ const Steps = {
     clearInterval(this._t);
     const box = $("#working");
     if (box) box.hidden = true;
+    // Printed into the Details log, biggest first. Steps overlap now, so these sum to
+    // more than the wall clock - that is the point: the gap between the sum and the
+    // clock is what the fan-out bought.
+    const total = Date.now() - this.started;
+    const top = this.timings.slice().sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([label, ms]) => `${label} ${(ms / 1000).toFixed(1)}s`).join(", ");
+    say(`finished in ${(total / 1000).toFixed(1)}s — slowest: ${top}`, "ok");
   },
 };
 
@@ -343,6 +367,10 @@ async function cached(key, fn) {
 }
 
 async function start(ref) {
+  // Whether anything has actually reached the screen. The failure path claims the
+  // report on screen is complete, and that claim has to be true: a throw inside the
+  // first render leaves nothing there at all.
+  let painted = false;
   // The adapter for this league's platform. Every league fetch below goes through
   // it, and the engine that follows never learns which one it was.
   const platform = byId(ref?.platform);
@@ -650,6 +678,7 @@ async function start(ref) {
       trades.push(...batch);
       trades.sort((a, b) => b.total - a.total);
       render(eng, model, trades, myTeam, schedule);
+      painted = true;
     };
     Steps.set("win", "run");
     await show(split(one));
@@ -717,6 +746,7 @@ async function start(ref) {
     }
     // The odds columns were dashes until this point and are numbers now.
     render(eng, model, trades, myTeam, schedule);
+    painted = true;
 
     // Last: the two display-only feeds, which have been in flight since before the
     // search started. Whatever they cost has already been spent behind a page the
@@ -732,6 +762,7 @@ async function start(ref) {
       Steps.set("usage", window.__usage ? "done" : "warn",
         window.__usage ? `${window.__usage.table.rows.size} players` : "unavailable");
       render(eng, model, trades, myTeam, schedule);
+      painted = true;
     }
 
     Steps.set("build", "run");
@@ -766,7 +797,7 @@ async function start(ref) {
     // The page paints before the run is over, so a failure after the first paint used
     // to land on a boot screen nobody can see any more. The report on screen is real
     // and stays; the strip says what did not finish rather than quietly vanishing.
-    if ($("#boot").hidden) {
+    if (painted) {
       const box = $("#working");
       if (box) {
         box.hidden = false;
@@ -776,6 +807,10 @@ async function start(ref) {
       }
       return;
     }
+    // Nothing painted, so the boot screen is still the only thing there - put it back
+    // if a half-finished render hid it, and fall through to the normal error path.
+    $("#boot").hidden = false;
+    $("#app").hidden = true;
     // Adapters mark "not signed in / no access" with err.code. The message is theirs
     // to word and is never pattern-matched here.
     if (err.code === "AUTH") {
@@ -1432,9 +1467,7 @@ export function render(eng, model, trades, myTeam, schedule = window.__schedule 
     : bestMode === "wins" ? `${best.g >= 0 ? "+" : "−"}${Math.abs(best.g).toFixed(2)} W` : f2(best.g);
   const benchCount = eng.roster.get(myTeam).filter((i) => (rates.get(i) ?? 0) < 0.25).length;
 
-  $("#boot").hidden = true;
   const app = $("#app");
-  app.hidden = false;
   // ---------- the five tabs ----------
   // Each is a thunk: only the open one is ever built. That is what makes a re-render
   // on every slider step affordable, and it is the seam a progressive load fills in.
@@ -1648,7 +1681,11 @@ export function render(eng, model, trades, myTeam, schedule = window.__schedule 
   const focused = ae && app.contains(ae) && ae.id
     ? { id: ae.id, at: ae.selectionStart ?? null } : null;
 
-  app.innerHTML = `
+  // Built into a string first, and only then shown. Hiding the boot screen before
+  // evaluating the template meant a throw anywhere in it left a blank page with the
+  // loading screen already gone - and the error path then wrote to a #bootmsg nobody
+  // could see. The page is replaced only once there is a page to replace it with.
+  const html = `
   <header class="masthead"><div class="wrap"><div class="mast-in">
     <div>
       <div class="eyebrow"><b>${esc(model.settings.name)}</b><span>·</span>
@@ -1679,6 +1716,10 @@ export function render(eng, model, trades, myTeam, schedule = window.__schedule 
     <footer>Live from ${esc(LABEL)}. Nothing leaves your machine.
       <button class="ghost" id="refresh">Refresh data</button></footer>
   </div>`;
+
+  $("#boot").hidden = true;
+  app.hidden = false;
+  app.innerHTML = html;
 
   /* ---------- behaviour ---------- */
   const rerender = () => render(eng, model, trades, myTeam, schedule);

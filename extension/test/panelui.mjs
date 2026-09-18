@@ -17,6 +17,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Engine } from "../engine/search.js";
 import { buildSlots, seatMask } from "../engine/lineup.js";
+import { measureVolatility } from "../engine/league.js";
+import { buildDistribution, attachCovariance } from "../engine/distribution.js";
 
 let checks = 0, failures = 0;
 const ok = (cond, what) => {
@@ -55,6 +57,10 @@ globalThis.chrome = { storage: { local: {
 } } };
 
 /* ---- the frozen league, built exactly as parity.mjs builds it ---- */
+const SEASON = 2026;
+const PRIOR = [1, 2, 3, 4, 5, 6, 7, 8];
+const RES = [2, -2, 4, -4, 1, -1, 10, -10];       // actual minus projection, mean zero
+
 const { slots, starters } = buildSlots(F.lineupSlotCounts);
 const masks = F.pos.map((pos) => seatMask(F.eligibleSlots[pos], slots));
 const model = {
@@ -69,6 +75,15 @@ const model = {
     id: i, name: `p${i}`, pos, nfl: "X", eligibleSlots: F.eligibleSlots[pos],
     bye: F.weeks.find((w) => !(F.proj[i][F.weeks.indexOf(w)] > 0)) ?? 0,
     proj: Object.fromEntries(F.weeks.map((w, k) => [w, F.proj[i][k]])),
+    // A prior season, so measureVolatility has something to measure. Without it
+    // `eng.sigmaOf` is never set, `window.__dist` stays null, and every branch that
+    // needs a weekly plan is skipped - which is how `SWAP_MIN is not defined` reached
+    // a real league with this file passing.
+    history: PRIOR.map((wk, k) => ({
+      season: SEASON - 1, week: wk,
+      proj: 10 + (i % 3),
+      actual: 10 + (i % 3) + RES[k],
+    })),
   }])),
   teams: new Map(F.teams.map((name, ti) =>
     [ti, { id: ti, name, roster: new Set(F.rosters[name]) }])),
@@ -76,6 +91,27 @@ const model = {
 const eng = new Engine(model, { starters }, new Map(F.pos.map((p, i) => [i, masks[i]])));
 const trades = await eng.findTwoTeam(1, 0.05);
 const MY = F.teams[0];
+
+// Everything start() does between the engine and the first paint, so the page under
+// test is the page a league actually gets rather than its most degraded form.
+const vol = measureVolatility([...model.players.values()], SEASON - 1);
+eng.setVolatility(vol);
+attachCovariance(eng, model.players);
+globalThis.window.__dist = buildDistribution(vol, model.players);
+
+// A real schedule, because `gameplan` returns null without an opponent
+// (`eng.opp?.get(team)?.[w]`, gameplan.js:91) - and a null plan is exactly the
+// degraded shape that let `SWAP_MIN is not defined` through. Teams are paired off
+// and rotated a week at a time, which is all the weekly plan needs.
+const SCHEDULE = new Map(F.weeks.map((wk, k) => {
+  const rot = [F.teams[0], ...F.teams.slice(1).map((_, i) =>
+    F.teams[1 + (i + k) % (F.teams.length - 1)])];
+  const pairs = [];
+  for (let i = 0; i < rot.length / 2; i++) pairs.push([rot[i], rot[rot.length - 1 - i]]);
+  return [wk, pairs];
+}));
+eng.setSchedule(SCHEDULE);
+globalThis.window.__schedule = SCHEDULE;
 
 const draw = async (tab) => {
   APP_HTML = "";
@@ -132,6 +168,13 @@ console.log(`fixture: ${F.teams.length} teams, ${trades.length} 1-for-1 trades`)
      "the season and the standings are on League");
   ok(seen.home.includes("Best move") && seen.home.includes("Playoff odds"),
      "Home leads with the answer, not a table");
+  // The weekly plan is the branch that is skipped whenever volatility, the
+  // distribution or the schedule is missing - which is the shape this fixture used to
+  // have, and the reason a ReferenceError in it reached a real league green.
+  ok(/This week[\s\S]*?class="v [a-z]+">\d/.test(seen.home),
+     "Home shows a real win probability, so the weekly-plan branch actually ran");
+  ok(seen.team.includes("This week") && !seen.team.includes("no game scheduled"),
+     "…and My team carries the plan itself, not its empty shape");
   ok(!seen.home.includes("<table"), "Home has no table on it at all");
   const gone = ids.filter((id) => !seen[id].includes('data-go="'));
   ok(gone.length === 4 && !gone.includes("home"),
