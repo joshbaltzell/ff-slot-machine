@@ -29,13 +29,38 @@ export function trimPlayers(raw) {
   return out;
 }
 
-/** @returns { byEspn: Map<espnId, rec>, bySleeper: Map<sleeperId, rec>, at, fromCache } */
+/**
+ * Three callers want this file in one run - panel.js for availability, the projection
+ * step for its crosswalk, the usage step for its own. Only the first is ever a
+ * request; the other two were re-reading a five-megabyte blob out of storage and
+ * rebuilding two twelve-thousand-entry Maps, twice, for an answer that had not moved.
+ *
+ * The memo is keyed on `r.at`, not on mere existence, so a TTL refresh mid-run is
+ * still honoured. It is bypassed entirely whenever storage or fetch is injected,
+ * because that is a test: a module-level cache that survived between cases would let
+ * one test's feed answer another's.
+ *
+ * @returns { byEspn: Map<espnId, rec>, bySleeper: Map<sleeperId, rec>, at, fromCache }
+ */
+const MEMO_MS = 5 * 60e3;
+let playersMemo = null;   // { madeAt, value }
+
 export async function loadSleeperPlayers(opts = {}) {
+  const injected = opts.storage != null || opts.fetchImpl != null;
+  const now = typeof opts.now === "number" ? opts.now : Date.now();
+  // Short-circuit *before* cached(), not after: the expensive part is the storage read
+  // that deserializes the trimmed blob, and returning the same Maps after paying for it
+  // again would have saved almost nothing. Five minutes is far longer than a run and
+  // far shorter than the file's one-day TTL, so nothing can go stale inside it.
+  if (!injected && playersMemo && now - playersMemo.madeAt < MEMO_MS) return playersMemo.value;
+
   const r = await cached("src.sleeper.players", `${BASE}/players/nfl`, opts.ttlMs ?? DAY,
     { ...opts, transform: trimPlayers });
   const byEspn = new Map(), bySleeper = new Map();
   for (const rec of r.data) { byEspn.set(rec.espn_id, rec); bySleeper.set(rec.player_id, rec); }
-  return { byEspn, bySleeper, at: r.at, fromCache: r.fromCache, stale: r.stale ?? false };
+  const value = { byEspn, bySleeper, at: r.at, fromCache: r.fromCache, stale: r.stale ?? false };
+  if (!injected) playersMemo = { madeAt: now, value };
+  return value;
 }
 
 /** Crowd adds or drops across all Sleeper leagues. @returns [{player_id, count}] */

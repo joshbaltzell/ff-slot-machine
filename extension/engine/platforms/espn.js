@@ -319,78 +319,138 @@ export async function fingerprint(ref, opts = {}) {
  */
 export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   const { leagueId, seasonId } = ref;
-  onProgress(0, 1, "settings");
   const settingsRaw = await get(seasonId, leagueId, "view=mSettings", undefined, opts);
+  // After the await, not before it. This used to fire first, so the panel flipped
+  // "League settings" to done and "Rosters" to running before the settings request
+  // had even been issued.
+  onProgress(0, 1, "settings");
   const settings = readSettings(settingsRaw);
   const weeks = [...settings.regularSeasonWeeks, ...settings.playoffWeeks];
 
   const players = new Map();      // espn player id -> record
   const teams = new Map();        // team id -> {id, name, roster:Set}
+
+  const readTeam = (t) => {
+    const name = t.name || `${t.location ?? ""} ${t.nickname ?? ""}`.trim() || `Team ${t.id}`;
+    const rec = teams.get(t.id) ?? {
+      id: t.id, name, roster: new Set(), owners: t.owners ?? [],
+      divisionId: t.divisionId ?? 0,
+    };
+    rec.name = name;
+    rec.divisionId = t.divisionId ?? rec.divisionId ?? 0;
+    // Games already played are decided; the season projection starts from them
+    // rather than from 0-0. ESPN sends this with every mTeam view.
+    if (t.record?.overall) rec.record = {
+      wins: t.record.overall.wins ?? 0,
+      losses: t.record.overall.losses ?? 0,
+      ties: t.record.overall.ties ?? 0,
+      pointsFor: t.record.overall.pointsFor ?? 0,
+    };
+    // What this team has already spent of that budget. ESPN sends it with mTeam.
+    rec.faabSpent = t.transactionCounter?.acquisitionBudgetSpent ?? rec.faabSpent ?? 0;
+    teams.set(t.id, rec);
+    return rec;
+  };
+
+  // Every projection this player's payload happens to carry, for the weeks we want.
+  // `seasonId` matters: ESPN returns the prior season's projection for the same
+  // week alongside this one, and taking the first match can silently use it.
+  const readProj = (p, pl, want) => {
+    for (const st of p.stats ?? []) {
+      if (st.statSourceId !== 1 || st.statSplitTypeId !== 1 || st.seasonId !== seasonId) continue;
+      if (!want.has(st.scoringPeriodId)) continue;
+      pl.proj[st.scoringPeriodId] = Math.round((st.appliedTotal ?? 0) * 100) / 100;
+    }
+  };
+
+  const readPlayer = (p, rec, want) => {
+    rec.roster.add(p.id);
+    const pl = players.get(p.id) ?? {
+      id: p.id, name: p.fullName,
+      eligibleSlots: p.eligibleSlots ?? [],
+      pos: positionLabel(p),
+      posId: p.defaultPositionId ?? 0,
+      // ESPN's own words, passed through rather than mapped: availability.js
+      // owns the vocabulary, and an unknown string there means "playing".
+      injuryStatus: p.injuryStatus ?? null,
+      injured: p.injured === true,
+      nfl: PRO_TEAM[p.proTeamId] ?? "?",
+      teamId: rec.id, proj: {}, history: historyOf(p.stats),
+    };
+    pl.teamId = rec.id;
+    if (p.injuryStatus != null) pl.injuryStatus = p.injuryStatus;
+    if (p.injured != null) pl.injured = p.injured === true;
+    readProj(p, pl, want);
+    players.set(p.id, pl);
+    return pl;
+  };
+
+  // Only the weeks that remain. The played ones were fetched and then thrown away by
+  // `restrictToRemaining` before anything read them - and worse than wasted, because
+  // rosters were unioned across every fetched week, so a man dropped in September was
+  // still on his old team in November and the engine would trade him away. A season
+  // already over keeps every week, the same rule `restrictToRemaining` uses.
+  const cw = settings.currentWeek ?? 1;
+  const remaining = weeks.filter((w) => w >= cw);
+  const want = new Set(remaining.length ? remaining : weeks);
+
+  // The authoritative roster: `view=mRoster&view=mTeam` with no `scoringPeriodId` is
+  // the league as it stands right now, and it is the same payload the daily check
+  // hashes. It used to be fetched separately at the end purely for the hash; reading
+  // the league out of it instead makes the roster exact and the hash free.
+  //
+  // It must not become load-bearing, though: this request can fail on its own (a
+  // rate limit, a flaky hop) and a fingerprint is a nicety. When it does, the week
+  // payloads below build the league exactly as they always did and the hash is null,
+  // which the daily check already reads as "adopt the first hash you compute".
+  let fp = null;
+  try {
+    const rosterRaw = await get(seasonId, leagueId, "view=mRoster&view=mTeam", undefined, opts);
+    for (const t of rosterRaw.teams ?? []) {
+      const rec = readTeam(t);
+      for (const e of t.roster?.entries ?? []) readPlayer(e.playerPoolEntry.player, rec, want);
+    }
+    fp = hashRosters((rosterRaw.teams ?? []).map((t) => ({
+      id: t.id,
+      ids: (t.roster?.entries ?? []).map((e) => e.playerPoolEntry?.id ?? e.playerId),
+    })));
+  } catch { /* fall through to the week payloads, with no hash */ }
+
+  // A player's `stats` array often carries several scoring periods at once, so the
+  // payload above may already have answered for weeks nobody has asked about yet.
+  // Fetch only what is still missing - on a league whose payload carries the whole
+  // remaining season that is nothing at all.
+  const missing = players.size
+    ? [...want].filter((w) => [...players.values()].some((pl) => pl.proj[w] == null))
+    : [...want];
   let done = 0;
   const CONCURRENCY = 3;
 
   const fetchWeek = async (wk) => {
     const blob = await get(seasonId, leagueId,
       `view=mRoster&view=mTeam&scoringPeriodId=${wk}`, undefined, opts);
+    const one = new Set([wk]);
     for (const t of blob.teams ?? []) {
-      const name = t.name || `${t.location ?? ""} ${t.nickname ?? ""}`.trim() || `Team ${t.id}`;
-      const rec = teams.get(t.id) ?? {
-        id: t.id, name, roster: new Set(), owners: t.owners ?? [],
-        divisionId: t.divisionId ?? 0,
-      };
-      rec.name = name;
-      rec.divisionId = t.divisionId ?? rec.divisionId ?? 0;
-      // Games already played are decided; the season projection starts from them
-      // rather than from 0-0. ESPN sends this with every mTeam view.
-      if (t.record?.overall) rec.record = {
-        wins: t.record.overall.wins ?? 0,
-        losses: t.record.overall.losses ?? 0,
-        ties: t.record.overall.ties ?? 0,
-        pointsFor: t.record.overall.pointsFor ?? 0,
-      };
-      // What this team has already spent of that budget. ESPN sends it with mTeam.
-      rec.faabSpent = t.transactionCounter?.acquisitionBudgetSpent ?? rec.faabSpent ?? 0;
-      teams.set(t.id, rec);
-      for (const e of t.roster?.entries ?? []) {
-        const p = e.playerPoolEntry.player;
-        rec.roster.add(p.id);
-        const pl = players.get(p.id) ?? {
-          id: p.id, name: p.fullName,
-          eligibleSlots: p.eligibleSlots ?? [],
-          pos: positionLabel(p),
-          posId: p.defaultPositionId ?? 0,
-          // ESPN's own words, passed through rather than mapped: availability.js
-          // owns the vocabulary, and an unknown string there means "playing".
-          injuryStatus: p.injuryStatus ?? null,
-          injured: p.injured === true,
-          nfl: PRO_TEAM[p.proTeamId] ?? "?",
-          teamId: t.id, proj: {}, history: historyOf(p.stats),
-        };
-        pl.teamId = t.id;
-        if (p.injuryStatus != null) pl.injuryStatus = p.injuryStatus;
-        if (p.injured != null) pl.injured = p.injured === true;
-        // seasonId matters: ESPN returns the prior season's projection for the same
-        // week alongside this one, and taking the first match can silently use it.
-        const stat = (p.stats ?? []).find(st =>
-          st.statSourceId === 1 && st.statSplitTypeId === 1
-          && st.scoringPeriodId === wk && st.seasonId === seasonId);
-        pl.proj[wk] = Math.round((stat?.appliedTotal ?? 0) * 100) / 100;
-        players.set(p.id, pl);
-      }
+      const rec = readTeam(t);
+      for (const e of t.roster?.entries ?? []) readPlayer(e.playerPoolEntry.player, rec, one);
     }
-    onProgress(++done, weeks.length, `week ${wk}`);
+    onProgress(++done, missing.length, `week ${wk}`);
   };
 
-  for (let i = 0; i < weeks.length; i += CONCURRENCY) {
-    await Promise.all(weeks.slice(i, i + CONCURRENCY).map(fetchWeek));
+  for (let i = 0; i < missing.length; i += CONCURRENCY) {
+    await Promise.all(missing.slice(i, i + CONCURRENCY).map(fetchWeek));
   }
+  if (!missing.length) onProgress(1, 1, "rosters");
 
   // A bye is a property of the NFL team, not the player: one player can project zero
-  // for many reasons, but a whole pro roster only goes quiet together.
+  // for many reasons, but a whole pro roster only goes quiet together. Counted over
+  // the weeks actually fetched - an unfetched week is silent for everybody, and an
+  // argmax over silence would hand every player a bye he has already taken.
+  const counted = [...want];
   const zeros = new Map();
   for (const p of players.values()) {
     const m = zeros.get(p.nfl) ?? new Map();
-    for (const wk of weeks) if (!(p.proj[wk] > 0)) m.set(wk, (m.get(wk) ?? 0) + 1);
+    for (const wk of counted) if (!(p.proj[wk] > 0)) m.set(wk, (m.get(wk) ?? 0) + 1);
     zeros.set(p.nfl, m);
   }
   const byeOf = new Map();
@@ -400,10 +460,6 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
     byeOf.set(nfl, best);
   }
   for (const p of players.values()) p.bye = byeOf.get(p.nfl) ?? 0;
-
-  // The nineteenth request. Deliberate: the daily check compares against this exact
-  // hash, so it has to come from the same payload and the same function.
-  const fp = await fingerprint(ref, opts);
 
   return { settings, weeks, players, teams, fingerprint: fp, notes: [] };
 }

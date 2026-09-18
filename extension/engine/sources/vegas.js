@@ -7,11 +7,27 @@
  * player is about to play. A team implied for 28 points and a team implied for 16
  * do not deserve the same projection, however well-matched their season averages.
  *
- * Three requests per game, in a fixed shape:
- *   .../seasons/{yr}/types/2/weeks/{w}/events   -> { items: [{ $ref }] }
- *   {event $ref}                                -> competitions[0] with competitors
- *   {competition odds $ref}                     -> { items: [{ provider, overUnder,
- *                                                   spread, homeTeamOdds }] }
+ * One request per week, in a fixed shape:
+ *   .../scoreboard?week={w}&seasontype=2  -> { events: [{ competitions: [{ date,
+ *                                              competitors: [{ homeAway, id, team }],
+ *                                              odds: [{ provider, overUnder, spread,
+ *                                                       homeTeamOdds }] }] }] }
+ *
+ * This used to be three requests per game against the core API - a week index, then
+ * an event body, then an odds body reachable only through a `$ref` inside that body,
+ * so fifteen games cost thirty-one requests and roughly eight serial round trips.
+ * The scoreboard route carries every game's line inline, which is the same data in
+ * one request: measured 16 events, 15 priced. That was 63% of the whole run's request
+ * count, spent on a clamped [0.6, 1.4] multiplier over two weeks.
+ *
+ * `buildWeek` did not have to change for it. It already read a competitor's id as
+ * `refId(team.$ref) ?? Number(id)`, and on this route `competitor.id` is the pro-team
+ * id - so the fallback that existed for robustness turned out to be the whole adapter.
+ *
+ * One difference worth knowing: the core API quoted several books and this route
+ * quotes one (DraftKings, provider 100), so `PREFERRED_PROVIDER` no longer matches
+ * and `pickOdds` takes its documented fallback - the first row carrying a total.
+ *
  * Everything is cached for three hours, so a page reload during a Sunday morning
  * costs nothing, and a line that moves at noon is picked up by the afternoon.
  *
@@ -20,9 +36,8 @@
  */
 import { cached } from "./cache.js";
 
-export const VEGAS_BASE = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl";
+export const VEGAS_BASE = "https://site.api.espn.com/apis/site/v2/sports/football/nfl";
 const HOURS3 = 3 * 3600e3;
-const CONCURRENCY = 4;
 
 /** ESPN BET. Any priced book is usable; this one is the house default and is always there. */
 export const PREFERRED_PROVIDER = 58;
@@ -97,35 +112,19 @@ export function buildWeek(events) {
   return out;
 }
 
-/** Events for one week, each with its odds rows attached. One dead game is skipped. */
+/**
+ * One week of games, each with its odds array hoisted to where `buildWeek` looks for
+ * it. A single request; a week ESPN has not priced yet simply yields no usable rows.
+ */
 async function fetchWeekEvents(season, week, opts) {
   const ttl = opts.ttlMs ?? HOURS3;
-  const list = await cached(`src.vegas.list.${season}.${week}`,
-    `${VEGAS_BASE}/seasons/${season}/types/2/weeks/${week}/events`, ttl, opts);
-  const refs = (list.data?.items ?? []).map((it) => it.$ref).filter(Boolean);
-
-  const events = [];
-  for (let i = 0; i < refs.length; i += CONCURRENCY) {
-    const batch = await Promise.all(refs.slice(i, i + CONCURRENCY).map(async (ref) => {
-      const id = refId(ref);
-      try {
-        const ev = await cached(`src.vegas.ev.${id}`, ref, ttl, opts);
-        const comp = ev.data?.competitions?.[0];
-        if (!comp) return null;
-        // No odds $ref means ESPN has not posted a line for this game at all - not
-        // "fetch failed", just nothing to fetch. Guessing a URL here would mean
-        // re-attempting (and re-failing) the same request every load, forever
-        // outside the TTL cache, since a failed fetch is never itself cached.
-        const oddsRef = comp.odds?.$ref;
-        const odds = oddsRef ? await cached(`src.vegas.odds.${id}`, oddsRef, ttl, opts) : null;
-        return { ...ev.data, odds: odds?.data?.items ?? [] };
-      } catch {
-        return null;          // one unpriced or unreachable game is not a dead week
-      }
-    }));
-    events.push(...batch);
-  }
-  return events.filter(Boolean);
+  const url = `${VEGAS_BASE}/scoreboard?week=${week}&seasontype=2&dates=${season}`;
+  const board = await cached(`src.vegas.board.${season}.${week}`, url, ttl, opts);
+  // `odds` lives on the competition here rather than behind a $ref. Hoisting it onto
+  // the event is the whole translation: buildWeek reads `ev.odds` and `ev.competitions`.
+  return (board.data?.events ?? []).map((ev) => ({
+    ...ev, odds: ev.competitions?.[0]?.odds ?? [],
+  }));
 }
 
 /**
@@ -134,15 +133,19 @@ async function fetchWeekEvents(season, week, opts) {
  * @param opts   { fetchImpl, storage, now, ttlMs } - injected so tests stay offline
  * @returns Map<week, Map<proTeamId, Game>>. A week that cannot be fetched is an
  *          empty map, never a rejection: no lines must read as no adjustment.
+ *
+ * The weeks are fetched concurrently and written back in `weeks` order, so the Map's
+ * iteration order is the caller's order however the network resolves.
  */
 export async function loadVegas(season, weeks, opts = {}) {
-  const byWeek = new Map();
-  for (const w of weeks) {
+  const built = await Promise.all((weeks ?? []).map(async (w) => {
     try {
-      byWeek.set(w, buildWeek(await fetchWeekEvents(season, w, opts)));
+      return buildWeek(await fetchWeekEvents(season, w, opts));
     } catch {
-      byWeek.set(w, new Map());
+      return new Map();
     }
-  }
+  }));
+  const byWeek = new Map();
+  (weeks ?? []).forEach((w, i) => byWeek.set(w, built[i]));
   return byWeek;
 }

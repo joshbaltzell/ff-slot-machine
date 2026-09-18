@@ -562,6 +562,69 @@ ok(manifest.host_permissions && PLATFORMS.flatMap((p) => p.hosts).every((h) => m
      "cbs holds the five mapped rows only: NA dropped, the duplicate collapsed to the first");
 }
 
+/* mid-season: only the weeks that remain, and no ghosts from the ones that did not */
+{
+  // The fixture runs at week 1, where remaining == all and this whole change is
+  // invisible, so the case is built here instead. GHOST is a player who was on team 0
+  // in week 2 and has been dropped since: the old loader unioned rosters across every
+  // fetched week and would still be offering him in week 5.
+  const CW = 5, GHOST = 99999;
+  const mid = mkEspnRaw(F, REF.seasonId);
+  mid.settingsRaw = { ...mid.settingsRaw, status: { currentMatchupPeriod: CW } };
+  const withGhost = (wk) => {
+    const blob = mid.weekRaw(wk);
+    if (wk >= CW) return blob;
+    const t0 = blob.teams[0];
+    t0.roster.entries = [...t0.roster.entries, { playerPoolEntry: { id: GHOST, player: {
+      id: GHOST, fullName: "dropped", eligibleSlots: [...F.eligibleSlots[F.pos[0]]],
+      defaultPositionId: 0, proTeamId: 0, injuryStatus: "ACTIVE", injured: false, stats: [] } } }];
+    return blob;
+  };
+  const table = {
+    [espnUrl(REF.seasonId, REF.leagueId, "view=mSettings")]: mid.settingsRaw,
+    [espnUrl(REF.seasonId, REF.leagueId, "view=mRoster&view=mTeam")]: mid.currentRaw,
+  };
+  for (const wk of F.weeks)
+    table[espnUrl(REF.seasonId, REF.leagueId, `view=mRoster&view=mTeam&scoringPeriodId=${wk}`)] = withGhost(wk);
+
+  const f = mkFetch(table);
+  const m = await espn.loadLeague(REF, () => {}, { fetchImpl: f });
+  const past = F.weeks.filter((w) => w < CW);
+  const asksFor = (u, w) => u.endsWith(`scoringPeriodId=${w}`);   // =1 is a prefix of =10
+  ok(past.length > 0 && !f.calls.some((u) => past.some((w) => asksFor(u, w))),
+     `no request is made for a week already played (${past.length} skipped)`);
+  ok(![...m.teams.values()].some((t) => t.roster.has(GHOST)) && !m.players.has(GHOST),
+     "a player dropped before the current week is on nobody's roster");
+  ok(m.weeks.length === F.weeks.length,
+     "loadLeague still returns the whole season - restrictToRemaining does the trimming");
+  ok([...m.players.values()].every((p) => p.bye === 0 || p.bye >= CW),
+     "a bye is never inferred from a week that was not fetched");
+  // The fixture's payload carries every week's projection in each player's stats, so
+  // the week requests are not needed at all here. That is the good case, and it is the
+  // one the loader is built to notice.
+  ok(!f.calls.some((u) => u.includes("scoringPeriodId=")),
+     `a payload that already carries every week costs no week requests (${f.calls.length} calls)`);
+
+  // …and the same, with the week requests forced. Strip the current season's rows out
+  // of the roster payload so every remaining week is genuinely missing: without this
+  // the assertions above hold for the uninteresting reason that nothing was fetched.
+  const bare = JSON.parse(JSON.stringify(mid.currentRaw));
+  for (const t of bare.teams)
+    for (const e of t.roster.entries)
+      e.player = e.playerPoolEntry.player,
+      e.playerPoolEntry.player.stats = e.playerPoolEntry.player.stats
+        .filter((st) => st.seasonId !== REF.seasonId);
+  const g = mkFetch({ ...table,
+    [espnUrl(REF.seasonId, REF.leagueId, "view=mRoster&view=mTeam")]: bare });
+  const forced = await espn.loadLeague(REF, () => {}, { fetchImpl: g });
+  const asked = g.calls.filter((u) => u.includes("scoringPeriodId="));
+  ok(asked.length === F.weeks.filter((w) => w >= CW).length
+     && !asked.some((u) => past.some((w) => asksFor(u, w))),
+     `week requests are exactly the remaining weeks (${asked.length} of ${F.weeks.length})`);
+  ok(![...forced.teams.values()].some((t) => t.roster.has(GHOST)),
+     "…and the ghost stays out even when the week payloads are the ones being read");
+}
+
 /* fingerprint: one shared hash */
 {
   const model = MODELS.espn;

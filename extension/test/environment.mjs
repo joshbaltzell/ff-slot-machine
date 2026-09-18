@@ -146,25 +146,23 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
 {
   const B = VEGAS_BASE;
   const season = 2026, week = 4;
-  const list = `${B}/seasons/${season}/types/2/weeks/${week}/events`;
+  // One request for the whole week. `competitor.id` is the pro-team id on this route,
+  // which is the fallback buildWeek already had for a competitor with no team $ref.
+  const game = (home, away, odds) => ({
+    date: "2026-09-27T17:00Z",
+    competitions: [{ date: "2026-09-27T17:00Z", odds,
+      competitors: [{ homeAway: "home", id: String(home), team: { id: String(home) } },
+                    { homeAway: "away", id: String(away), team: { id: String(away) } }] }],
+  });
   const table = {
-    [list]: { items: [{ $ref: `${B}/events/401?lang=en` }, { $ref: `${B}/events/402?lang=en` }] },
-    [`${B}/events/401?lang=en`]: {
-      date: "2026-09-27T17:00Z",
-      competitions: [{ id: "401", date: "2026-09-27T17:00Z",
-        odds: { $ref: `${B}/events/401/competitions/401/odds` },
-        competitors: [{ homeAway: "home", team: { $ref: `${B}/teams/12?lang=en` } },
-                      { homeAway: "away", team: { $ref: `${B}/teams/7?lang=en` } }] }],
-    },
-    [`${B}/events/401/competitions/401/odds`]: {
-      items: [{ provider: { id: 58 }, overUnder: 50, spread: -4, homeTeamOdds: { favorite: true } }],
-    },
-    // No odds $ref and no odds resource: this game must be dropped, not fatal.
-    [`${B}/events/402?lang=en`]: {
-      date: "2026-09-27T17:00Z",
-      competitions: [{ id: "402", date: "2026-09-27T17:00Z",
-        competitors: [{ homeAway: "home", team: { $ref: `${B}/teams/9?lang=en` } },
-                      { homeAway: "away", team: { $ref: `${B}/teams/3?lang=en` } }] }],
+    [`${B}/scoreboard?week=${week}&seasontype=2&dates=${season}`]: {
+      events: [
+        game(12, 7, [{ provider: { id: 100 }, overUnder: 50, spread: -4,
+                      homeTeamOdds: { favorite: true } }]),
+        // ESPN has posted no line for this one. An empty array, not a missing key:
+        // that is what the route actually sends, and it must be dropped, not fatal.
+        game(9, 3, []),
+      ],
     },
   };
   const storage = mkStorage();
@@ -172,11 +170,14 @@ const mkFetch = (table) => { const calls = []; const f = async (url) => { calls.
   const v = await loadVegas(season, [week], { fetchImpl, storage, now: 0 });
   ok(v.get(week).size === 2, `one priced game, two teams (${v.get(week).size})`);
   ok(Math.abs(v.get(week).get(12).implied - 27) < 1e-9, "the implied total survives the whole pipe");
-  ok(!v.get(week).has(9), "a game whose odds resource is missing is dropped, not fatal");
+  ok(!v.get(week).has(9), "a game the book has not priced is dropped, not fatal");
 
   const before = fetchImpl.calls.length;
   await loadVegas(season, [week], { fetchImpl, storage, now: 3600e3 });
-  ok(fetchImpl.calls.length === before, "a second load inside the three-hour TTL is free");
+  // Both halves in one assertion on purpose: the file's assertion count is pinned by
+  // the masked run-all diff, and the request count is the whole point of this route.
+  ok(before === 1 && fetchImpl.calls.length === before,
+     `one request prices the whole week, and a reload inside the three-hour TTL is free (${before})`);
 
   const dead = await loadVegas(season, [week, week + 1], { fetchImpl, storage: mkStorage(),
     now: 0, ttlMs: 1 });

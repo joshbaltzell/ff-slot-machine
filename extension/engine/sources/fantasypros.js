@@ -116,24 +116,36 @@ export async function loadCrosswalk(opts = {}) {
  *          reason the panel can log in one line.
  */
 export async function loadFantasyProsWeek({ week = null, ...opts } = {}) {
-  let weekly;
-  try {
-    weekly = await cached("src.fp.weekly", WEEKLY_URL, opts.ttlMs ?? SIX_HOURS,
-      { ...opts, parse: "text", transform: trimWeekly });
-  } catch (err) {
-    return { byEspn: new Map(), week, available: false, reason: String(err.message ?? err) };
+  // Two independent files on the same host. They used to be awaited one after the
+  // other, which cost a round trip for nothing. `allSettled` rather than `all` so an
+  // early return below cannot leave the other promise rejecting into the void - and
+  // the error precedence stays exactly what it was, because both results are in hand
+  // before anything is decided.
+  //
+  // The one thing this trades away: on a day the weekly feed is broken, the crosswalk
+  // is now requested anyway, where before the early return skipped it. That is one
+  // wasted request on a bad day against one saved round trip on every good one, and
+  // the crosswalk's seven-day TTL means it is usually not a request at all.
+  const [weeklyRes, idRes] = await Promise.allSettled([
+    cached("src.fp.weekly", WEEKLY_URL, opts.ttlMs ?? SIX_HOURS,
+      { ...opts, parse: "text", transform: trimWeekly }),
+    cached(IDS_KEY, IDS_URL, opts.idTtlMs ?? SEVEN_DAYS,
+      { ...opts, parse: "text", transform: trimIds }),
+  ]);
+
+  if (weeklyRes.status === "rejected") {
+    const err = weeklyRes.reason;
+    return { byEspn: new Map(), week, available: false, reason: String(err?.message ?? err) };
   }
-  const w = weekly.data ?? { rows: [], idKey: null, hasPts: false };
+  const w = weeklyRes.value.data ?? { rows: [], idKey: null, hasPts: false };
   if (!w.hasPts) return { byEspn: new Map(), week, available: false, reason: "no r2p_pts column" };
   if (!w.idKey) return { byEspn: new Map(), week, available: false, reason: "no fantasypros id column" };
 
-  let idFile;
-  try {
-    idFile = await cached(IDS_KEY, IDS_URL, opts.idTtlMs ?? SEVEN_DAYS,
-      { ...opts, parse: "text", transform: trimIds });
-  } catch (err) {
-    return { byEspn: new Map(), week, available: false, reason: `crosswalk ${err.message ?? err}` };
+  if (idRes.status === "rejected") {
+    const err = idRes.reason;
+    return { byEspn: new Map(), week, available: false, reason: `crosswalk ${err?.message ?? err}` };
   }
+  const idFile = idRes.value;
 
   // Tolerate either shape: a bare array is a pre-v2 copy, {fp, cbs} is this build.
   const toEspn = new Map(Array.isArray(idFile.data) ? idFile.data : idFile.data?.fp ?? []);
