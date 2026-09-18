@@ -240,6 +240,20 @@ console.log(`fixture: ${F.teams.length} teams, ${trades.length} 1-for-1 trades`)
      "the answer comes before the argument about it");
 }
 
+/* ---- 6. a button is not a div ---- */
+{
+  // `font: inherit` does not bring colour with it. A <button> carries the UA's
+  // `color: buttontext` - black - so a card turned into a button to make it clickable
+  // silently blacked out every descendant that had no colour rule of its own, on a
+  // dark panel. Measured in Chrome: `.tile .v` computed rgb(0,0,0). Every rule that
+  // opts into inherited typography has to opt into inherited colour too.
+  const css = fs.readFileSync(path.join(here, "..", "panel.css"), "utf8");
+  const bad = [];
+  for (const m of css.matchAll(/([^{}]+)\{([^}]*font:\s*inherit[^}]*)\}/g))
+    if (!/(^|;)\s*color\s*:/.test(m[2])) bad.push(m[1].trim().split("\n").pop().trim());
+  ok(bad.length === 0, `every font:inherit rule sets a colour too (${bad.join(" | ")})`);
+}
+
 console.log(`\n${checks} assertions, ${failures} failures`);
 if (failures) process.exit(1);
 console.log("PANELUI OK");

@@ -531,6 +531,32 @@ the table it is an ordinary block that inherits `.wrap`, and both the hack and t
 duplicated `.det` rule are gone. `panelui.mjs` asserts the stylesheet no longer contains
 them, because that is the kind of thing that gets copied back in.
 
+**You can see the page without loading the extension.** `panelui.mjs` captures the markup
+`render()` produced; writing that into a file beside `panel.css` and screenshotting it with
+headless Chrome shows the real thing, and the screenshot is readable from a terminal
+session:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu \
+  --hide-scrollbars --window-size=1200,800 --screenshot=out.png \
+  --allow-file-access-from-files "file://$PWD/tab.html"
+```
+
+Add a `<script>` that writes `getComputedStyle(el).color` into a `<pre>` and
+`--dump-dom` prints it, which is how the black-text bug below was found after static
+reading of the stylesheet had said, wrongly, that nothing was out of place. This is not a
+substitute for the browser checklist - it has no extension APIs, no live league and no
+interaction - but it turns "does this look right" from a question only the user can answer
+into one that takes thirty seconds.
+
+**A button is not a div, and `font: inherit` does not bring colour with it.** A `<button>`
+carries the UA's `color: buttontext`, which is black. The Home cards were `<div>`s before
+they were made clickable, so every descendant with no colour rule of its own - the big
+numbers, `.v` - inherited black onto a dark panel the moment they became buttons. Both
+`.hero-c` and `.tile.go` set `color: inherit`, and `panelui.mjs` asserts that **every**
+rule declaring `font: inherit` declares a colour too, because the next person to make
+something clickable will reach for the same shorthand.
+
 **`panelui.mjs` renders the page.** Every other test here checks a function that returns a
 string; the assembly of those strings is where the tabs live, and `platform.mjs` reads
 `panel.js` as text, which cannot tell you that `render()` throws on the Waivers tab. The
