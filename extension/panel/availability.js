@@ -53,9 +53,18 @@ function tip(s) {
     bits.push("Suspended. Neither feed publishes the length, so this is assumed to "
             + "run to the end of the horizon");
   } else if (s.status === "PUP") {
-    bits.push("On the PUP list; scores nothing for the rest of the horizon");
+    bits.push(s.returnWeek
+      ? `On the PUP list; the platform expects him back in week ${s.returnWeek}`
+      : "On the PUP list; scores nothing for the rest of the horizon");
   } else {
-    bits.push("On injured reserve; scores nothing for the rest of the horizon");
+    // "For the rest of the horizon" is the guess a status string alone forces. Where
+    // the platform states the weeks instead, the return is a fact about the numbers
+    // the engine is scoring, and saying so is the difference between a man worth
+    // nothing and a man worth eleven weeks.
+    bits.push(s.returnWeek
+      ? `On injured reserve; the platform expects him back in week ${s.returnWeek}, `
+        + "and he is valued at nothing until then and in full from then on"
+      : "On injured reserve; scores nothing for the rest of the horizon");
   }
   if (s.note) bits.push(String(s.note));
   return bits.join(". ");
@@ -79,8 +88,11 @@ export function statusBadge(av, id, esc) {
   if (!s) return "";
   const code = badgeCode(s.status);
   if (!code) return "";
-  return ` <span class="avail sm ${s.now > 0 ? "warn" : "gone"}"`
-       + ` title="${esc(tip(s))}">${esc(code)}</span>`;
+  // A man who is coming back reads differently from a man who is gone, so the badge
+  // says which and when rather than leaving both as "IR".
+  const label = s.returnWeek ? `${code} \u2192 wk ${s.returnWeek}` : code;
+  return ` <span class="avail sm ${s.now > 0 ? "warn" : s.returnWeek ? "warn" : "gone"}"`
+       + ` title="${esc(tip(s))}">${esc(label)}</span>`;
 }
 
 /** One or two lines for the loading log. */
@@ -90,6 +102,8 @@ export function availabilityLines(summary) {
   if (!n) return ["availability: nobody on a roster is listed with an injury"];
   const lines = [`availability: ${s.out ?? 0} out this week, `
     + `${s.questionable ?? 0} questionable, ${s.shelved ?? 0} on IR or suspended`];
+  if (s.returning) lines.push(`  ${s.returning} of them ${s.returning === 1 ? "is" : "are"}`
+    + " expected back inside the horizon, and carry their real value for those weeks");
   if (s.uncertain) lines.push(`  ${s.uncertain} lineup${s.uncertain === 1 ? "" : "s"}`
     + ` priced across both outcomes rather than guessed either way`);
   return lines;

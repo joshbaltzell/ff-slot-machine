@@ -23,7 +23,7 @@ import * as CBS from "../engine/platforms/cbs.js";
 import { IDS_URL, IDS_KEY, trimIds, loadCrosswalk } from "../engine/sources/fantasypros.js";
 import { hashRosters } from "../engine/platforms/hash.js";
 import { PRO_TEAM, SLOT_LABEL } from "../engine/league.js";
-import { normStatus } from "../engine/availability.js";
+import { normStatus, buildAvailability, restrictToRemaining } from "../engine/availability.js";
 import { attachActuals } from "../engine/calibration.js";
 import { Engine } from "../engine/search.js";
 import { buildSlots, seatMask } from "../engine/lineup.js";
@@ -629,8 +629,13 @@ const load = async (table, over = {}, base = REF) => {
   // Projections.
   ok(players.every((p) => WEEKS.every((w) => typeof p.proj[w] === "number" && Number.isFinite(p.proj[w]))),
      "every week carries a finite projection");
-  ok(players.filter((p) => p.proj[1] > 0).length === 148,
+  ok(players.filter((p) => p.pos !== "D/ST" && p.proj[1] > 0).length === 148,
      "the 148 rostered players the week-1 stats route scores get their FPTS");
+  // Was 0 for all seventeen weeks until the covered-position set was read off the
+  // payloads: league/stats carries QB/RB/WR/TE and nothing else, so every team defence
+  // in every CBS league projected nothing, in a league that starts one of them.
+  ok(players.filter((p) => p.pos === "D/ST" && p.proj[1] > 0).length === 13,
+     "...and the 13 defences the route never carries are no longer zero all season");
   const maye = players.find((p) => p.name === "Drake Maye");
   ok(maye && maye.proj[1] === 16.8 && maye.proj[2] === 20.1,
      "a named player's week-1 and week-2 projections are the recorded FPTS, not TP");
@@ -1126,8 +1131,14 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
     return [Array.isArray(pool) ? pool : [], notes];
   };
   const [poolQuiet, quiet] = await withNotes(cbsTable());
-  ok(poolQuiet.length === FA_KEEP && quiet.length === 0,
-     "WR-07: a run where every feed answers returns the same pool and says nothing");
+  ok(poolQuiet.length === FA_KEEP, "WR-07: a run where every feed answers returns the same pool");
+  // The one note a wholly healthy run still carries is not a degradation; it is a
+  // standing property of the route. league/stats carries QB/RB/WR/TE and nothing else,
+  // so a league that starts a defence has none on its waiver wire and never will. An
+  // empty list the user reads as "no defence is worth adding" is worse than a sentence
+  // saying why it is empty.
+  ok(quiet.length === 1 && /free-agent projection route carries no/.test(quiet[0]),
+     "WR-07: ...and says nothing but which positions the route cannot supply at all");
   const [, injNotes] = await withNotes(cbsTable({ injuries: false }));
   ok(injNotes.some((n) => /^CBS: the injury feed is unavailable/.test(n)),
      "WR-07: a dead injuries feed is named, so a pool that reads healthy is not silently healthy");
@@ -1446,8 +1457,12 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
       { statusCode: 200, statusMessage: "OK", body: { league_stats: { players: [] } } };
   const { model: hollow } = await load(empty);
   ok(hollow.players.size === ROSTER_IDS.length, "a projections week with no rows still loads the league");
-  ok([...hollow.players.values()].every((p) => p.proj[3] === 0),
-     "...that week projects zero for everyone");
+  ok([...hollow.players.values()].filter((p) => p.pos !== "D/ST").every((p) => p.proj[3] === 0),
+     "...no player that route carries projects anything that week");
+  ok([...hollow.players.values()].filter((p) => p.pos === "D/ST").every((p) => p.proj[3] > 0),
+     "...while a defence is unaffected, because that route never carried him anyway");
+  ok([...hollow.players.values()].every((p) => p.availability?.[3] === undefined),
+     "...and a week that answered with nothing states no availability at all, rather than 449 absences");
   ok([...hollow.players.values()].some((p) => p.proj[1] > 0), "...and the other weeks are untouched");
   ok(hollow.notes.filter((n) => /^CBS: the week 3 projection/.test(n)).length === 1,
      "...and exactly one note says which week went quiet");
@@ -1535,6 +1550,115 @@ const attempt = async (fn) => { try { return await fn(); } catch (e) { return { 
      "and the panel is told: one note says how many players the crosswalk mapped");
   ok(/\bdashes\b/.test(model.notes.find((n) => /^CBS: id crosswalk/.test(n))),
      "...in the words the user needs - the unmapped ones will show dashes");
+}
+
+/* ---- the week shape: what the projection route names, and what it never carries ----
+ *
+ * `league/stats?period=weekN` is not a list of every player; it is CBS's statement of
+ * whom it expects to play that week. Recorded week 1 answered with 449 rows - exactly
+ * the league's 148 rostered players it expects plus all 301 free agents - and week 2
+ * answered with 454, re-admitting the men whose week-1 absence had ended. So an
+ * omission carries information, and reading it as a zero projection throws that
+ * information away twice over: once for the weeks a shelved man misses, and once for
+ * D/ST, which the route never carries at all and which was therefore projecting zero
+ * for every week of the season.
+ *
+ * Those two absences must not be read the same way, which is why the covered-position
+ * set is derived from each payload rather than hardcoded: a position the route names
+ * is one whose omissions mean "not playing", and a position it never names is one
+ * whose omissions mean nothing at all.
+ */
+{
+  const { model } = await load(cbsTable());
+  const by = (n) => [...model.players.values()].find((p) => p.name === n);
+
+  // Recorded truth: the fixture serves stats-week1 for every week but 2.
+  const dst = [...model.players.values()].filter((p) => p.teamId != null && p.pos === "D/ST");
+  ok(dst.length === 13, "the recorded league rosters 13 team defences");
+  ok(dst.every((p) => p.availability === undefined),
+     "a D/ST carries no availability: the route never names his position, so his absence says nothing");
+  ok(dst.every((p) => WEEKS.some((w) => p.proj[w] > 0)),
+     "...and he no longer projects zero for every week of the season");
+  const tex = by("Texans");
+  ok(tex && Math.abs(tex.proj[1] - 11.8) < 1e-9,
+     "a defence takes the roster row's projected_points, which equals the week's FPTS for everyone else");
+  ok(tex && tex.proj[8] === 0, "...zeroed on his bye, which the flat carry would otherwise pay him for");
+  ok(model.notes.some((n) => /D\/ST/.test(n) && /flat|held/.test(n)),
+     "...and the panel is told the number is carried flat rather than measured");
+
+  // Pacheco is on IR with an expected return past the recorded horizon: absent from
+  // both recorded payloads, so absent from every week the fixture serves.
+  const pacheco = by("Isiah Pacheco");
+  ok(pacheco && pacheco.injuryStatus === "INJURY_RESERVE", "the IR man still reads IR");
+  ok(pacheco && pacheco.availability && WEEKS.every((w) => pacheco.availability[w] === 0),
+     "...and every week the route omits him is stated as a zero, not guessed from the status");
+
+  // Henderson was inactive for week 1 and named again in week 2. The fixture serves
+  // week 2's payload for week 2 alone, so he is the recorded proof that an omission
+  // reverses - the one thing the two captured weeks can show about a return.
+  const hend = by("TreVeyon Henderson");
+  ok(hend && hend.availability && hend.availability[1] === 0 && hend.availability[2] === 1,
+     "a man omitted from one week and named in the next is 0 then 1, which is the whole mechanism");
+  ok(hend && Math.abs(hend.proj[2] - 11.1) < 1e-9,
+     "...and the week he is back carries the real projection CBS published for it");
+
+  // The fast path: a healthy player with nothing wrong gets no entry, so the engine's
+  // no-availability branch is still the one almost every player takes.
+  const herb = by("Justin Herbert");
+  ok(herb && herb.availability === undefined,
+     "a healthy player carries no availability at all - the no-availability fast path is preserved");
+}
+
+/* ---- a six-week absence and the return after it, end to end ----
+ *
+ * The recorded capture holds weeks 1 and 2 only, so it can show an omission reversing
+ * across one week and no further. The case this whole phase is about is longer than
+ * that: a man on IR who is out for six weeks and is a starter again in the seventh.
+ * The weeks are therefore synthesized rather than recorded - the rows are the real
+ * ones, re-served on a week table that omits him early and names him late - and the
+ * README says so beside the recorded payloads. Nothing here pretends to be a capture.
+ *
+ * This is the shape the plan rests on, and it is also the one thing a browser run
+ * still has to confirm: whether CBS really does name a shelved player in the weeks
+ * after his expected return. If it does not, every assertion below still holds and
+ * the feature simply never fires, which is today's behaviour and not a regression.
+ */
+{
+  const SHELVED = Number(ROSTER_TEAMS.flatMap((t) => t.players)
+    .find((p) => p.fullname === "Isiah Pacheco")?.id);
+  ok(Number.isFinite(SHELVED), "the recorded league rosters a man on IR to build the case around");
+
+  const BACK = 7, PTS = 18.4;
+  const wk1 = body("stats-week1.json").league_stats.players;
+  ok(!wk1.some((r) => Number(r.id) === SHELVED), "...whom no recorded week names, because he is out in both");
+  const withHim = { league_stats: { players: [...wk1, { id: String(SHELVED), position: "RB", FPTS: PTS }] } };
+
+  const table = cbsTable();
+  for (const w of WEEKS)
+    for (const sess of SESSIONS)
+      table[cbsUrl(REF, "league/stats",
+        { stats_type: "projections", period: `week${w}`, player_status: "all" }, sess)] =
+        { statusCode: 200, statusMessage: "OK", body: w >= BACK ? withHim : body("stats-week1.json") };
+
+  const { model } = await load(table);
+  const him = [...model.players.values()].find((p) => p.id === -SHELVED);
+  ok(him && him.injuryStatus === "INJURY_RESERVE", "he still reads IR, because he is on IR");
+  ok(him && WEEKS.filter((w) => w < BACK).every((w) => him.proj[w] === 0 && him.availability[w] === 0),
+     "the weeks he is out project nothing and say so");
+  ok(him && WEEKS.filter((w) => w >= BACK).every((w) => him.proj[w] === PTS && him.availability[w] === 1),
+     "the weeks he is back carry CBS's own number and a stated 1");
+
+  // Through the engine. Before this phase the status string alone decided the horizon,
+  // so every one of these weeks was zero and the eleven good ones were unreachable.
+  restrictToRemaining(model);
+  const av = buildAvailability(model, null, model.weeks, model.settings.currentWeek);
+  ok(av.statusOf.get(-SHELVED)?.returnWeek === BACK,
+     "the panel can name the week he is back, read off the row the engine will score");
+  const r = av.avail.get(-SHELVED);
+  ok(r && model.weeks.every((w, k) => r[k] === (w >= BACK ? 1 : 0)),
+     "...and the availability the engine gets is the absence followed by the return, not a flat zero");
+  ok(av.summary.shelved >= 1 && av.summary.returning >= 1,
+     "...and he is counted both as shelved now and as coming back inside the horizon");
 }
 
 console.log(`\n${checks} assertions, ${failures} failures`);

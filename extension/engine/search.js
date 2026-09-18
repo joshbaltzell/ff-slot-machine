@@ -41,6 +41,9 @@ const POOL_PER_MASK = 3;
  * Measured, not theorised. Every prune below is therefore loose by GATE_EPS and every
  * accept is made on `_metrics().gain` - the number the page prints.
  */
+/** The acceptance windows `findTwoTeam` has always used. Frozen: the golden set is it. */
+const ACCEPT_GAIN = Object.freeze(["gain"]);
+
 const GATE_EPS = 1e-9;
 
 /**
@@ -542,10 +545,34 @@ export class Engine {
              balance: Math.min(...sides.map(s => s.gain)) / Math.max(...sides.map(s => s.gain)) };
   }
 
-  /** Symmetric two-team search, `depth` players per side. Yields between pairs. */
-  async findTwoTeam(depth, minGain = 0.05, onProgress = () => {}) {
+  /**
+   * Symmetric two-team search, `depth` players per side. Yields between pairs.
+   *
+   * `accept` names the window metrics a side may qualify on, and a side qualifies if
+   * ANY of them clears `minGain`. It defaults to `gain` alone, which is the predicate
+   * this search has always applied - `golden_1for1.json` is a frozen set produced
+   * under it, so the default can never move.
+   *
+   * Passing `["gain", "playoff"]` is what lets a buy-low on an injury out of the
+   * search at all. Such a trade is negative on the season average by construction: a
+   * side takes six weeks of nothing to buy eleven weeks of a starter, so `gain` is the
+   * one window that is guaranteed to disagree with the reason for making it. The
+   * windows already disagree on purpose (see `_metrics`); this is the gate catching up
+   * with that. The asymmetry is the product, not a side effect - the man selling still
+   * qualifies on `gain`, which is exactly why he would say yes.
+   *
+   * Only this search takes the option. `findThreeWay` and `findTwoForOne` carry prune
+   * bounds keyed on `minGain` whose correctness proofs assume the gate is `gain`;
+   * widening those is a separate change with its own reference test, not a flag.
+   */
+  async findTwoTeam(depth, minGain = 0.05, onProgress = () => {}, { accept = ACCEPT_GAIN } = {}) {
     const out = [];
     const pairs = [];
+    // Hoisted so the default path stays one property compare per candidate: 2-for-2
+    // evaluates this a few hundred thousand times and it is already a 14-second search.
+    const qualifies = accept.length === 1 && accept[0] === "gain"
+      ? (s) => s.gain >= minGain
+      : (s) => accept.some((k) => s[k] >= minGain);
     for (let i = 0; i < this.teams.length; i++)
       for (let j = i + 1; j < this.teams.length; j++) pairs.push([this.teams[i], this.teams[j]]);
     for (let n = 0; n < pairs.length; n++) {
@@ -553,7 +580,7 @@ export class Engine {
       for (const sa of combos(this.roster.get(A), depth))
         for (const sb of combos(this.roster.get(B), depth)) {
           const t = this.score([[A, B, sa], [B, A, sb]], `${depth}-for-${depth}`);
-          if (t && t.sides.every(s => s.gain >= minGain)) out.push(t);
+          if (t && t.sides.every(qualifies)) out.push(t);
         }
       onProgress(n + 1, pairs.length, out.length);
       await yieldToBrowser();

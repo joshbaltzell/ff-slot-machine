@@ -85,6 +85,8 @@ extension/
     roster.mjs       replacement level, the 2-for-1 shape, drop ranking
     usage.mjs        usage, breakouts, the crowd split, FAAB bids and the panel HTML
     distributions.mjs distributions, stacks and the weekly plan, offline
+    horizon.mjs      the injury horizon: adapter-stated availability, the merge rule,
+                     the widened search gate and the panel's return-week strings
     platform.mjs     the normalized-model schema run against every adapter; the
                      storage keys; the panel's platform surface and copy census
     cbs.mjs          the CBS adapter on the recorded league, offline
@@ -161,6 +163,61 @@ at zero — `bestLineup` seats players in the order it is given and never unseat
 so a zeroed star still takes a seat and blocks the man who would have started.
 `starterMask`, `startRates` and `explain` show the *modal* lineup (everyone at
 `p ≥ 0.5`) instead, because a usage strip has to name actual players.
+
+**A status is a guess about a horizon; a weekly payload is a statement about a week,
+and the statement wins.** `PLAY_PROB.later` reads `INJURY_RESERVE`, `PUP` and a
+suspension as zero for every remaining week. That is the only reading available on
+ESPN, which publishes a projection for every player in every week whatever his status,
+so the status string is the only thing that knows he is hurt. It is wrong wherever a
+platform already states, week by week, whom it expects to play - and it is wrong in the
+expensive direction, because it deletes the eleven good weeks that are the entire reason
+to buy an injured starter. So a player may carry an optional
+`availability: {[week]: 0..1}`, and `buildAvailability` merges it: a stated week wins
+outright from next week on, and **this** week takes the more pessimistic of stated and
+guessed, because a weekly include/exclude flag is binary and a Questionable Sunday is
+not. ESPN sets nothing, so its path is unchanged character for character - `horizon.mjs`
+group 1 is what pins that, and `platform.mjs` holds the field's optional schema. The
+derived `statusOf.returnWeek` is read off the row the engine is about to score, never
+off a feed's prose, so the badge cannot claim a return the numbers do not have.
+
+**An omission is only information about a position the route actually carries.**
+`league/stats?period=weekN` returns QB/RB/WR/TE and nothing else, and within those it
+returns whom CBS expects to play that week - recorded week 1 answered with exactly the
+148 rostered players it expected plus all 301 free agents, and week 2 re-admitted the
+men whose absence had ended, each with a real forecast for that week. Reading absence as
+a zero projection therefore conflated two unrelated things, and both were live bugs:
+a shelved man lost his return, and **every team defence in every CBS league projected
+zero for all seventeen weeks**, in a league that starts one. `attachWeekShape` derives
+the covered-position set from the payloads rather than hardcoding it - so a route that
+starts carrying defences tomorrow needs no change, and one that stops carrying tight ends
+cannot silently shelve every tight end - and a week that answers with a fraction of the
+largest payload states nothing at all, because reading it as four hundred absences would
+shelve every roster at once. `fillUncoveredPositions` then carries the roster row's
+`projected_points` flat across the horizon for the positions nothing covers, zeroed on
+the bye. That flat carry is a bad number - it gives every defence the same week every
+week, which is the streaming decision a manager actually wants help with - and it is
+named in `model.notes` as such. It replaces zero, which was worse: a required starting
+slot worth nothing and a defence tradeable for free in either direction. On the waiver
+wire there is no roster row to read, so a position the route never carries simply has no
+free agents; a note says so rather than leaving an empty list the user reads as "nothing
+worth adding".
+
+**The gate was the blocker, not the projections.** `findTwoTeam` accepted a trade only
+when every side cleared `minGain` on `gain`, the season average. A trade that buys an
+injured starter is negative there by construction - six weeks of nothing for eleven weeks
+of a man - so the search could never emit one however good the numbers got. The gate now
+takes an `accept` list of window metrics and a side qualifies on any of them; it defaults
+to `["gain"]`, which is the predicate that produced `golden_1for1.json`, so the frozen set
+cannot move. The panel passes `["gain", "playoff"]`, and the predicate is hoisted out of
+the loop so the default path stays one property compare per candidate - 2-for-2 evaluates
+it hundreds of thousands of times. `findThreeWay` and `findTwoForOne` stay on `gain`
+alone: their prunes are bounds whose correctness proofs assume the gate, and widening
+those is a separate change with its own reference test, not a flag. The asymmetry is the
+product rather than a side effect - the man selling still qualifies on `gain`, which is
+exactly why he would say yes, and the pitch says so in those words. `odds.js` is already
+the honest arbiter of whether a side can afford the absence: `season.js` scores every week
+from `mu[i].get(w)` and `rosterSigma` returns a per-week array, so the paired simulation
+already prices "worse until November, better after" without any change.
 
 **The backfill pool is the one bounded step, and it bounds the waiver wire, not the
 search.** A 2-for-1 does not end with the rosters it names: the side sending two has
@@ -596,13 +653,15 @@ baseline is `.planning/phases/11-cbs-platform/run-all-before.txt`):
 ```bash
 node extension/test/run-all.mjs 2>&1 \
   | sed -E 's/[0-9]+ ms per trade/N ms per trade/' \
-  | awk '/^=== (platform|cbs)\.mjs ===/{skip=1; next} /^=== /{skip=0} !skip' \
+  | awk '/^=== (platform|cbs|horizon)\.mjs ===/{skip=1; next} /^=== /{skip=0} !skip' \
   | sed -E 's/^[0-9]+ files, /N files, /'
 ```
 
 An empty diff means the nine pre-existing files' assertion counts and output are
-byte-identical. Anything else is a behaviour change in ESPN's path, whatever the commit
-message says.
+byte-identical. Each phase that adds a test file adds it to the mask - a new file's
+output is new by definition, and leaving it in would mean the diff could never be
+empty again. Phase 12 added `horizon`. Anything else is a behaviour change in ESPN's
+path, whatever the commit message says.
 
 ## The daily reminder
 

@@ -70,8 +70,13 @@ const NFL_OK = new Set([...Object.values(PRO_TEAM), "X", "?", "FA", ""]);   // P
 const numArr = (a) => Array.isArray(a) && a.every((x) => typeof x === "number");
 // Every key a player record may carry. The platform's raw stat rows are not among
 // them: the adapter folds them into `history` and nothing downstream sees the raw shape.
+// `availability` is optional and adapter-supplied: the weeks a platform states it
+// expects the player to play. ESPN publishes a projection for everyone every week
+// whatever their status, so it never sets it and `availability.js` keeps reading the
+// status table there. A platform that instead states the weeks fills this, which is
+// what separates "out for the horizon" from "out for six weeks".
 const PLAYER_KEYS = new Set(["id", "name", "eligibleSlots", "pos", "posId", "injuryStatus", "injured",
-  "nfl", "teamId", "proj", "history", "bye", "owned"]);
+  "nfl", "teamId", "proj", "history", "bye", "owned", "availability"]);
 const numOrNull = (v) => v === null || (typeof v === "number" && Number.isFinite(v));
 const historyRow = (h) => h && typeof h === "object" && same(Object.keys(h).sort(), ["actual", "proj", "season", "week"])
   && Number.isInteger(h.season) && Number.isInteger(h.week) && numOrNull(h.actual) && numOrNull(h.proj);
@@ -120,6 +125,14 @@ function assertModel(model, label) {
      `${label}: history is an array of {season, week, actual, proj} rows - integer season and week, number-or-null values`);
   ok(players.every((p) => Object.keys(p).every((k) => PLAYER_KEYS.has(k))),
      `${label}: no player carries a key outside the contract - the platform's raw stat rows never reach the model`);
+  ok(players.every((p) => p.availability === undefined
+       || (p.availability && typeof p.availability === "object"
+           && Object.entries(p.availability).every(([w, q]) =>
+                Number.isInteger(Number(w)) && typeof q === "number" && q >= 0 && q <= 1))),
+     `${label}: availability, where an adapter sets it, is {week: probability in [0, 1]}`);
+  ok(players.every((p) => p.availability === undefined
+       || Object.keys(p.availability).every((w) => model.weeks.includes(Number(w)))),
+     `${label}: ...and it never names a week the model does not carry`);
 
   const teams = [...model.teams.values()];
   ok(teams.every((t) => typeof t.id === "number" && model.teams.get(t.id) === t), `${label}: every team has a numeric id and is keyed on it`);

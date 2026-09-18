@@ -149,6 +149,39 @@ pin D-13; the prior-season keys pick the D-15 volatility tier; `viewer_team` dec
 - weekly_scoring_shape: `body.weekly_scoring = { player_status, players[] }`, each row `{id, total, avg, player: {id, name, position, pro_team, eligible_positions, eligible_positions_display, free_agent, eligible_for_offense_and_defense}, periods: [{period, score}]}`. `periods` holds one entry per period played (1 in the current season's week 1, 22 for 2025). **`player_status` defaults to `free_agents`** — the current-season fixture is 1,809 free agents with 12 non-zero rows, and no rostered player. This is the feed `history` comes from, so the adapter must pass `player_status=all`.
 - current_week: 1 — `league_details.current_period: "1"` (string), confirmed by `rosters.period: 1` and `standings.period: 1`. `season_status` is `regularseason`.
 
+### What the two recorded weeks prove about omission, and what they cannot
+
+`league/stats?stats_type=projections&period=weekN&player_status=all` is not a list of
+players. It is CBS's statement of whom it expects to play in week N, and the recorded
+pair shows it directly:
+
+- Week 1 answered with **449** rows: exactly the 148 rostered players it expected plus
+  all 301 free agents. `stats-free-agents-week1.json` is a perfect subset, so nothing is
+  capped or ranked away - every omission is deliberate.
+- Week 2 answered with **454**, re-admitting the men whose week-1 absence had ended, each
+  with a real week-2 projection: TreVeyon Henderson (inactive wk 1) at 11.1, Michael Penix
+  Jr. ("Out for Week 1… Expected Return - Week 2") at 1.9, Tory Horton at 4.1.
+- The week-2 numbers are independent forecasts, not stubs. Only 87 of 448 shared players
+  carry the same figure as week 1 (Burrow 21.8 → 15.0, Gibbs 25.4 → 28.5), the mean
+  difference is 0.004, and the rows carry week-2 game dates.
+- Of the 449 in week 1, the only injury status present is QUESTIONABLE (27). No IR, PUP,
+  NFI or RESERVE row appears at all.
+- The route carries **QB/RB/WR/TE and nothing else**. No D/ST in any of the three payloads,
+  which is why every team defence in a CBS league projected zero for all seventeen weeks
+  until `fillUncoveredPositions` landed. The roster row's `projected_points` matches the
+  week's `FPTS` exactly for all 148 players the route does carry, so it is the same number
+  rather than an estimate of it - which is what makes it usable as the fallback.
+
+**What these two weeks cannot show** is the case the whole feature is about: a man out for
+six weeks and named again in the seventh. Only weeks 1 and 2 were ever captured. `cbs.mjs`
+therefore **synthesizes** that horizon - the real week-1 rows, re-served on a week table
+that omits one rostered player through week 6 and names him with a projection from week 7.
+The rows are recorded; the schedule of them is not, and nothing here pretends otherwise.
+Confirming that CBS really does name a shelved player in the weeks after his expected
+return is a live check, scripted in `.planning/phases/12-injury-horizon/probe.js`. If it
+turns out CBS never names him, every assertion still holds and the feature simply never
+fires, which is the behaviour that shipped before it.
+
 ### Two notes the later plans need
 
 - **Fixture sizes.** `public/players-list.json` (4,910 players, 1.7 MB) and `prior-season.json`

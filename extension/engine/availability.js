@@ -37,6 +37,12 @@ export function mulberry32(seed) {
  * Questionable, Doubtful or Out player is assumed back, while IR, PUP and a
  * suspension keep him at zero for the whole horizon.
  *
+ * That last clause is a guess, and it is the only one available when a platform gives
+ * a status and nothing else - which is ESPN, whose projections are published for every
+ * player in every week whatever his status. A platform that instead states the weeks
+ * themselves overrides it through `p.availability` in `buildAvailability`; this table
+ * is what applies when nobody has.
+ *
  * `practice` refines Questionable only, and only for the current week. Full
  * participation on Friday is close to a lock; a player who did not practise at all
  * and is still listed Questionable is closer to a coin flip against him.
@@ -118,7 +124,12 @@ export function playProb(status, practice, weekIndexOffset = 0) {
  * Players who are fully available in every week get no entry at all - the engine
  * defaults to 1 - which keeps the map tiny and the fast path fast.
  *
- * @param model      the loaded league; players may carry injuryStatus / injured
+ * A player may also carry `availability: {[week]: 0..1}`, which an adapter fills when
+ * its platform states week by week whom it expects to play. See the merge rule in the
+ * loop: it is what separates "out for the horizon" from "out for six weeks".
+ *
+ * @param model      the loaded league; players may carry injuryStatus / injured /
+ *                   availability
  * @param byEspn     Sleeper's Map<espnId, rec>, or null when the feed is unavailable
  * @param weeks      the engine's week list (already restricted to the remaining ones)
  * @param currentWeek settings.currentWeek
@@ -126,7 +137,8 @@ export function playProb(status, practice, weekIndexOffset = 0) {
 export function buildAvailability(model, byEspn, weeks, currentWeek) {
   const avail = new Map();
   const statusOf = new Map();
-  const summary = { out: 0, questionable: 0, shelved: 0, uncertain: 0, matched: 0, total: 0 };
+  const summary = { out: 0, questionable: 0, shelved: 0, uncertain: 0, matched: 0, total: 0,
+                    returning: 0 };
 
   for (const p of model.players.values()) {
     const sl = byEspn?.get(Number(p.id)) ?? null;
@@ -137,20 +149,42 @@ export function buildAvailability(model, byEspn, weeks, currentWeek) {
     const status = espn === "ACTIVE" && wire !== "ACTIVE" ? wire : espn;
     const practice = sl?.practice_participation ?? null;
 
+    // An adapter that publishes a weekly projection usually also publishes, week by
+    // week, whom it expects to play; `p.availability` is where it says so. A status
+    // string is a claim about a horizon and this is a claim about a week, so a stated
+    // week wins outright from next week on - which is the whole point, because it is
+    // what lets a man who is on IR now carry his real value for the weeks he is back.
+    // THIS week keeps the more pessimistic of the two: a weekly include/exclude flag
+    // is binary and a Questionable Sunday is not, so 0.71 is the better number even
+    // when the platform has him down to play. ESPN sets nothing here, so its path is
+    // the original one, character for character.
+    const stated = p.availability ?? null;
     const row = new Float64Array(weeks.length);
     let doubt = false;
     for (let w = 0; w < weeks.length; w++) {
-      const q = playProb(status, practice, weeks[w] - currentWeek);
+      const guess = playProb(status, practice, weeks[w] - currentWeek);
+      const said = stated?.[weeks[w]];
+      const q = said == null ? guess
+              : weeks[w] - currentWeek > 0 ? said
+              : Math.min(said, guess);
       row[w] = q;
       if (q < 1) doubt = true;
     }
     if (!doubt) continue;
+
+    // The first week he is expected to play again, for the panel to name. Null when
+    // he plays this week (there is nothing to come back from) and null when he never
+    // comes back inside the horizon. It is read off the row rather than off a feed's
+    // prose, so it can only ever describe the numbers the engine is about to score.
+    const back = row[0] > 0 ? -1 : row.findIndex((q) => q > 0);
+    const returnWeek = back > 0 ? weeks[back] : null;
 
     avail.set(p.id, row);
     statusOf.set(p.id, {
       status, practice,
       note: sl?.practice_description ?? sl?.injury_body_part ?? null,
       now: row[0],
+      returnWeek,
     });
 
     // Only rostered players are counted. The free-agent pool is hundreds deep and
@@ -161,6 +195,7 @@ export function buildAvailability(model, byEspn, weeks, currentWeek) {
     else if (row[0] === 0) summary.out++;
     else summary.questionable++;
     if (row[0] > 0 && row[0] < 1) summary.uncertain++;
+    if (returnWeek != null) summary.returning++;
   }
   return { avail, statusOf, summary };
 }

@@ -770,6 +770,104 @@ export function seasonFromSchedule(body) {
   return null;
 }
 
+/* ---------- the week shape ---------- */
+
+/**
+ * What each week's projection payload said, turned into per-player availability.
+ *
+ * `league/stats?period=weekN` is not a list of players; it is CBS's statement of whom
+ * it expects to play in week N. Recorded week 1 answered with exactly the 148 rostered
+ * players it expected plus all 301 free agents, and week 2 answered with 454 - the
+ * same set plus the men whose week-1 absence had ended, each with a real projection
+ * for the week 2 game. So an omission carries information, and `proj` alone cannot
+ * hold it: a zero there is indistinguishable from a player CBS scores at zero.
+ *
+ * Two omissions mean entirely different things and must not be read alike:
+ *
+ *   - a position the route DOES carry, in a week it omits the player: he is not
+ *     expected to play. That is a stated 0, and the stated 1s beside it are what let a
+ *     man who is on IR today carry his real value for the weeks he is back - which the
+ *     status table, reading `INJURY_RESERVE` as zero for the whole horizon, cannot.
+ *   - a position the route NEVER carries - D/ST, and K in a league that starts one:
+ *     the omission says nothing at all about him, and reading it as a zero is how
+ *     every CBS team defence came to project zero for every week of the season.
+ *
+ * The covered set is therefore derived from the payloads rather than hardcoded, so a
+ * route that starts carrying defences tomorrow needs no change here, and a route that
+ * stops carrying tight ends cannot silently shelve every tight end in the league.
+ *
+ * @param players  Map<cbsId, record>, the same records the model will carry
+ * @param weeks    the weeks actually fetched
+ * @param named    Map<week, Set<cbsId>> the payload named
+ * @param covered  Map<week, Set<rawPosition>> the payload carried
+ */
+export function attachWeekShape(players, weeks, named, covered) {
+  // The largest payload of the run is the yardstick. A week that answered with a
+  // fraction of it is not a week in which most of the league was ruled out; it is a
+  // week that answered badly, and reading it as four hundred absences would shelve
+  // every roster at once. Such a week states nothing, which is the safe direction -
+  // the same rule as a dead feed costing a dash rather than the run.
+  let biggest = 0;
+  for (const ids of named.values()) biggest = Math.max(biggest, ids.size);
+  const usable = biggest > 0
+    ? weeks.filter((w) => (named.get(w)?.size ?? 0) * 2 >= biggest)
+    : [];
+
+  const everCovered = new Set();
+  for (const w of usable) for (const pos of covered.get(w) ?? []) everCovered.add(pos);
+
+  for (const [cbsId, pl] of players) {
+    if (!everCovered.has(pl._rawPos)) continue;
+    const av = {};
+    let anyOut = false;
+    for (const w of usable) {
+      const on = named.get(w).has(cbsId) ? 1 : 0;
+      av[w] = on;
+      if (!on) anyOut = true;
+    }
+    // Attached only where it can change an answer. A healthy player named in every
+    // week keeps no entry, so `buildAvailability` gives him none and `weekly` stays on
+    // the no-availability fast path that 2-for-2 calls millions of times. A player
+    // with a status of any kind attaches even when every week is a 1, because that 1
+    // is precisely what stops the status table zeroing his horizon.
+    if (anyOut || pl.injuryStatus != null) pl.availability = av;
+  }
+  return { usable, everCovered };
+}
+
+/**
+ * A projection for the positions `league/stats` never carries.
+ *
+ * The roster row's `projected_points` is the current week's number and matches that
+ * week's `FPTS` exactly for every player the route does carry - 148 of 148 on the
+ * recorded league - so it is the same figure, not an estimate of it. Carrying it flat
+ * across the horizon is an estimate, and a poor one: it gives every defence the same
+ * week every week, which is precisely the streaming decision a manager wants help
+ * with. It is still far better than the alternative it replaces, which was zero for
+ * all seventeen weeks - a required starting slot worth nothing, and a defence that
+ * could be traded away for free in either direction. The note says which it is.
+ *
+ * Runs only when at least one week answered, so a wholly failed run cannot overwrite
+ * real projections with a single repeated number.
+ */
+export function fillUncoveredPositions(players, weeks, everCovered, notes = []) {
+  if (!everCovered.size) return new Map();
+  const hit = new Map();
+  for (const pl of players.values()) {
+    if (everCovered.has(pl._rawPos)) continue;
+    const p0 = pl._rosterProj;
+    if (p0 == null) continue;
+    for (const w of weeks) pl.proj[w] = w === pl.bye ? 0 : p0;
+    hit.set(pl._rawPos, (hit.get(pl._rawPos) ?? 0) + 1);
+  }
+  if (hit.size) {
+    const what = [...hit.entries()].map(([pos, n]) => `${n} ${posOf(pos).pos}`).join(", ");
+    notes.push(`CBS: league/stats publishes no projection for ${[...hit.keys()].map((c) => posOf(c).pos).join("/")} `
+               + `- ${what} held flat at this week's number from the roster row, zeroed on the bye`);
+  }
+  return hit;
+}
+
 /* ---------- the loader ---------- */
 
 /**
@@ -876,6 +974,10 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
         // player_status=all and is 11-06's work.
         history: [],
         bye: bye ?? 0,
+        // Both dropped below, once the week shape has been read off them. The raw CBS
+        // code, not the display label, because it is what the payload's own rows carry.
+        _rawPos: String(p?.position ?? "").trim(),
+        _rosterProj: num(p?.projected_points),
       });
       rec.roster.add(cbsId);
     }
@@ -1007,6 +1109,10 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
   // finished week can be traded for.
   const remaining = weeks.filter((w) => w >= settings.currentWeek);
   let done = 0;
+  // Whom each week named and which positions it carried. An omission is a statement,
+  // but only about a position the route actually covers - see `attachWeekShape`.
+  const named = new Map();
+  const covered = new Map();
   const fetchWeek = async (w) => {
     const body = await get(ref, "league/stats",
       { stats_type: "projections", period: `week${w}`, player_status: "all" }, opts);
@@ -1017,20 +1123,30 @@ export async function loadLeague(ref, onProgress = () => {}, opts = {}) {
     // other sixteen weeks of a league pull over one quiet route.
     if (!rows.length)
       notes.push(`CBS: the week ${w} projection route answered with no players `
-                 + "- that week projects zero for everyone");
+                 + "- no player it carries projects anything that week");
+    const ids = new Set(), pos = new Set();
     for (const row of rows) {
-      const pl = byCbs.get(num(row?.id));
+      const cbsId = num(row?.id);
+      if (cbsId != null) ids.add(cbsId);
+      if (row?.position) pos.add(String(row.position).trim());
+      const pl = byCbs.get(cbsId);
       if (!pl) continue;
       // FPTS is the league-scored figure and equals the roster row's projected_points;
       // TP is a different number on every row and must not be used.
       const pts = num(row?.FPTS) ?? 0;
       pl.proj[w] = Math.round(pts * 100) / 100;
     }
+    named.set(w, ids);
+    covered.set(w, pos);
     onProgress(++done, remaining.length, `week ${w}`);
   };
   for (let i = 0; i < remaining.length; i += CONCURRENCY)
     await Promise.all(remaining.slice(i, i + CONCURRENCY).map(fetchWeek));
   if (!remaining.length) onProgress(1, 1, "no weeks remain");
+
+  const { everCovered } = attachWeekShape(byCbs, remaining, named, covered);
+  fillUncoveredPositions(byCbs, remaining, everCovered, notes);
+  for (const pl of byCbs.values()) { delete pl._rawPos; delete pl._rosterProj; }
 
   return { settings, weeks, players, teams, fingerprint, notes };
 }
@@ -1102,6 +1218,8 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
   if (!injuries.available)
     notes.push(`CBS: the injury feed is unavailable (${injuries.reason}) - every free agent reads healthy`);
   const byCbs = new Map();
+  const named = new Map();
+  const covered = new Map();
   const fetchWeek = async (w) => {
     const stats = await get(ref, "league/stats",
       { stats_type: "projections", period: `week${w}`, player_status: "free_agents" }, opts);
@@ -1109,9 +1227,14 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
     if (!rows.length)
       notes.push(`CBS: the week ${w} free-agent projection route answered with no players `
                  + "- no free agent projects anything that week");
+    const ids = new Set(), pos = new Set();
+    named.set(w, ids);
+    covered.set(w, pos);
     for (const row of rows) {
       const cbsId = num(row?.id);
       if (cbsId == null) continue;
+      ids.add(cbsId);
+      if (row?.position) pos.add(String(row.position).trim());
       let pl = byCbs.get(cbsId);
       if (!pl) {
         const codesOf = eligibleCodes(row);
@@ -1131,6 +1254,7 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
           bye: 0,
           owned: num(row?.roster_trends?.owned_pct) ?? num(row?.percentowned) ?? 0,
           _cbsId: cbsId,
+          _rawPos: String(row?.position ?? "").trim(),
         };
         byCbs.set(cbsId, pl);
       }
@@ -1139,6 +1263,23 @@ export async function loadFreeAgents(ref, weeks, opts = {}) {
   };
   for (let i = 0; i < remaining.length; i += CONCURRENCY)
     await Promise.all(remaining.slice(i, i + CONCURRENCY).map(fetchWeek));
+
+  // The waiver wire is where a stashed return is cheapest, so the week shape matters
+  // here for the same reason it does on a roster: a free agent the route omits until
+  // week eight and names from week eight on is an add whose value is entirely in the
+  // second half, and `backfillPool` ranks on an availability-weighted mean that can
+  // only see that once the zeros are stated rather than guessed from a status.
+  const { everCovered } = attachWeekShape(byCbs, remaining, named, covered);
+  for (const pl of byCbs.values()) delete pl._rawPos;
+  // There is no roster row behind a free agent, so the flat carry that rescues a
+  // rostered defence has nothing to read here. A position the route never carries
+  // simply has no free agents at all, and saying so is better than an empty list the
+  // user reads as "no defence is worth adding".
+  const absent = [...new Set((codes ?? []).map((c) => String(c).trim()).filter(Boolean))]
+    .filter((c) => SLOT[c] !== undefined && membersOf(c).every((m) => !everCovered.has(m)));
+  if (everCovered.size && absent.length)
+    notes.push(`CBS: the free-agent projection route carries no ${absent.map((c) => posOf(c).pos).join("/")} `
+               + "- no such player can reach the waiver shortlist, whatever is actually available");
 
   const crosswalk = await loadCrosswalk(opts);
   if (!crosswalk.available)

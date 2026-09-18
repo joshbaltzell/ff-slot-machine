@@ -189,6 +189,9 @@ const CACHE_HOURS = 12;
    loading screen stays around five seconds (measured ~125 ms per trade at 5000
    sims in the test suite). */
 const ODDS_CAP = 100;
+/* Of that cap, how many slots are held for later-not-now trades so they are not
+   crowded out by trades that are simply better this week. */
+const STASH_ODDS = 20;
 const ODDS_SIMS = 2500;
 /* Odds run in two passes. At 2500 sims the paired title delta often sits inside its
    own standard error - roughly one trade in fifteen clears it on a live league, 5 of
@@ -201,6 +204,15 @@ const REFINE_SIMS = 20000;
 
 /* Chip order is search order: the cheapest shapes first, so the list fills early. */
 const SHAPES = ["1-for-1", "2-for-1", "2-for-2", "three-way"];
+
+/* The windows a side may qualify on. `2-for-1` and `three-way` stay on `gain` alone:
+   their prunes are bounds keyed on the gate, and widening those is its own change. */
+const ACCEPT = ["gain", "playoff"];
+
+/* A side that is worse across the season and better in the playoff weeks - which is
+   what buying an injured starter looks like from the buyer's chair. */
+const laterNotNow = (s) => s.gain < 0.05 && s.playoff >= 0.05;
+const isStash = (t) => t.sides.some(laterNotNow);
 
 const OBJECTIVES = [
   ["title", "Championship", "Rank by the change in your odds of winning the league."],
@@ -526,7 +538,14 @@ async function start(ref) {
       window.__usage ? `${window.__usage.table.rows.size} players` : "unavailable");
 
     Steps.set("s1", "run");
-    const one = await eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot));
+    // `accept` widens the gate, not the search: the enumeration is identical and only
+    // the acceptance predicate changes. A trade that buys an injured starter is
+    // negative on the season average by construction - six weeks of nothing for eleven
+    // weeks of a man - so `gain` is the one window guaranteed to disagree with the
+    // reason for making it. The rows carry a badge and there is a chip to hide them,
+    // because a list the user reads as "trades that help me" must not quietly contain
+    // trades that hurt until December.
+    const one = await eng.findTwoTeam(1, 0.05, (n, tot) => progress(n / tot), { accept: ACCEPT });
     say(`  ${one.length} mutually beneficial`, "ok");
 
     Steps.set("s1", "done", `${one.length}`);
@@ -538,7 +557,7 @@ async function start(ref) {
     say(`  ${twoOne.length} consolidations in ${((Date.now() - t21) / 1000).toFixed(1)}s`, "ok");
     Steps.set("s21", "done", `${twoOne.length}`);
     Steps.set("s2", "run", "slowest step");
-    const two = await eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot));
+    const two = await eng.findTwoTeam(2, 0.05, (n, tot) => progress(n / tot), { accept: ACCEPT });
     say(`  ${two.length} mutually beneficial`, "ok");
 
     Steps.set("s2", "done", `${two.length}`);
@@ -546,7 +565,23 @@ async function start(ref) {
     const three = await eng.findThreeWay(0.05, (n, tot) => progress(n / tot));
     say(`  ${three.length} cycles`, "ok");
 
-    const trades = [...dedupe(one, 3), ...dedupe(twoOne, 3), ...dedupe(two, 3), ...dedupe(three, 3)]
+    // `dedupe` keeps at most three trades per team pair, taken from a list ordered by
+    // combined gain - and a trade whose value is in the playoff weeks has a low
+    // combined gain by construction, so within any pair that also has ordinary trades
+    // it is the first to be cut. On the frozen fixture the class mostly survives anyway
+    // (measured: 71 of 83 at 1-for-1, 83 of 90 at 2-for-2) because most pairs have no
+    // competing ordinary trade. That is a property of one league, not a guarantee: the
+    // pair holding a shelved star is exactly the pair most likely to have good ordinary
+    // trades too, which is precisely where the cut would land. Thinning the two classes
+    // separately makes the allocation reserved rather than lucky. The later-not-now
+    // pile is thinned harder, because it is the rarer recommendation and should not
+    // crowd the list it sits in.
+    const split = (list) => {
+      const now = [], later = [];
+      for (const t of list) (isStash(t) ? later : now).push(t);
+      return [...dedupe(now, 3), ...dedupe(later, 2)];
+    };
+    const trades = [...split(one), ...dedupe(twoOne, 3), ...split(two), ...dedupe(three, 3)]
       .sort((a, b) => b.total - a.total);
     Steps.set("s3", "done", `${three.length}`);
 
@@ -564,9 +599,17 @@ async function start(ref) {
       Steps.set("odds", "warn", "no standings");
     } else {
       Steps.set("odds", "run");
-      const mine = trades.filter((t) => t.sides.some((s) => s.team === myTeam))
-        .sort((a, b) => b.sides.find((s) => s.team === myTeam).win - a.sides.find((s) => s.team === myTeam).win)
-        .slice(0, ODDS_CAP);
+      // The cap is filled by expected regular-season wins, and a trade that is worse
+      // until November has fewer of those by construction - so the same starvation
+      // dedupe would have caused happens again here, one stage later, and Δ title, the
+      // one number that can actually judge whether a side can afford the absence, never
+      // gets computed for the trades that need it most. A fixed slice is reserved.
+      const byWin = (a, b) => b.sides.find((s) => s.team === myTeam).win
+                            - a.sides.find((s) => s.team === myTeam).win;
+      const ours = trades.filter((t) => t.sides.some((s) => s.team === myTeam));
+      const later = new Set(ours.filter(isStash).sort(byWin).slice(0, STASH_ODDS));
+      const mine = [...later,
+        ...ours.filter((t) => !later.has(t)).sort(byWin).slice(0, ODDS_CAP - later.size)];
       const divisionOf = new Map([...model.teams.values()].map((t) => [t.name, t.divisionId]));
       const divSeedSaved = (await chrome.storage.local.get("ffsm.divSeed"))["ffsm.divSeed"] ?? false;
       window.__divSeed = divSeedSaved;
@@ -684,7 +727,7 @@ const HINT = {
   weeks:  "How many weeks the trade is a net positive for you. A gain spread across every week is more dependable than the same average earned in three big ones.",
   combined:"Both sides' gains added together. High combined value means the trade creates the most points league-wide, which is not the same as being good for you.",
   byehelp:"What the trade is worth to your partner during their bye-thinned weeks. A big number here with little full-strength value means you are selling them a bye fix, not talent.",
-  balance:"How evenly the gain splits. Lopsided offers are the ones that get declined, however good the total looks.",
+  balance:"How evenly the gain splits. Lopsided offers are the ones that get declined, however good the total looks. A dash means no side gains across the season — the value is in the playoff weeks instead, so there is no split to state.",
   swing:  "How far this roster's weekly score typically lands from its projection, measured from last season's results for the players it starts. A lower number means a more predictable team - which helps a favourite and hurts an underdog.",
   objective:"What the list is sorted by. Championship uses the change in title odds from a paired season simulation; Seeding uses expected regular-season wins from your schedule; Balanced is points per week.",
   dwins:  "Change in your expected regular-season wins: each week's win probability against your scheduled opponent, before and after the trade, summed. Uses the measured spread of both lineups.",
@@ -808,9 +851,21 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     shapes: new Set(SHAPES),
     minGain: 0.10, only: new Set(), q: "",
   });
+  // Null rather than a ratio when the largest gain is not positive: on a trade whose
+  // value is in the playoff weeks both gains can be negative, and min/max over two
+  // negatives is a positive number that reads as a perfectly even split. There is no
+  // meaningful balance to state there, so nothing is stated.
   const balance = (t) => {
     const g = t.sides.map((s) => s.gain);
-    return Math.min(...g) / Math.max(...g);
+    const hi = Math.max(...g);
+    return hi > 0 ? Math.min(...g) / hi : null;
+  };
+  // The week a side's incoming players are all back. The later of two, because a trade
+  // for two shelved men is not fully yours until the second one plays.
+  const backWeek = (s) => {
+    const ws = s.received.map((i) => AV?.statusOf?.get(eng.ids[i])?.returnWeek)
+      .filter((w) => w != null);
+    return ws.length ? Math.max(...ws) : null;
   };
   // A bye play rather than a talent upgrade: neutral at full strength, but worth
   // real points once byes force a partner to start players he would rather bench.
@@ -823,9 +878,14 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
     .map((t, i) => ({ t, i }))
     .filter(({ t }) => !mineOnly || t.sides.some((s) => s.team === viewing))
     .filter(({ t }) => F.shapes.has(t.shape))
-    .filter(({ t }) => Math.min(...t.sides.map((s) => s.gain)) >= F.minGain)
+    // The slider is a floor on what a side must be worth, and a side can be worth it in
+    // either window - otherwise the search's widened gate would be undone here and the
+    // trades it exists to surface would never reach the table.
+    .filter(({ t }) => t.sides.every((s) => Math.max(s.gain, s.playoff) >= F.minGain))
     .filter(({ t }) => !F.only.has("bye") || byeDriven(t))
-    .filter(({ t }) => !F.only.has("even") || balance(t) >= 0.6)
+    .filter(({ t }) => !F.only.has("even") || (balance(t) ?? 0) >= 0.6)
+    .filter(({ t }) => !F.only.has("stash") || isStash(t))
+    .filter(({ t }) => !F.only.has("nostash") || !isStash(t))
     // A dead feed (mkt === null) must never empty the list - the chip is also hidden
     // whenever there is no market, but the filter stays inert on its own in case
     // "mktfair" was set while the feed was still up.
@@ -951,9 +1011,17 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         + `${f2(other.bye)} in the weeks byes thin you out.`);
     if (other.playoff > 0.3) L.push(`Playoff weeks: ${f2(other.playoff)} per week.`);
     const me = side(t);
-    L.push("", balance(t) >= 0.5
-      ? `I gain ${f2(me.gain)} per week, so we both come out ahead.`
-      : `I gain ${f2(me.gain)} per week — most of the value here is on your side.`);
+    // When my side is buying a return rather than an upgrade, say so in the pitch. It
+    // is the honest framing and it is also the persuasive one: the other manager is
+    // being offered the weeks he is actually playing for.
+    if (laterNotNow(me))
+      L.push("", `Straight up: ${backWeek(me) ? `this does nothing for me until week ${backWeek(me)}`
+        : "this costs me now"}, so I am ${f2(-me.gain)} per week worse off across the season `
+        + `and ${f2(me.playoff)} better in the playoff weeks. You get the man who plays now.`);
+    else
+      L.push("", (balance(t) ?? 0) >= 0.5
+        ? `I gain ${f2(me.gain)} per week, so we both come out ahead.`
+        : `I gain ${f2(me.gain)} per week — most of the value here is on your side.`);
     const mline = marketPitchLine(t, other, mkt);
     if (mline) L.push("", mline);
     return L.join("\n");
@@ -1024,12 +1092,14 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
         <td class="num" style="color:var(--dim)">${rest.map((o) => f2(o.gain)).join(" / ")}</td>
         <td class="num">${t.total.toFixed(2)}</td>
         <td class="num ${cls(me.reg)}">${f2(me.reg)}</td>
-        <td class="num ${cls(me.playoff)}">${f2(me.playoff)}</td>
+        <td class="num ${cls(me.playoff)}">${f2(me.playoff)}${
+          laterNotNow(me) ? ' <span class="tag">later</span>' : ""}</td>
         <td class="num ${cls(rest[0].bye)}">${f2(rest[0].bye)}${
           byeDriven(t) ? ' <span class="tag">bye</span>' : ""}</td>
-        <td><div class="bal"><div class="track"><i style="width:${
-          (balance(t) * 100).toFixed(0)}%"></i></div><span class="balpct">${
-          (balance(t) * 100).toFixed(0)}%</span></div></td>
+        <td>${balance(t) === null ? '<span class="dim">&mdash;</span>'
+          : `<div class="bal"><div class="track"><i style="width:${
+            (balance(t) * 100).toFixed(0)}%"></i></div><span class="balpct">${
+            (balance(t) * 100).toFixed(0)}%</span></div>`}</td>
         ${marketCell(t, mkt)}
       </tr>
       <tr class="detail" data-for="${i}" hidden><td colspan="${tradeCols.length}"></td></tr>`;
@@ -1289,6 +1359,8 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
           <div class="fld"><label>Only</label><div class="chips" id="only">
             <button data-v="bye" aria-pressed="${F.only.has("bye")}">Bye-driven</button>
             <button data-v="even" aria-pressed="${F.only.has("even")}">Even splits</button>
+            <button data-v="stash" aria-pressed="${F.only.has("stash")}">Worse now, better later</button>
+            <button data-v="nostash" aria-pressed="${F.only.has("nostash")}">Helps now</button>
             ${marketFairChip(mkt, F.only.has("mktfair"))}
           </div></div>
           <div class="fld"><label for="q">Player</label>
@@ -1424,7 +1496,15 @@ function render(eng, model, trades, myTeam, schedule = window.__schedule ?? new 
   });
   app.querySelectorAll("#only button").forEach((b) => {
     b.onclick = () => {
-      F.only.has(b.dataset.v) ? F.only.delete(b.dataset.v) : F.only.add(b.dataset.v);
+      const v = b.dataset.v;
+      if (F.only.has(v)) F.only.delete(v);
+      else {
+        // "Worse now, better later" and "Helps now" partition the list, so holding both
+        // is a filter that can only ever be empty. Turning one on turns the other off.
+        const opposite = { stash: "nostash", nostash: "stash" }[v];
+        if (opposite) F.only.delete(opposite);
+        F.only.add(v);
+      }
       rerender();
     };
   });
